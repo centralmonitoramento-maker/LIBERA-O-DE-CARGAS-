@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "CargoLoad": {
+      "title": "CargoLoad",
+      "description": "Represents cargo loads to be validated and released",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "plate": { "type": "string" },
+        "driverName": { "type": "string" },
+        "cargoType": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "additionalDestinations": { "type": "array" },
+        "isHighRisk": { "type": "boolean" },
+        "parType": { "type": "string" },
+        "parInvoiceNumber": { "type": "string" },
+        "parDescription": { "type": "string" },
+        "sealNumber": { "type": "string" },
+        "palletCount": { "type": "number" },
+        "palletDetails": { "type": "array" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "occurrenceType": { "type": "string" },
+        "occurrenceDescription": { "type": "string" },
+        "occurrencePhoto": { "type": "string" },
+        "auditedAt": { "type": "string" },
+        "occurrenceHistory": { "type": "array" },
+        "currentDestinationIndex": { "type": "number" },
+        "sealsByDest": { "type": "object" },
+        "checkedDestinations": { "type": "array" }
+      },
+      "required": ["id", "plate", "driverName", "cargoType", "origin", "destination", "isHighRisk", "sealNumber", "palletCount", "status", "createdAt", "createdBy"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Represents application user and role metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "fullName": { "type": "string" },
+        "storeLocation": { "type": "string" },
+        "jobFunction": { "type": "string" },
+        "role": { "type": "string" },
+        "systemRole": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "username", "password", "role", "status", "createdAt"]
+    },
+    "EventLog": {
+      "title": "EventLog",
+      "description": "Audit trail log of actions taken within the system",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "loadId": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "username", "action", "details"]
+    }
+  },
+  "firestore": {
+    "loads/{loadId}": {
+      "schema": "CargoLoad",
+      "description": "List of cargo loads and their real-time statuses"
+    },
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User account registration and permission mapping"
+    },
+    "logs/{logId}": {
+      "schema": "EventLog",
+      "description": "Platform audit log records"
+    }
+  }
+}
