@@ -346,6 +346,15 @@ interface ExpeditionViewProps {
 
 export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }) => {
   const [plate, setPlate] = useState('');
+  const [driverName, setDriverName] = useState('');
+  const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
+  const [origin, setOrigin] = useState('CD-01');
+  const [destination, setDestination] = useState('');
+  const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
+  const [newDestination, setNewDestination] = useState('');
+  const [sealNumber, setSealNumber] = useState('');
+  const [palletDetailsByDest, setPalletDetailsByDest] = useState<Record<string, Record<string, number>>>({});
+
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
@@ -361,14 +370,50 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
     setActiveSuggestionIndex(-1);
   }, [plate]);
 
-  const [driverName, setDriverName] = useState('');
-  const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
-  const [origin, setOrigin] = useState('CD-01');
-  const [destination, setDestination] = useState('');
-  const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
-  const [newDestination, setNewDestination] = useState('');
-  const [sealNumber, setSealNumber] = useState('');
-  const [palletDetailsByDest, setPalletDetailsByDest] = useState<Record<string, Record<string, number>>>({});
+  const [showOriginSuggestions, setShowOriginSuggestions] = useState(false);
+  const [activeOriginIndex, setActiveOriginIndex] = useState(-1);
+
+  const originSuggestions = useMemo(() => {
+    const query = origin.toUpperCase().trim();
+    if (!query) {
+      return ROUTE_OPTIONS;
+    }
+    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+  }, [origin]);
+
+  useEffect(() => {
+    setActiveOriginIndex(-1);
+  }, [origin]);
+
+  const [showDestSuggestions, setShowDestSuggestions] = useState(false);
+  const [activeDestIndex, setActiveDestIndex] = useState(-1);
+
+  const destSuggestions = useMemo(() => {
+    const query = destination.toUpperCase().trim();
+    if (!query) {
+      return ROUTE_OPTIONS;
+    }
+    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+  }, [destination]);
+
+  useEffect(() => {
+    setActiveDestIndex(-1);
+  }, [destination]);
+
+  const [showNewDestSuggestions, setShowNewDestSuggestions] = useState(false);
+  const [activeNewDestIndex, setActiveNewDestIndex] = useState(-1);
+
+  const newDestSuggestions = useMemo(() => {
+    const query = newDestination.toUpperCase().trim();
+    if (!query) {
+      return ROUTE_OPTIONS;
+    }
+    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+  }, [newDestination]);
+
+  useEffect(() => {
+    setActiveNewDestIndex(-1);
+  }, [newDestination]);
 
   const destinationsList = [destination, ...additionalDestinations].filter(Boolean);
   const [selectedDestForPallets, setSelectedDestForPallets] = useState('');
@@ -662,69 +707,231 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 relative" id="origin-autocomplete-container">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Origem</label>
                 <div className="relative">
                   <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <select
+                  <input
+                    type="text"
                     value={origin}
-                    onChange={(e) => setOrigin(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all"
+                    onChange={(e) => {
+                      setOrigin(e.target.value.toUpperCase());
+                      setShowOriginSuggestions(true);
+                    }}
+                    onFocus={() => setShowOriginSuggestions(true)}
+                    onBlur={() => setShowOriginSuggestions(false)}
+                    onKeyDown={(e) => {
+                      if (!showOriginSuggestions) {
+                        if (e.key === 'ArrowDown') {
+                          setShowOriginSuggestions(true);
+                        }
+                        return;
+                      }
+
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setActiveOriginIndex(prev => (prev < originSuggestions.length - 1 ? prev + 1 : 0));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setActiveOriginIndex(prev => (prev > 0 ? prev - 1 : originSuggestions.length - 1));
+                      } else if (e.key === 'Enter') {
+                        if (activeOriginIndex >= 0 && activeOriginIndex < originSuggestions.length) {
+                          e.preventDefault();
+                          setOrigin(originSuggestions[activeOriginIndex]);
+                          setShowOriginSuggestions(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowOriginSuggestions(false);
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
+                    placeholder="Selecione ou digite a origem..."
                     required
-                  >
-                    <option value="" className="bg-white">Selecione a origem...</option>
-                    {ROUTE_OPTIONS.map((route) => (
-                      <option key={route} value={route} className="bg-white">
-                        {route}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
+                {showOriginSuggestions && originSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100 flex flex-col">
+                    {originSuggestions.map((route, index) => (
+                      <button
+                        key={route}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setOrigin(route);
+                          setShowOriginSuggestions(false);
+                        }}
+                        onMouseEnter={() => setActiveOriginIndex(index)}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-black transition-colors flex items-center justify-between ${
+                          activeOriginIndex === index 
+                            ? 'bg-slate-100 text-primary-navy' 
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{route}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                          activeOriginIndex === index 
+                            ? 'bg-primary-gold/20 text-primary-navy' 
+                            : 'bg-slate-100 text-slate-400'
+                        }`}>
+                          Origem
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 relative" id="dest-autocomplete-container">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Destino Principal</label>
                 <div className="relative">
                   <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <select
+                  <input
+                    type="text"
                     value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all"
+                    onChange={(e) => {
+                      setDestination(e.target.value.toUpperCase());
+                      setShowDestSuggestions(true);
+                    }}
+                    onFocus={() => setShowDestSuggestions(true)}
+                    onBlur={() => setShowDestSuggestions(false)}
+                    onKeyDown={(e) => {
+                      if (!showDestSuggestions) {
+                        if (e.key === 'ArrowDown') {
+                          setShowDestSuggestions(true);
+                        }
+                        return;
+                      }
+
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setActiveDestIndex(prev => (prev < destSuggestions.length - 1 ? prev + 1 : 0));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setActiveDestIndex(prev => (prev > 0 ? prev - 1 : destSuggestions.length - 1));
+                      } else if (e.key === 'Enter') {
+                        if (activeDestIndex >= 0 && activeDestIndex < destSuggestions.length) {
+                          e.preventDefault();
+                          setDestination(destSuggestions[activeDestIndex]);
+                          setShowDestSuggestions(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowDestSuggestions(false);
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
+                    placeholder="Selecione ou digite o destino..."
                     required
-                  >
-                    <option value="" className="bg-white">Selecione o destino...</option>
-                    {ROUTE_OPTIONS.map((route) => (
-                      <option key={route} value={route} className="bg-white">
-                        {route}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
+                {showDestSuggestions && destSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100 flex flex-col">
+                    {destSuggestions.map((route, index) => (
+                      <button
+                        key={route}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setDestination(route);
+                          setShowDestSuggestions(false);
+                        }}
+                        onMouseEnter={() => setActiveDestIndex(index)}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-black transition-colors flex items-center justify-between ${
+                          activeDestIndex === index 
+                            ? 'bg-slate-100 text-primary-navy' 
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{route}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                          activeDestIndex === index 
+                            ? 'bg-primary-gold/20 text-primary-navy' 
+                            : 'bg-slate-100 text-slate-400'
+                        }`}>
+                          Destino
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {cargoType === CargoType.COMPARTILHADA && (
                 <div className="md:col-span-2 space-y-4 animate-in slide-in-from-top-4 duration-300">
                   <label className="text-[10px] font-black text-blue-400 uppercase tracking-wider ml-1">Destinos Adicionais (Carga Compartilhada)</label>
                   <div className="flex gap-2">
-                    <div className="relative flex-grow">
+                    <div className="relative flex-grow" id="new-dest-autocomplete-container">
                       <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <select
+                      <input
+                        type="text"
                         value={newDestination}
-                        onChange={(e) => setNewDestination(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
-                      >
-                        <option value="" className="bg-slate-900 text-white">Selecione destino adicional...</option>
-                        {ROUTE_OPTIONS.map((route) => (
-                          <option key={route} value={route} className="bg-slate-900 text-white">
-                            {route}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(e) => {
+                          setNewDestination(e.target.value.toUpperCase());
+                          setShowNewDestSuggestions(true);
+                        }}
+                        onFocus={() => setShowNewDestSuggestions(true)}
+                        onBlur={() => setShowNewDestSuggestions(false)}
+                        onKeyDown={(e) => {
+                          if (!showNewDestSuggestions) {
+                            if (e.key === 'ArrowDown') {
+                              setShowNewDestSuggestions(true);
+                            }
+                            return;
+                          }
+
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setActiveNewDestIndex(prev => (prev < newDestSuggestions.length - 1 ? prev + 1 : 0));
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setActiveNewDestIndex(prev => (prev > 0 ? prev - 1 : newDestSuggestions.length - 1));
+                          } else if (e.key === 'Enter') {
+                            if (activeNewDestIndex >= 0 && activeNewDestIndex < newDestSuggestions.length) {
+                              e.preventDefault();
+                              setNewDestination(newDestSuggestions[activeNewDestIndex]);
+                              setShowNewDestSuggestions(false);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setShowNewDestSuggestions(false);
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
+                        placeholder="Selecione ou digite destino adicional..."
+                      />
+                      {showNewDestSuggestions && newDestSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100 flex flex-col">
+                          {newDestSuggestions.map((route, index) => (
+                            <button
+                              key={route}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setNewDestination(route);
+                                setShowNewDestSuggestions(false);
+                              }}
+                              onMouseEnter={() => setActiveNewDestIndex(index)}
+                              className={`w-full text-left px-4 py-2.5 text-xs font-black transition-colors flex items-center justify-between ${
+                                activeNewDestIndex === index 
+                                  ? 'bg-slate-100 text-primary-navy' 
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>{route}</span>
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                                activeNewDestIndex === index 
+                                  ? 'bg-blue-600/20 text-blue-700' 
+                                  : 'bg-slate-100 text-slate-400'
+                              }`}>
+                                Adicional
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
                       onClick={addDestination}
-                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-xl transition-all"
+                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-xl transition-all h-[46px] flex items-center justify-center self-start"
                     >
                       <Plus className="w-5 h-5" />
                     </button>
