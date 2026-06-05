@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CargoLoad, CargoType, EventLog } from '../types';
 import { 
   Truck, 
@@ -283,6 +283,62 @@ const ROUTE_OPTIONS = [
   '04-SOBRADINHO'
 ];
 
+const VEHICLE_PLATES = [
+  'NFU2C00',
+  'KQP2410',
+  'GVH1B52',
+  'REO4J88',
+  'GSW3D02',
+  'BWH4H66',
+  'BWP1560',
+  'NLR6G87',
+  'ONU6411',
+  'GSV9I93',
+  'CXA8183',
+  'PBL7888',
+  'JKK7186',
+  'ATB6A80',
+  'CGVH1B52',
+  'KDL7729',
+  'NKT7445',
+  'LYI7962',
+  'LYC8031',
+  'BWC1E46',
+  'JXA2058',
+  'BWI8492',
+  'BTS7345',
+  'BII3185',
+  'CBN9498',
+  'MAT4378',
+  'JXA5E19',
+  'PRB9568',
+  'BWJ6F09',
+  'JJL6329',
+  'OMJ5997',
+  'PRT1898',
+  'PZE6079',
+  'KDP2410',
+  'FRZ9797',
+  'ABF8135',
+  'JJC0097',
+  'OMY1B34',
+  'GRA7922',
+  'JJA5H71',
+  'GSV9893',
+  'NFU7C00',
+  'CQH5155',
+  'JHM2104',
+  'OPG6684',
+  'FCQ3377',
+  'OYB1D24',
+  'NVW1921',
+  'MEH5E78',
+  'PRQ0325',
+  'NFN3296',
+  'CRY5H40',
+  'CUB2320'
+];
+
 interface ExpeditionViewProps {
   onSubmit: (load: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => void;
   logs: EventLog[];
@@ -290,6 +346,21 @@ interface ExpeditionViewProps {
 
 export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }) => {
   const [plate, setPlate] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+
+  const suggestions = useMemo(() => {
+    const query = plate.toUpperCase().trim();
+    if (!query) {
+      return VEHICLE_PLATES;
+    }
+    return VEHICLE_PLATES.filter(p => p.includes(query));
+  }, [plate]);
+
+  useEffect(() => {
+    setActiveSuggestionIndex(-1);
+  }, [plate]);
+
   const [driverName, setDriverName] = useState('');
   const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
   const [origin, setOrigin] = useState('CD-01');
@@ -477,19 +548,78 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
+              <div className="space-y-2 relative" id="plate-autocomplete-container">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Placa do Veículo</label>
                 <div className="relative">
                   <Truck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     value={plate}
-                    onChange={(e) => setPlate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
+                    onChange={(e) => {
+                      setPlate(e.target.value.toUpperCase());
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setShowSuggestions(false)}
+                    onKeyDown={(e) => {
+                      if (!showSuggestions) {
+                        if (e.key === 'ArrowDown') {
+                          setShowSuggestions(true);
+                        }
+                        return;
+                      }
+
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setActiveSuggestionIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setActiveSuggestionIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1));
+                      } else if (e.key === 'Enter') {
+                        if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
+                          e.preventDefault();
+                          setPlate(suggestions[activeSuggestionIndex]);
+                          setShowSuggestions(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowSuggestions(false);
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase font-mono"
                     placeholder="AAA1A11"
                     required
                   />
                 </div>
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg divide-y divide-slate-100 flex flex-col">
+                    {suggestions.map((p, index) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // prevents blur before click registers
+                          setPlate(p);
+                          setShowSuggestions(false);
+                        }}
+                        onMouseEnter={() => setActiveSuggestionIndex(index)}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-black transition-colors flex items-center justify-between ${
+                          activeSuggestionIndex === index 
+                            ? 'bg-slate-100 text-primary-navy' 
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="font-mono tracking-widest">{p}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                          activeSuggestionIndex === index 
+                            ? 'bg-primary-gold/20 text-primary-navy' 
+                            : 'bg-slate-100 text-slate-400'
+                        }`}>
+                          Sugestão de Placa
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
