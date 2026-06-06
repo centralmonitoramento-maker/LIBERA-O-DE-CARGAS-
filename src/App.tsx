@@ -40,13 +40,111 @@ const generateId = (): string => {
 
 // Main Application Component for CargaRadar System - v1.0.1
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('expedition');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    try {
+      const persistedUser = localStorage.getItem('cargoradar_user');
+      if (persistedUser) {
+        const user = JSON.parse(persistedUser);
+        return (localStorage.getItem('cargoradar_tab') as TabType) || (user.role as TabType) || 'expedition';
+      }
+      return 'expedition';
+    } catch {
+      return 'expedition';
+    }
+  });
 
-  const [loads, setLoads] = useState<CargoLoad[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [logs, setLogs] = useState<EventLog[]>([]);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('cargoradar_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => {
+    try {
+      const persisted = localStorage.getItem('cargoradar_user');
+      return persisted ? JSON.parse(persisted) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [loads, setLoads] = useState<CargoLoad[]>(() => {
+    try {
+      const persisted = localStorage.getItem('cargoradar_loads');
+      return persisted ? JSON.parse(persisted) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [users, setUsers] = useState<User[]>(() => {
+    try {
+      const persisted = localStorage.getItem('cargoradar_users');
+      return persisted ? JSON.parse(persisted) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [logs, setLogs] = useState<EventLog[]>(() => {
+    try {
+      const persisted = localStorage.getItem('cargoradar_logs');
+      return persisted ? JSON.parse(persisted) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    try {
+      localStorage.setItem('cargoradar_tab', tab);
+    } catch (e) {
+      console.error('Erro ao salvar aba ativa localmente:', e);
+    }
+  };
+
+  const notifiedLoadIds = React.useRef<Set<string>>(new Set());
+  const isFirstLoad = React.useRef<boolean>(true);
+
+  // Set up service worker
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => console.log('Service Worker registrado:', reg.scope))
+        .catch((err) => console.error('Erro ao registrar Service Worker:', err));
+    }
+  }, []);
+
+  const triggerNativeNotification = (load: CargoLoad) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const title = `🚨 DIVERGÊNCIA: PLACA ${load.plate}`;
+    const options = {
+      body: `Motorista: ${load.driverName}\nCarga: ${load.cargoType}\nExige ação imediata da Central de Monitoramento!`,
+      icon: '/logo.png',
+      badge: '/logo.png',
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true,
+      tag: `divergency-${load.id}`
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.showNotification(title, options);
+      }).catch(() => {
+        new Notification(title, options);
+      });
+    } else {
+      const notification = new Notification(title, options);
+      notification.onclick = () => {
+        window.focus();
+      };
+    }
+  };
 
   // Set up real-time onSnapshot listeners
   // 1. Cargo Loads (always subscribed)
@@ -56,9 +154,46 @@ const App: React.FC = () => {
       snapshot.forEach((doc) => {
         liveLoads.push(doc.data() as CargoLoad);
       });
+
+      // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
+      snapshot.docChanges().forEach((change) => {
+        const load = change.doc.data() as CargoLoad;
+        if (load.status === CargoStatus.BLOCKED) {
+          if (isFirstLoad.current) {
+            notifiedLoadIds.current.add(load.id);
+          } else {
+            if (!notifiedLoadIds.current.has(load.id)) {
+              notifiedLoadIds.current.add(load.id);
+              triggerNativeNotification(load);
+            }
+          }
+        } else {
+          // If a load transitioned back from BLOCKED, remove from notified set
+          if (notifiedLoadIds.current.has(load.id)) {
+            notifiedLoadIds.current.delete(load.id);
+          }
+        }
+      });
+
+      isFirstLoad.current = false;
       setLoads(liveLoads);
+      try {
+        localStorage.setItem('cargoradar_loads', JSON.stringify(liveLoads));
+      } catch (err) {
+        console.error('Erro ao persistir cargas no localStorage:', err);
+      }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'loads');
+      console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
+                             errorMessage.toLowerCase().includes('connection') || 
+                             errorMessage.toLowerCase().includes('network') ||
+                             errorMessage.toLowerCase().includes('unavailable');
+                             
+      if (!isOfflineError) {
+        handleFirestoreError(error, OperationType.LIST, 'loads');
+      }
     });
 
     return () => {
@@ -82,9 +217,24 @@ const App: React.FC = () => {
       });
       if (liveUsers.length > 0) {
         setUsers(liveUsers);
+        try {
+          localStorage.setItem('cargoradar_users', JSON.stringify(liveUsers));
+        } catch (err) {
+          console.error('Erro ao persistir usuários no localStorage:', err);
+        }
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
+      console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
+                             errorMessage.toLowerCase().includes('connection') || 
+                             errorMessage.toLowerCase().includes('network') ||
+                             errorMessage.toLowerCase().includes('unavailable');
+                             
+      if (!isOfflineError) {
+        handleFirestoreError(error, OperationType.LIST, 'users');
+      }
     });
 
     return () => {
@@ -108,8 +258,23 @@ const App: React.FC = () => {
       });
       liveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(liveLogs);
+      try {
+        localStorage.setItem('cargoradar_logs', JSON.stringify(liveLogs));
+      } catch (err) {
+        console.error('Erro ao persistir logs no localStorage:', err);
+      }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'logs');
+      console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
+                             errorMessage.toLowerCase().includes('connection') || 
+                             errorMessage.toLowerCase().includes('network') ||
+                             errorMessage.toLowerCase().includes('unavailable');
+                             
+      if (!isOfflineError) {
+        handleFirestoreError(error, OperationType.LIST, 'logs');
+      }
     });
 
     return () => {
@@ -169,10 +334,22 @@ const App: React.FC = () => {
       details,
       loadId: loadId || "",
     };
+
+    // Altera o estado local e persiste localmente imediatamente de forma otimista
+    setLogs((prev) => {
+      const updated = [newLog, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      try {
+        localStorage.setItem('cargoradar_logs', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao salvar logs localmente:', e);
+      }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'logs', newLog.id), sanitizeFirestoreData(newLog));
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'logs/' + newLog.id);
+      console.warn('Falha remota ao registrar log (offline/conexão instável):', err);
     }
   };
 
@@ -185,16 +362,29 @@ const App: React.FC = () => {
       createdAt: new Date().toISOString(),
       createdBy: username,
     };
+
+    // Otimista: Salva localmente primeiro
+    setLoads((prev) => {
+      const updated = [newLoad, ...prev];
+      try {
+        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao salvar carga localmente:', e);
+      }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
       addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'loads/' + newLoad.id);
+      console.warn('Conexão instável. Carga mantida localmente e log registrado localmente.', err);
+      addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
     }
     
     // Admins or specific roles might want to stay or move
     if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
-       setActiveTab('central');
+       handleTabChange('central');
     }
   };
 
@@ -210,11 +400,23 @@ const App: React.FC = () => {
       auditedAt: newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.BLOCKED ? timestamp : (load.auditedAt || "")
     };
 
+    // Otimista: Atualiza localmente
+    setLoads((prev) => {
+      const updated = prev.map(l => l.id === id ? updatedLoad : l);
+      try {
+        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao atualizar status da carga localmente:', e);
+      }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'loads/' + id);
+      console.warn('Conexão instável. Modificação do status mantida localmente.', err);
+      addLog('Atualização de Status (Local)', `Carga ${load.plate} alterada para ${newStatus} offline por ${username}`, username, id);
     }
   };
 
@@ -243,11 +445,23 @@ const App: React.FC = () => {
       ]
     };
 
+    // Otimista: Atualiza localmente
+    setLoads((prev) => {
+      const updated = prev.map(l => l.id === id ? updatedLoad : l);
+      try {
+        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao atualizar ocorrência localmente:', e);
+      }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'loads/' + id);
+      console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
+      addLog('Auditoria de Carga (Local)', `Auditoria offline na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
     }
   };
 
@@ -382,6 +596,16 @@ const App: React.FC = () => {
     setIsAuthenticated(true);
     setLoggedInUser(finalUser);
     setActiveTab(finalUser.role as TabType);
+
+    // Salva sessão localmente no localStorage
+    try {
+      localStorage.setItem('cargoradar_auth', 'true');
+      localStorage.setItem('cargoradar_user', JSON.stringify(finalUser));
+      localStorage.setItem('cargoradar_tab', finalUser.role);
+    } catch (e) {
+      console.error('Erro ao persistir sessão do usuário no localStorage:', e);
+    }
+
     addLog('Login', `Usuário ${finalUser.username} realizou login unificado e foi direcionado para ${finalUser.role}`, finalUser.username);
   };
 
@@ -395,6 +619,16 @@ const App: React.FC = () => {
     }
     setIsAuthenticated(false);
     setLoggedInUser(null);
+
+    // Remove sessão do localStorage
+    try {
+      localStorage.removeItem('cargoradar_auth');
+      localStorage.removeItem('cargoradar_user');
+      localStorage.removeItem('cargoradar_tab');
+    } catch (e) {
+      console.error('Erro ao remover sessão do usuário do localStorage:', e);
+    }
+
     addLog('Logout', `Usuário ${username} saiu do sistema`, username);
   };
 
@@ -419,11 +653,24 @@ const App: React.FC = () => {
             onUpdateStatus={handleUpdateStatus} 
             onUpdateLoad={async (updatedLoad) => {
               const username = loggedInUser?.username || 'Sistema';
+
+              // Otimista: Atualiza localmente
+              setLoads((prev) => {
+                const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
+                try {
+                  localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
+                } catch (e) {
+                  console.error('Erro ao atualizar rota localmente:', e);
+                }
+                return updated;
+              });
+
               try {
                 await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
                 addLog('Atualização da Rota', `Carga ${updatedLoad.plate} atualizada no processo de rota por ${username}`, username, updatedLoad.id);
               } catch (err) {
-                handleFirestoreError(err, OperationType.UPDATE, 'loads/' + updatedLoad.id);
+                console.warn('Conexão instável. Rota atualizada localmente.', err);
+                addLog('Atualização da Rota (Local)', `Carga ${updatedLoad.plate} atualizada offline em rota por ${username}`, username, updatedLoad.id);
               }
             }}
           />
@@ -452,10 +699,11 @@ const App: React.FC = () => {
   return (
     <Layout 
       activeTab={activeTab} 
-      onTabChange={setActiveTab} 
+      onTabChange={handleTabChange} 
       onLogout={handleLogout}
       isAuthenticated={isAuthenticated}
       user={loggedInUser}
+      loads={loads}
     >
       <div className="animate-in fade-in duration-500">
         {renderContent()}

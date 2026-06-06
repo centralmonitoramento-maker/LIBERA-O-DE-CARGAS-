@@ -105,7 +105,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary-gold via-transparent to-transparent"></div>
         </div>
-        <div className="relative w-28 h-28 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-primary-gold overflow-hidden group hover:scale-105 transition-transform duration-500">
+        <div className="relative w-28 h-28 bg-white keep-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-primary-gold overflow-hidden group hover:scale-105 transition-transform duration-500">
           <img 
             src="/logo.png" 
             alt="Prev de Perdas" 

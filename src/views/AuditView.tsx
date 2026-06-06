@@ -16,7 +16,12 @@ import {
   Maximize2,
   X,
   History,
-  ShieldAlert
+  ShieldAlert,
+  Search,
+  Filter,
+  RotateCcw,
+  Columns,
+  PanelRight
 } from 'lucide-react';
 
 interface AuditViewProps {
@@ -52,7 +57,22 @@ export const AuditView: React.FC<AuditViewProps> = ({
     }
   }, [isAdmin, activeSubTab]);
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'split' | 'side-panel'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cargaRadarAuditViewMode');
+      if (saved === 'split' || saved === 'side-panel') return saved;
+    }
+    return 'split';
+  });
+
+  const handleSetViewMode = (mode: 'split' | 'side-panel') => {
+    setViewMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cargaRadarAuditViewMode', mode);
+    }
+  };
   const [occType, setOccType] = useState<OccurrenceType>(OccurrenceType.NONE);
+  const [customOccType, setCustomOccType] = useState('');
   const [occDescription, setOccDescription] = useState('');
   const [occPhoto, setOccPhoto] = useState<string | undefined>(undefined);
   const [sealInput, setSealInput] = useState('');
@@ -71,6 +91,54 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const activeStreamRef = useRef<MediaStream | null>(null);
 
+  // State for filtering logs
+  const [logStartDate, setLogStartDate] = useState<string>('');
+  const [logEndDate, setLogEndDate] = useState<string>('');
+  const [logActionFilter, setLogActionFilter] = useState<string>('all');
+  const [logUserFilter, setLogUserFilter] = useState<string>('all');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+
+  // Extract unique users and action types dynamically from the raw logs database
+  const uniqueLogUsers = Array.from(new Set(logs.map(l => l.username).filter(Boolean).sort())) as string[];
+  const uniqueLogActions = Array.from(new Set(logs.map(l => l.action).filter(Boolean).sort())) as string[];
+
+  // Apply sequential multi-criteria filtering to global log tracking system
+  const filteredLogs = logs.filter(log => {
+    // 1. Start Date cutoff check
+    if (logStartDate) {
+      const logDate = new Date(log.timestamp);
+      const startDate = new Date(logStartDate + 'T00:00:00');
+      if (logDate < startDate) return false;
+    }
+    // 2. End Date cutoff check
+    if (logEndDate) {
+      const logDate = new Date(log.timestamp);
+      const endDate = new Date(logEndDate + 'T23:59:59');
+      if (logDate > endDate) return false;
+    }
+
+    // 3. Action Type matching check
+    if (logActionFilter !== 'all' && log.action !== logActionFilter) {
+      return false;
+    }
+
+    // 4. Per-User tracking check
+    if (logUserFilter !== 'all' && log.username !== logUserFilter) {
+      return false;
+    }
+
+    // 5. Raw text/details match query (plates, descriptors, etc)
+    if (logSearchQuery.trim()) {
+      const query = logSearchQuery.toLowerCase();
+      const detailsMatch = (log.details || '').toLowerCase().includes(query) || 
+                           (log.action || '').toLowerCase().includes(query) || 
+                           (log.username || '').toLowerCase().includes(query);
+      if (!detailsMatch) return false;
+    }
+
+    return true;
+  });
+
   const selectedLoad = loads.find(l => l.id === selectedLoadId);
 
   const handleSaveOccurrence = () => {
@@ -78,6 +146,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
       // Basic validation: if occurrence is selected, seal input must not be empty
       if (occType !== OccurrenceType.NONE && !sealInput) {
         setError('Por favor, confirme o número do lacre antes de salvar.');
+        return;
+      }
+
+      // If OTHER is selected, text field is required
+      if (occType === OccurrenceType.OTHER && !customOccType.trim()) {
+        setError('Por favor, especifique a ocorrência no campo de texto.');
         return;
       }
 
@@ -100,7 +174,11 @@ export const AuditView: React.FC<AuditViewProps> = ({
         return;
       }
 
-      onUpdateOccurrence(selectedLoad.id, occType, occDescription, occPhoto);
+      const finalOccType = occType === OccurrenceType.OTHER 
+        ? (customOccType.trim() as OccurrenceType) 
+        : occType;
+
+      onUpdateOccurrence(selectedLoad.id, finalOccType, occDescription, occPhoto);
       setSaveFeedback(true);
       setTimeout(() => setSaveFeedback(false), 3000);
     }
@@ -110,7 +188,17 @@ export const AuditView: React.FC<AuditViewProps> = ({
     const load = loads.find(l => l.id === id);
     setSelectedLoadId(id);
     if (load) {
-      setOccType(load.occurrenceType || OccurrenceType.NONE);
+      const dbType = load.occurrenceType || OccurrenceType.NONE;
+      const isStandard = Object.values(OccurrenceType).includes(dbType);
+
+      if (dbType !== OccurrenceType.NONE && !isStandard) {
+        setOccType(OccurrenceType.OTHER);
+        setCustomOccType(dbType);
+      } else {
+        setOccType(dbType);
+        setCustomOccType('');
+      }
+
       setOccDescription(load.occurrenceDescription || '');
       setOccPhoto(load.occurrencePhoto);
       setSealInput('');
@@ -142,12 +230,24 @@ export const AuditView: React.FC<AuditViewProps> = ({
     // Header
     doc.setFontSize(18);
     doc.text('Event Log Report - CargaRadar', 14, 22);
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(`Generated on: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
+    
+    let subtitle = `Relatório gerado em: ${new Date().toLocaleString('pt-BR')}`;
+    const applied = [];
+    if (logStartDate) applied.push(`Início: ${new Date(logStartDate).toLocaleDateString('pt-BR')}`);
+    if (logEndDate) applied.push(`Fim: ${new Date(logEndDate).toLocaleDateString('pt-BR')}`);
+    if (logActionFilter !== 'all') applied.push(`Ação: ${logActionFilter}`);
+    if (logUserFilter !== 'all') applied.push(`Usuário: ${logUserFilter}`);
+    if (logSearchQuery.trim()) applied.push(`Termo: "${logSearchQuery}"`);
+    
+    if (applied.length > 0) {
+      subtitle += ` | Filtros: ${applied.join(', ')}`;
+    }
+    doc.text(subtitle, 14, 30);
     
     // Table
-    const tableData = logs.map(log => [
+    const tableData = filteredLogs.map(log => [
       new Date(log.timestamp).toLocaleString('pt-BR'),
       log.username,
       log.action,
@@ -634,11 +734,50 @@ export const AuditView: React.FC<AuditViewProps> = ({
       {activeSubTab === 'audit' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
           {/* List of released loads for audit */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[750px]">
-            <div className="p-5 border-b bg-slate-50/50 rounded-t-2xl">
-              <h3 className="font-bold text-slate-700">Histórico de Cargas</h3>
+          <div className={`${viewMode === 'split' ? 'lg:col-span-4' : 'lg:col-span-12'} bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[750px] transition-all duration-300`}>
+            <div className="p-5 border-b bg-slate-50/50 rounded-t-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-slate-700">Histórico de Cargas</h3>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Controle de Gate</p>
+              </div>
+              
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 gap-1 shadow-inner">
+                  <button
+                    onClick={() => handleSetViewMode('split')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 cursor-pointer border-0 ${
+                      viewMode === 'split'
+                        ? 'bg-primary-gold text-white shadow-md shadow-amber-500/10'
+                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                    }`}
+                    title="Layout Dividido (Lado a Lado)"
+                  >
+                    <Columns className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Dividido</span>
+                  </button>
+                  <button
+                    onClick={() => handleSetViewMode('side-panel')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 cursor-pointer border-0 ${
+                      viewMode === 'side-panel'
+                        ? 'bg-primary-gold text-white shadow-md shadow-amber-500/10'
+                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                    }`}
+                    title="Layout Isolar Painel Lateral"
+                  >
+                    <PanelRight className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Painel Lateral</span>
+                  </button>
+                </div>
+                <span className="text-[10px] font-black bg-primary-navy text-white px-2.5 py-1.5 rounded-lg uppercase tracking-widest shadow-sm">
+                  {loads.length} Cargas
+                </span>
+              </div>
             </div>
-            <div className="overflow-y-auto flex-1 p-3 space-y-3">
+            <div className={`overflow-y-auto flex-1 p-3 ${
+              viewMode === 'split' 
+                ? 'space-y-3' 
+                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-max align-start content-start placeholder-parent pb-16'
+            }`}>
               {loads.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-slate-400 italic">Sem registros no sistema.</div>
               ) : (
@@ -684,10 +823,40 @@ export const AuditView: React.FC<AuditViewProps> = ({
             </div>
           </div>
 
+          {/* Dynamic Backdrop for Side-Panel View */}
+          {viewMode === 'side-panel' && selectedLoadId && (
+            <div 
+              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-xs transition-opacity animate-in fade-in duration-300"
+              onClick={() => setSelectedLoadId(null)}
+            />
+          )}
+
           {/* Audit Form */}
-          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            {selectedLoad ? (
-              <div className="p-8 space-y-8 overflow-y-auto">
+          <div className={
+            viewMode === 'split'
+              ? 'lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[750px]'
+              : selectedLoadId
+                ? 'fixed inset-y-0 right-0 z-50 w-full max-w-4xl bg-white shadow-2xl flex flex-col h-full border-l border-slate-200 transition-all duration-300 animate-in slide-in-from-right'
+                : 'hidden'
+          }>
+            <div className="flex flex-col h-full overflow-hidden bg-white">
+              {viewMode === 'side-panel' && selectedLoad && (
+                <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-primary-navy tracking-widest bg-primary-gold px-2.5 py-1 rounded">Painel de Auditoria</span>
+                    <span className="text-xs font-black text-slate-800 uppercase font-mono tracking-tight">{selectedLoad.plate}</span>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedLoadId(null)}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1 border-0"
+                  >
+                    <X className="w-3.5 h-3.5 text-rose-600" />
+                    <span>FECHAR PAINEL</span>
+                  </button>
+                </div>
+              )}
+              {selectedLoad ? (
+                <div className="p-8 space-y-8 overflow-y-auto flex-1">
                 <div className="flex justify-between items-start border-b pb-6">
                   <div>
                     <h3 className="text-2xl font-black text-slate-800">{selectedLoad.plate}</h3>
@@ -790,13 +959,34 @@ export const AuditView: React.FC<AuditViewProps> = ({
                             <select 
                               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
                               value={occType}
-                              onChange={(e) => setOccType(e.target.value as OccurrenceType)}
+                              onChange={(e) => {
+                                const val = e.target.value as OccurrenceType;
+                                setOccType(val);
+                                if (val !== OccurrenceType.OTHER) {
+                                  setCustomOccType('');
+                                }
+                              }}
                             >
                               {Object.values(OccurrenceType).map(type => (
                                 <option key={type} value={type}>{type}</option>
                               ))}
                             </select>
                           </div>
+
+                          {occType === OccurrenceType.OTHER && (
+                            <div className="animate-in slide-in-from-top-2 duration-300">
+                              <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">
+                                Especificar Ocorrência <span className="text-red-500">*</span>
+                              </label>
+                              <input 
+                                type="text"
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-slate-500"
+                                placeholder="Especifique a ocorrência..."
+                                value={customOccType}
+                                onChange={(e) => setCustomOccType(e.target.value)}
+                              />
+                            </div>
+                          )}
 
                           {occType !== OccurrenceType.NONE && (
                             <div className="animate-in slide-in-from-top-2 duration-300">
@@ -906,14 +1096,16 @@ export const AuditView: React.FC<AuditViewProps> = ({
                               !sealInput || 
                               sealInput !== selectedLoad.sealNumber
                             )) ||
-                            ([OccurrenceType.SEAL_DISCREPANCY, OccurrenceType.CARGO_EXCHANGE, OccurrenceType.SEAL_TAMPERED].includes(occType) && !occDescription.trim())
+                            ([OccurrenceType.SEAL_DISCREPANCY, OccurrenceType.CARGO_EXCHANGE, OccurrenceType.SEAL_TAMPERED].includes(occType) && !occDescription.trim()) ||
+                            (occType === OccurrenceType.OTHER && !customOccType.trim())
                           }
                           className={`w-full font-black py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${
                             (occType !== OccurrenceType.NONE && (
                               !sealInput || 
                               sealInput !== selectedLoad.sealNumber
                             )) ||
-                            ([OccurrenceType.SEAL_DISCREPANCY, OccurrenceType.CARGO_EXCHANGE, OccurrenceType.SEAL_TAMPERED].includes(occType) && !occDescription.trim())
+                            ([OccurrenceType.SEAL_DISCREPANCY, OccurrenceType.CARGO_EXCHANGE, OccurrenceType.SEAL_TAMPERED].includes(occType) && !occDescription.trim()) ||
+                            (occType === OccurrenceType.OTHER && !customOccType.trim())
                             ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
                             : 'bg-primary-gold hover:bg-primary-gold/90 text-white border-b-4 border-primary-navy'
                           }`}
@@ -1051,6 +1243,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
                 <p className="text-slate-500 max-w-sm">Selecione uma carga na lista lateral para iniciar o processo de conferência final e registro de ocorrências.</p>
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1209,12 +1402,110 @@ export const AuditView: React.FC<AuditViewProps> = ({
             </div>
             <button 
               onClick={exportToPDF}
-              className="bg-primary-gold hover:bg-primary-gold/90 text-primary-navy text-[10px] font-black px-4 py-2 rounded-lg shadow-lg transition-all flex items-center gap-2"
+              className="bg-primary-gold hover:bg-primary-gold/90 text-primary-navy text-[10px] font-black px-4 py-2 rounded-lg shadow-lg transition-all flex items-center gap-2 cursor-pointer"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-              EXPORT PDF
+              EXPORTAR PDF
             </button>
           </div>
+
+          {/* Filtros de Rastreabilidade System */}
+          <div className="bg-slate-50 border-b border-slate-200 p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Intervalo de Datas */}
+              <div className="space-y-1.5 md:col-span-2 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Data de Início</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-white border border-slate-200 hover:border-slate-350 focus:border-primary-gold rounded-xl px-3 py-2 text-xs font-bold leading-none outline-none transition-all h-9"
+                    value={logStartDate}
+                    onChange={(e) => setLogStartDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Data de Fim</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-white border border-slate-200 hover:border-slate-350 focus:border-primary-gold rounded-xl px-3 py-2 text-xs font-bold leading-none outline-none transition-all h-9"
+                    value={logEndDate}
+                    onChange={(e) => setLogEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Tipo de Evento / Ação */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Tipo de Evento</label>
+                <select
+                  className="w-full bg-white border border-slate-200 focus:border-primary-gold rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all h-9 cursor-pointer"
+                  value={logActionFilter}
+                  onChange={(e) => setLogActionFilter(e.target.value)}
+                >
+                  <option value="all">TODAS AS AÇÕES</option>
+                  {uniqueLogActions.map((action, idx) => (
+                    <option key={idx} value={action}>{action.toUpperCase()}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Usuário de Destino/Origem */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Usuário Responsável</label>
+                <select
+                  className="w-full bg-white border border-slate-200 focus:border-primary-gold rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all h-9 cursor-pointer"
+                  value={logUserFilter}
+                  onChange={(e) => setLogUserFilter(e.target.value)}
+                >
+                  <option value="all">TODOS OS USUÁRIOS</option>
+                  {uniqueLogUsers.map((usr, idx) => (
+                    <option key={idx} value={usr}>{usr.toUpperCase()}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Segunda Linha: Busca Texto + Status */}
+            <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-slate-200/60 mt-2 justify-between items-center">
+              <div className="relative w-full sm:max-w-md">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <Search className="h-3.5 w-3.5 text-slate-400" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Pesquisar por detalhes, manifesto, placa..."
+                  className="w-full bg-white border border-slate-200 hover:border-slate-300 focus:border-primary-gold rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none transition-all h-9"
+                  value={logSearchQuery}
+                  onChange={(e) => setLogSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Limpar e Contagem de Resultados */}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <span className="text-[10px] text-slate-550 font-bold uppercase tracking-wider">
+                  Exibindo <strong className="font-extrabold text-primary-navy bg-slate-200/70 px-2 py-0.5 rounded-md">{filteredLogs.length}</strong> de {logs.length} ações
+                </span>
+                
+                {(logStartDate || logEndDate || logActionFilter !== 'all' || logUserFilter !== 'all' || logSearchQuery) && (
+                  <button
+                    onClick={() => {
+                      setLogStartDate('');
+                      setLogEndDate('');
+                      setLogActionFilter('all');
+                      setLogUserFilter('all');
+                      setLogSearchQuery('');
+                    }}
+                    className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200/50 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all cursor-pointer"
+                    title="Resetar todos os filtros"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    LIMPAR
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -1226,12 +1517,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.length === 0 ? (
+                {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-20 text-center text-slate-400 italic text-sm">Nenhum evento registrado.</td>
+                    <td colSpan={4} className="px-6 py-20 text-center text-slate-400 italic text-sm">Nenhum evento correspondente encontrado.</td>
                   </tr>
                 ) : (
-                  logs.map(log => (
+                  filteredLogs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 text-[10px] font-mono text-slate-500">{new Date(log.timestamp).toLocaleString()}</td>
                       <td className="px-6 py-4">

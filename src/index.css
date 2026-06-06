@@ -22,8 +22,116 @@
   }
 }
 
+:root {
+  --bg-app: #f8fafc; /* bg-slate-50 */
+  --bg-card: #ffffff; /* bg-white */
+  --text-main: #0f172a; /* text-slate-900 */
+  --text-muted: #475569; /* text-slate-600 */
+  --text-muted-more: #64748b; /* text-slate-500 */
+  --border-color: #e2e8f0; /* border-slate-200 */
+}
+
+.dark {
+  --bg-app: #0b1120; /* Deep blue/slate workspace background */
+  --bg-card: #151f32; /* Deep slate card background */
+  --text-main: #f8fafc; /* High contrast text */
+  --text-muted: #cbd5e1; /* Mid-tone adaptive text */
+  --text-muted-more: #94a3b8; /* Less contrast adaptive text */
+  --border-color: #1e293b; /* Dark slate divider/border */
+}
+
+@variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900;
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    @apply transition-colors duration-300;
   }
+}
+
+/* Elegant CSS adaptation layer for rapid dark context transformation without modifying 100 HTML trees */
+.dark .bg-slate-50,
+.dark .bg-slate-100/50,
+.dark .bg-slate-50/50,
+.dark .bg-slate-100 {
+  background-color: var(--bg-app);
+}
+
+.dark .bg-white:not(.keep-white) {
+  background-color: var(--bg-card);
+}
+
+.dark .border-slate-200,
+.dark .border-slate-300\/60,
+.dark .border-slate-300,
+.dark .border-slate-100 {
+  border-color: var(--border-color);
+}
+
+.dark .border-slate-100\/50,
+.dark .border-slate-100\/60 {
+  border-color: rgba(30, 41, 59, 0.5);
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-900\/90,
+.dark .text-slate-800\/90 {
+  color: var(--text-main);
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-slate-600\/80 {
+  color: var(--text-muted);
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: var(--text-muted-more);
+}
+
+.dark .text-primary-navy {
+  color: var(--text-main);
+}
+
+/* Keep shadows sharp and sleek in dark environment instead of fuzzy pale lines */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+}
+.dark .shadow,
+.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+}
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+}
+.dark .shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* Deep integrations for beautiful fields and inputs */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: var(--bg-app) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-muted-more) !important;
+}
+
+.dark option {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+}
+
+/* Modals, Floating Panes and Backdrop modifications */
+.dark .bg-white\/95,
+.dark .bg-white\/90 {
+  background-color: rgba(21, 31, 50, 0.95);
 }

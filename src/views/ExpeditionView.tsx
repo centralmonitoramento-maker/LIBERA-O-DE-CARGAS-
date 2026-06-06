@@ -15,7 +15,9 @@ import {
   ExternalLink, 
   Clock, 
   ArrowRight, 
-  Navigation 
+  Navigation,
+  Camera,
+  Trash2
 } from 'lucide-react';
 
 const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
@@ -451,6 +453,41 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
   const [parDescription, setParDescription] = useState('');
   const [error, setError] = useState('');
 
+  const [photoPlate, setPhotoPlate] = useState('');
+  const [photoSeal, setPhotoSeal] = useState('');
+  const [photoManifest, setPhotoManifest] = useState('');
+
+  const photoPlateInputRef = React.useRef<HTMLInputElement>(null);
+  const photoSealInputRef = React.useRef<HTMLInputElement>(null);
+  const photoManifestInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePhotoPlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPhotoPlate(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePhotoSealChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPhotoSeal(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePhotoManifestChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPhotoManifest(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const validatePlate = (p: string) => {
     const mercosulRegex = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
     const oldRegex = /^[A-Z]{3}[0-9]{4}$/;
@@ -544,6 +581,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
       parType: isHighRisk ? parType : undefined,
       parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
       parDescription: isHighRisk ? parDescription : undefined,
+      photoPlate: photoPlate || undefined,
+      photoSeal: photoSeal || undefined,
+      photoManifest: photoManifest || undefined,
     });
     
     // Reset form
@@ -557,6 +597,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
     setParType('');
     setParInvoiceNumber('');
     setParDescription('');
+    setPhotoPlate('');
+    setPhotoSeal('');
+    setPhotoManifest('');
   };
 
   const addDestination = () => {
@@ -1188,6 +1231,160 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Foto Anexo Section */}
+            <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl space-y-4 shadow-2xs">
+              <div>
+                <h3 className="text-xs font-black uppercase text-primary-navy tracking-wider">Evidências Fotográficas do Veículo e Viagem</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Anexe ou tire fotos em tempo real da Placa, Lacre e Romaneio para conferência da Central</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* 1. Placa Photo */}
+                <div className="flex flex-col space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">1. Foto da Placa</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    ref={photoPlateInputRef}
+                    onChange={handlePhotoPlateChange}
+                  />
+                  {photoPlate ? (
+                    <div className="relative h-40 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
+                      <img
+                        src={photoPlate}
+                        alt="Foto da Placa"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPhotoPlate('');
+                          if (photoPlateInputRef.current) photoPlateInputRef.current.value = '';
+                        }}
+                        className="absolute top-2.5 right-2.5 bg-red-650 hover:bg-red-500 text-white p-2 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
+                        title="Remover Foto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => photoPlateInputRef.current?.click()}
+                      className="h-40 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2.5 transition-all text-center group cursor-pointer"
+                    >
+                      <div className="p-3 bg-slate-50 group-hover:bg-primary-gold/15 rounded-xl transition-all">
+                        <Camera className="w-5 h-5 text-slate-400 group-hover:text-primary-gold transition-colors" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-primary-navy block uppercase tracking-wider">Tirar Foto / Anexar</span>
+                        <span className="text-[8px] text-slate-400 font-bold block mt-0.5 uppercase tracking-widest">Placa do Veículo</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                {/* 2. Lacre Photo */}
+                <div className="flex flex-col space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">2. Foto do Lacre</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    ref={photoSealInputRef}
+                    onChange={handlePhotoSealChange}
+                  />
+                  {photoSeal ? (
+                    <div className="relative h-40 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
+                      <img
+                        src={photoSeal}
+                        alt="Foto do Lacre"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPhotoSeal('');
+                          if (photoSealInputRef.current) photoSealInputRef.current.value = '';
+                        }}
+                        className="absolute top-2.5 right-2.5 bg-red-650 hover:bg-red-500 text-white p-2 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
+                        title="Remover Foto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => photoSealInputRef.current?.click()}
+                      className="h-40 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2.5 transition-all text-center group cursor-pointer"
+                    >
+                      <div className="p-3 bg-slate-50 group-hover:bg-primary-gold/15 rounded-xl transition-all">
+                        <Camera className="w-5 h-5 text-slate-400 group-hover:text-primary-gold transition-colors" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-primary-navy block uppercase tracking-wider">Tirar Foto / Anexar</span>
+                        <span className="text-[8px] text-slate-400 font-bold block mt-0.5 uppercase tracking-widest">Lacre de Viagem</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                {/* 3. Romaneio Photo */}
+                <div className="flex flex-col space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">3. Foto do Romaneio</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    ref={photoManifestInputRef}
+                    onChange={handlePhotoManifestChange}
+                  />
+                  {photoManifest ? (
+                    <div className="relative h-40 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
+                      <img
+                        src={photoManifest}
+                        alt="Foto do Romaneio"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPhotoManifest('');
+                          if (photoManifestInputRef.current) photoManifestInputRef.current.value = '';
+                        }}
+                        className="absolute top-2.5 right-2.5 bg-red-650 hover:bg-red-500 text-white p-2 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
+                        title="Remover Foto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => photoManifestInputRef.current?.click()}
+                      className="h-40 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2.5 transition-all text-center group cursor-pointer"
+                    >
+                      <div className="p-3 bg-slate-50 group-hover:bg-primary-gold/15 rounded-xl transition-all">
+                        <Camera className="w-5 h-5 text-slate-400 group-hover:text-primary-gold transition-colors" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-primary-navy block uppercase tracking-wider">Tirar Foto / Anexar</span>
+                        <span className="text-[8px] text-slate-400 font-bold block mt-0.5 uppercase tracking-widest">Romaneio / Manifesto</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <button

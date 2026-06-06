@@ -2,7 +2,7 @@
 export enum CargoStatus {
   AWAITING = 'AGUARDANDO CONFERÊNCIA',
   RELEASED = 'CARGA LIBERADA',
-  BLOCKED = 'CARGA BLOQUEADA'
+  BLOCKED = 'ALERTA DE DIVERGÊNCIA'
 }
 
 export enum CargoType {
@@ -19,6 +19,15 @@ export enum OccurrenceType {
   CARGO_EXCHANGE = 'Troca de Cargas',
   SEAL_TAMPERED = 'Lacre Rompido/Trocado',
   QUANTITY_DISCREPANCY = 'Divergência de Quantidade',
+  PNEU_FURADO = 'Pneu furando',
+  PROBLEMAS_MECANICOS = 'Problemas mecânicos',
+  DESVIO_ROTA = 'Desvio de rota',
+  CARGA_ATRASADA = 'Carga atrasada',
+  LACRE_ROMPIDO = 'Lacre rompido',
+  ABERTURA_SEM_AUTORIZACAO = 'Abertura sem autorização',
+  CARGA_SEM_RASTREIO = 'Carga sem rastreio',
+  FALTA_PALETES = 'Falta de paletes',
+  SOBRA_PALETES = 'Sobra de paletes',
   OTHER = 'Outros'
 }
 
@@ -44,6 +53,9 @@ export interface CargoLoad {
   status: CargoStatus;
   createdAt: string;
   createdBy: string; // Username of the expedition user
+  photoPlate?: string;
+  photoSeal?: string;
+  photoManifest?: string;
   occurrenceType?: OccurrenceType;
   occurrenceDescription?: string;
   occurrencePhoto?: string;

@@ -20,7 +20,12 @@ import {
   AlertTriangle,
   GripVertical,
   Car,
-  FileText
+  FileText,
+  Camera,
+  Columns,
+  PanelRight,
+  History,
+  ImageOff
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -422,6 +427,21 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<CargoStatus | 'ALL'>('ALL');
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'split' | 'side-panel'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cargaRadarViewMode');
+      if (saved === 'split' || saved === 'side-panel') return saved;
+    }
+    return 'split';
+  });
+
+  const handleSetViewMode = (mode: 'split' | 'side-panel') => {
+    setViewMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cargaRadarViewMode', mode);
+    }
+  };
+
   const [routeSummary, setRouteSummary] = useState<string>('');
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [mapMode, setMapMode] = useState<'api' | 'free'>('free');
@@ -440,6 +460,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [showReorderCentralPanel, setShowReorderCentralPanel] = useState<boolean>(false);
   const [showTrafficAlertsPanel, setShowTrafficAlertsPanel] = useState<boolean>(false);
   const [trafficPeakSimulation, setTrafficPeakSimulation] = useState<boolean>(true);
+
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showOccurrencesModal, setShowOccurrencesModal] = useState<boolean>(false);
 
   const handleReorderTargets = (fromIndex: number, toIndex: number) => {
     if (!selectedLoad) return;
@@ -1444,7 +1467,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               </span>
             </div>
             <p className="text-[10px] font-bold text-slate-500">
-              {centralStats.releasedCount} liberadas • {centralStats.blockedCount} bloqueadas
+              {centralStats.releasedCount} liberadas • {centralStats.blockedCount} com divergência
             </p>
           </div>
           <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600">
@@ -1455,18 +1478,49 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
       {/* List Section */}
-      <div className="lg:col-span-4 space-y-6">
+      <div className={`${viewMode === 'split' ? 'lg:col-span-4' : 'lg:col-span-12'} space-y-6 transition-all duration-300`}>
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-[750px] flex flex-col">
-          <div className="p-6 border-b bg-primary-navy flex items-center justify-between">
+          <div className="p-6 border-b bg-primary-navy flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary-gold rounded-lg">
                 <LayoutDashboard className="w-5 h-5 text-primary-navy" />
               </div>
-              <h3 className="text-sm font-black uppercase tracking-tight text-white">Monitoramento</h3>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-tight text-white">Monitoramento</h3>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Tempo Real</p>
+              </div>
             </div>
-            <span className="text-[10px] font-black bg-primary-gold text-white px-2 py-1 rounded-full uppercase tracking-widest shadow-sm">
-              {filteredLoads.length} Cargas
-            </span>
+            <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
+              <div className="bg-slate-900/40 p-1 rounded-xl flex items-center border border-white/5 gap-1 shadow-inner">
+                <button
+                  onClick={() => handleSetViewMode('split')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 cursor-pointer border-0 ${
+                    viewMode === 'split'
+                      ? 'bg-primary-gold text-primary-navy shadow-md shadow-amber-500/10'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="Layout Dividido (Lado a Lado)"
+                >
+                  <Columns className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Dividido</span>
+                </button>
+                <button
+                  onClick={() => handleSetViewMode('side-panel')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 cursor-pointer border-0 ${
+                    viewMode === 'side-panel'
+                      ? 'bg-primary-gold text-primary-navy shadow-md shadow-amber-500/10'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="Layout Isolar Painel Lateral"
+                >
+                  <PanelRight className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Painel Lateral</span>
+                </button>
+              </div>
+              <span className="text-[10px] font-black bg-primary-gold text-white px-2.5 py-1.5 rounded-lg uppercase tracking-widest shadow-sm">
+                {filteredLoads.length} Cargas
+              </span>
+            </div>
           </div>
 
           <div className="p-4 space-y-4 border-b bg-white">
@@ -1501,11 +1555,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 },
                 { 
                   key: CargoStatus.BLOCKED, 
-                  label: 'BLOQUEADOS', 
+                  label: 'DIVERGÊNCIAS', 
                   count: loads.filter(l => l.status === CargoStatus.BLOCKED).length, 
-                  activeBg: 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-600/20', 
-                  hoverBg: 'hover:bg-red-100',
-                  dotColor: 'bg-red-500'
+                  activeBg: 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20', 
+                  hoverBg: 'hover:bg-orange-100',
+                  dotColor: 'bg-orange-500'
                 }
               ].map((item) => (
                 <button
@@ -1533,7 +1587,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
             </div>
           </div>
 
-          <div className="flex-grow overflow-y-auto p-4 space-y-3">
+          <div className={`flex-grow overflow-y-auto p-4 ${
+            viewMode === 'split' 
+              ? 'space-y-3' 
+              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-max align-start content-start placeholder-parent pb-16'
+          }`}>
             {filteredLoads.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
                 <Search className="w-12 h-12 text-slate-300" />
@@ -1559,15 +1617,15 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       load.status === CargoStatus.RELEASED 
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
                         : load.status === CargoStatus.BLOCKED 
-                          ? 'bg-red-50 text-red-700 border border-red-100' 
+                          ? 'bg-orange-50 text-orange-700 border border-orange-200 animate-pulse' 
                           : 'bg-amber-50 text-amber-700 border border-amber-100'
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${
                         load.status === CargoStatus.RELEASED ? 'bg-emerald-500' :
-                        load.status === CargoStatus.BLOCKED ? 'bg-red-500' : 'bg-amber-500'
+                        load.status === CargoStatus.BLOCKED ? 'bg-orange-500' : 'bg-amber-500'
                       }`} />
                       {load.status === CargoStatus.RELEASED ? 'LIBERADO' :
-                       load.status === CargoStatus.BLOCKED ? 'BLOQUEADO' : 'AGUARDANDO'}
+                       load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 'AGUARDANDO'}
                     </span>
                   </div>
                   
@@ -1592,9 +1650,42 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         </div>
       </div>
 
+      {/* Dynamic Backdrop for Side-Panel View */}
+      {viewMode === 'side-panel' && selectedLoadId && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-xs transition-opacity animate-in fade-in duration-300"
+          onClick={() => setSelectedLoadId(null)}
+        />
+      )}
+
       {/* Details Section */}
-      <div className="lg:col-span-8 space-y-6">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-[750px] flex flex-col">
+      <div className={
+        viewMode === 'split'
+          ? 'lg:col-span-8 space-y-6'
+          : selectedLoadId
+            ? 'fixed inset-y-0 right-0 z-50 w-full max-w-4xl bg-white shadow-2xl flex flex-col h-full border-l border-slate-200 transition-all duration-300 animate-in slide-in-from-right'
+            : 'hidden'
+      }>
+        <div className={
+          viewMode === 'split'
+            ? 'bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-[750px] flex flex-col'
+            : 'bg-white flex flex-col h-full overflow-hidden'
+        }>
+          {viewMode === 'side-panel' && selectedLoad && (
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-primary-navy tracking-widest bg-primary-gold px-2.5 py-1 rounded">Painel de Conferência</span>
+                <span className="text-xs font-black text-slate-800 uppercase font-mono tracking-tight">{selectedLoad.plate}</span>
+              </div>
+              <button 
+                onClick={() => setSelectedLoadId(null)}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1 border-0"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>FECHAR PAINEL</span>
+              </button>
+            </div>
+          )}
           {selectedLoad ? (
             <div className="flex-grow overflow-y-auto">
               <div className="p-8 bg-primary-navy text-white relative h-40 flex items-center">
@@ -1618,6 +1709,15 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </div>
                   <div className="flex flex-col md:items-end gap-2 shrink-0">
                     <div className="flex items-center gap-2">
+                      <button
+                        id="view-load-details-modal-btn"
+                        onClick={() => setShowOccurrencesModal(true)}
+                        className="bg-slate-800 hover:bg-slate-705 text-white text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5 shadow-md border border-slate-700 cursor-pointer"
+                        title="Visualizar Histórico Completo de Ocorrências e Detalhes da Carga"
+                      >
+                        <History className="w-3.5 h-3.5 text-primary-gold" />
+                        <span>Ver Ocorrências ({selectedLoad.occurrenceHistory?.length || 0})</span>
+                      </button>
                       <button
                         id="export-manifest-summary-btn"
                         onClick={handleExportManifest}
@@ -2301,6 +2401,64 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 </div>
               )}
 
+              {/* Evidências Fotográficas da Expedição (Placa, Lacre, Romaneio) */}
+              {(selectedLoad.photoPlate || selectedLoad.photoSeal || selectedLoad.photoManifest) && (
+                <div className="px-8 pb-8">
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Camera className="w-5 h-5 text-primary-gold" />
+                      <h3 className="text-xs font-black uppercase text-slate-705 tracking-wider">Evidências Fotográficas da Expedição</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {selectedLoad.photoPlate && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">1. Placa do Veículo</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => setPreviewImage(selectedLoad.photoPlate || null)}
+                          >
+                            <img src={selectedLoad.photoPlate} alt="Placa do Veículo" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedLoad.photoSeal && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">2. Lacre de Segurança</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => setPreviewImage(selectedLoad.photoSeal || null)}
+                          >
+                            <img src={selectedLoad.photoSeal} alt="Lacre de Segurança" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedLoad.photoManifest && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">3. Romaneio / Manifesto</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => setPreviewImage(selectedLoad.photoManifest || null)}
+                          >
+                            <img src={selectedLoad.photoManifest} alt="Romaneio / Manifesto" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="p-8 border-t bg-slate-50/50 mt-auto">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Ações de Controle Central</h3>
@@ -2494,12 +2652,12 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 )}
 
                 {selectedLoad.status === CargoStatus.BLOCKED && (
-                  <div className="mb-6 bg-red-50 border border-red-200 rounded-3xl p-6 flex items-start gap-3 text-red-800">
-                    <XCircle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="mb-6 bg-orange-50 border border-orange-200 rounded-3xl p-6 flex items-start gap-3 text-orange-800 animate-pulse">
+                    <AlertTriangle className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="text-xs font-black uppercase tracking-wider">Carga Bloqueada pela Central</h4>
+                      <h4 className="text-xs font-black uppercase tracking-wider">Alerta de Divergência Ativo</h4>
                       <p className="text-[11px] font-medium text-slate-600 mt-0.5">
-                        Esta carga foi suspensa para auditoria interna ou averiguação de divergência crítica.
+                        Esta carga possui um alerta de divergência registrado para a auditoria. A liberação do veículo continua sendo permitida.
                       </p>
                     </div>
                   </div>
@@ -2570,15 +2728,17 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </button>
                   <button
                     onClick={() => onUpdateStatus(selectedLoad.id, CargoStatus.BLOCKED)}
-                    disabled={selectedLoad.status === CargoStatus.BLOCKED || selectedLoad.status === CargoStatus.RELEASED}
+                    disabled={selectedLoad.status === CargoStatus.RELEASED}
                     className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer ${
-                      selectedLoad.status === CargoStatus.BLOCKED || selectedLoad.status === CargoStatus.RELEASED
-                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                        : 'bg-red-600 hover:bg-red-500 text-white'
+                      selectedLoad.status === CargoStatus.RELEASED
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        : selectedLoad.status === CargoStatus.BLOCKED
+                          ? 'bg-orange-100 border border-orange-300 text-orange-800'
+                          : 'bg-orange-600 hover:bg-orange-500 text-white'
                     }`}
                   >
-                    <XCircle className="w-5 h-5" />
-                    BLOQUEAR CARGA
+                    <AlertTriangle className="w-5 h-5" />
+                    {selectedLoad.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA ALERTADA' : 'ALERTAR DIVERGÊNCIA'}
                   </button>
                 </div>
               </div>
@@ -2597,6 +2757,226 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         </div>
       </div>
     </div>
+
+    {/* Modal Detalhes da Carga & Histórico de Ocorrências */}
+    {showOccurrencesModal && selectedLoad && (
+      <div 
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300"
+        onClick={() => setShowOccurrencesModal(false)}
+      >
+        <div 
+          className="relative max-w-3xl w-full max-h-[85vh] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-slate-50 p-6 border-b border-slate-200/80 flex justify-between items-start">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-black text-slate-400 tracking-widest block">Ficha & Histórico</span>
+              <h3 className="font-sans text-xl font-black text-slate-800 tracking-tight">Detalhes & Ocorrências da Carga</h3>
+              <p className="text-xs text-slate-500 font-medium">Visualização detalhada da auditoria, ocorrências e trajeto para esta placa.</p>
+            </div>
+            <button
+              onClick={() => setShowOccurrencesModal(false)}
+              className="bg-slate-250/60 hover:bg-slate-200 text-slate-500 hover:text-slate-700 p-2 rounded-xl transition-all duration-200 cursor-pointer border-0"
+              title="Fechar Detalhes"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-grow overflow-y-auto p-6 md:p-8 space-y-8 max-h-[60vh]">
+            {/* Informações Gerais da Carga Panel */}
+            <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 grid grid-cols-2 sm:grid-cols-3 gap-6">
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Placa do Veículo</p>
+                <div className="flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm font-black text-slate-800 font-mono tracking-tight">{selectedLoad.plate}</span>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nome do Motorista</p>
+                <span className="text-sm font-bold text-slate-700 block truncate">{selectedLoad.driverName}</span>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">ID do Manifesto</p>
+                <span className="text-sm font-mono font-bold text-slate-500 block">#{selectedLoad.id.slice(0, 12).toUpperCase()}</span>
+              </div>
+
+              <div className="col-span-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Rota Logística</p>
+                <span className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                  {selectedLoad.origin} ➔ {selectedLoad.destination}
+                </span>
+                {selectedLoad.additionalDestinations && selectedLoad.additionalDestinations.length > 0 && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-bold">
+                    Destinos adicionais: {selectedLoad.additionalDestinations.join(', ')}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status Atual</p>
+                <span className={`inline-flex px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                  selectedLoad.status === CargoStatus.RELEASED ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                  selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 border border-red-100 animate-pulse' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                }`}>
+                  {selectedLoad.status}
+                </span>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Número do Lacre</p>
+                <span className="text-sm font-mono font-black text-slate-700">{selectedLoad.sealNumber}</span>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Paletes & Carga</p>
+                <span className="text-xs font-bold text-slate-700 block truncate">{selectedLoad.palletCount} Pls ({selectedLoad.cargoType})</span>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registrado por</p>
+                <span className="text-xs font-bold text-slate-600 block">{selectedLoad.createdBy}</span>
+              </div>
+            </div>
+
+            {/* Histórico completo de ocorrências */}
+            <div className="space-y-4">
+              <h4 className="font-sans font-black text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2 pb-2 border-b border-slate-100">
+                <History className="w-5 h-5 text-primary-gold" />
+                Linha do Tempo de Ocorrências ({selectedLoad.occurrenceHistory?.length || 0})
+              </h4>
+
+              {selectedLoad.occurrenceHistory && selectedLoad.occurrenceHistory.length > 0 ? (
+                <div className="relative border-l-2 border-slate-150 ml-4 pl-6 space-y-6">
+                  {selectedLoad.occurrenceHistory.map((occ, idx) => {
+                    const isNormal = occ.type === OccurrenceType.NONE;
+                    return (
+                      <div key={idx} className="relative">
+                        {/* Timeline node */}
+                        <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
+                          isNormal ? 'bg-emerald-500' : 'bg-red-500'
+                        }`} />
+                        
+                        <div className={`p-5 rounded-2xl border ${
+                          isNormal 
+                            ? 'bg-emerald-50/20 hover:bg-emerald-50/40 border-emerald-100' 
+                            : 'bg-red-50/10 hover:bg-red-50/20 border-red-100'
+                        } transition-colors duration-200`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2 mb-3">
+                            <span className={`inline-flex text-[9px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider ${
+                              isNormal ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {occ.type}
+                            </span>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-slate-400 text-[10px] font-bold">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5" />
+                                {new Date(occ.timestamp).toLocaleString('pt-BR')}
+                              </span>
+                              <span className="hidden sm:inline">•</span>
+                              <span className="bg-slate-105 text-slate-600 px-2 py-0.5 rounded-md uppercase font-mono">
+                                Auditor: {occ.auditor}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-4 items-start">
+                            {/* Evidence Photo */}
+                            {occ.photo && (
+                              <div 
+                                className="w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer group relative shrink-0"
+                                onClick={() => setPreviewImage(occ.photo || null)}
+                                title="Expandir imagem"
+                              >
+                                <img src={occ.photo} alt="Evidência" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                                  <Camera className="w-4 h-4" />
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex-grow">
+                              <p className="text-xs text-slate-700 leading-relaxed font-semibold">
+                                {occ.description || 'Nenhum detalhe adicional inserido.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback section if no occurrenceHistory array but has localized occurrence flags */
+                selectedLoad.occurrenceType && selectedLoad.occurrenceType !== OccurrenceType.NONE ? (
+                  <div className="p-5 rounded-2xl border border-red-100 bg-red-50/20">
+                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-red-100">
+                      <span className="bg-red-105 text-red-800 text-[10px] font-black px-2.5 py-0.5 rounded uppercase font-sans">
+                        {selectedLoad.occurrenceType}
+                      </span>
+                      <span className="text-slate-400 text-[10px] font-mono">
+                        {selectedLoad.auditedAt ? new Date(selectedLoad.auditedAt).toLocaleString('pt-BR') : 'Sem data registrada'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-705 leading-relaxed font-medium">
+                      {selectedLoad.occurrenceDescription || 'Ocorrência registrada no sistema, sem notas adicionais.'}
+                    </p>
+                  </div>
+                ) : (
+                  /* Compliant state */
+                  <div className="flex flex-col items-center justify-center text-center p-8 bg-emerald-50/10 border border-dashed border-emerald-200 rounded-3xl space-y-3">
+                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center animate-bounce">
+                      <ShieldCheck className="w-6 h-6 text-emerald-500" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-black text-slate-800 uppercase tracking-tight">Carga Sem Divergências</h5>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium mt-1">Esta carga está em perfeita conformidade. Nenhuma ocorrência ou irregularidade foi registrada durante o processo de auditoria de lacres/documentos.</p>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="bg-slate-50 p-6 border-t border-slate-200/80 flex justify-end gap-3 rounded-b-3xl">
+            <button
+              onClick={() => setShowOccurrencesModal(false)}
+              className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-3 px-6 text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer border-0 shadow-sm"
+            >
+              Fechar Detalhes
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Imagem Modal Preview */}
+    {previewImage && (
+      <div 
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm shadow-2xl p-4 animate-in fade-in duration-300 select-none"
+        onClick={() => setPreviewImage(null)}
+      >
+        <div 
+          className="relative max-w-4xl max-h-[90vh] bg-slate-900 border border-white/10 p-4 rounded-3xl shadow-2xl flex flex-col items-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-full transition-all duration-300 cursor-pointer border-0"
+            title="Fechar Visualização"
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+          <img src={previewImage} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-2xl" />
+        </div>
+      </div>
+    )}
    </div>
   );
 };
