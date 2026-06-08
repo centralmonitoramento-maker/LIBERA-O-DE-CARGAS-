@@ -86,7 +86,10 @@ service cloud.firestore {
              data.senderRole is string &&
              data.senderRoleLabel is string &&
              data.timestamp is string && data.timestamp.size() <= 64 &&
-             data.areaTarget is string;
+             data.areaTarget is string &&
+             (!data.keys().hasAny(['isDirect']) || data.isDirect is bool) &&
+             (!data.keys().hasAny(['userTarget']) || (data.userTarget is string && data.userTarget.size() <= 128)) &&
+             (!data.keys().hasAny(['userTargetName']) || (data.userTargetName is string && data.userTargetName.size() <= 256));
     }
 
     // User Collection Rules

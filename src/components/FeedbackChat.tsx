@@ -25,7 +25,10 @@ import {
   Filter, 
   Check, 
   ArrowDown, 
-  Users
+  Users,
+  Star,
+  Search,
+  ArrowLeft
 } from 'lucide-react';
 import { db, sanitizeFirestoreData, handleFirestoreError, OperationType } from '../firebase';
 import { User } from '../types';
@@ -44,6 +47,9 @@ interface FeedbackMessage {
   attachmentName?: string;
   attachmentType?: string;
   areaTarget: 'all' | 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
+  isDirect?: boolean;
+  userTarget?: string;
+  userTargetName?: string;
 }
 
 interface FeedbackChatProps {
@@ -128,6 +134,40 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
 
+  // Contacts, Favorites and Target chat states
+  const [currentTab, setCurrentTab] = useState<'messages' | 'contacts'>('messages');
+  const [activeChat, setActiveChat] = useState<{ type: 'group' } | { type: 'direct'; user: User }>({ type: 'group' });
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`cargoradar_favs_${currentUser?.username || 'default'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Load real-time active users list for contact book
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const list: User[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data() as User;
+        // Save only active users, and do not list current user
+        if (data.status === 'active' && data.username !== currentUser.username) {
+          list.push(data);
+        }
+      });
+      setAllUsers(list);
+    }, (error) => {
+      console.error('Erro ao escutar usuários para lista de contatos:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
   // Load real-time feedback messages
   useEffect(() => {
     const q = query(
@@ -144,8 +184,22 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       setMessages(msgs);
 
       // Automatically compute unread count when chat is closed
-      if (!isOpen) {
-        const unread = msgs.filter(m => m.timestamp > lastReadTimestamp && m.senderUsername !== currentUser?.username);
+      if (!isOpen && currentUser) {
+        const userRole = currentUser.role;
+        const unread = msgs.filter((m) => {
+          if (m.timestamp <= lastReadTimestamp) return false;
+          if (m.senderUsername === currentUser.username) return false;
+
+          if (m.isDirect) {
+            return m.userTarget === currentUser.username;
+          } else {
+            const isPublic = m.areaTarget === 'all';
+            const isToMyRole = m.areaTarget === userRole;
+            const isFromMyRole = m.senderRole === userRole;
+            const isFromMe = m.senderUsername === currentUser.username;
+            return isPublic || isToMyRole || isFromMyRole || isFromMe;
+          }
+        });
         setUnreadCount(unread.length);
       }
     }, (error) => {
@@ -154,7 +208,17 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     });
 
     return () => unsubscribe();
-  }, [isOpen, lastReadTimestamp, currentUser?.username]);
+  }, [isOpen, lastReadTimestamp, currentUser]);
+
+  // Toggle favorite usernames in local storage
+  const toggleFavorite = (username: string) => {
+    setFavorites((prev) => {
+      const isFav = prev.includes(username);
+      const updated = isFav ? prev.filter((u) => u !== username) : [...prev, username];
+      localStorage.setItem(`cargoradar_favs_${currentUser?.username || 'default'}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Handle Mark as Read when opening the chat
   useEffect(() => {
@@ -176,7 +240,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     if (isOpen) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages.length, isOpen]);
+  }, [messages.length, isOpen, activeChat]);
 
   // File Upload Conversion to Base64
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,6 +354,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     const senderRole = currentUser.role || 'expedition';
     const roleDetails = ROLE_DETAILS_MAP[senderRole] || { label: 'Colaborador' };
 
+    // Dynamic messaging schema structure targeting either a role area or a specific contact
     const newMsg: FeedbackMessage = {
       id: generateMessageId(),
       text: trimText || undefined,
@@ -298,7 +363,12 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       senderRole,
       senderRoleLabel: roleDetails.label,
       timestamp: new Date().toISOString(),
-      areaTarget,
+      areaTarget: activeChat.type === 'direct' ? activeChat.user.role : areaTarget,
+      ...(activeChat.type === 'direct' ? {
+        isDirect: true,
+        userTarget: activeChat.user.username,
+        userTargetName: activeChat.user.fullName || activeChat.user.username
+      } : {}),
       ...(audioBase64 ? { audio: audioBase64, audioDuration: recordingDuration } : {}),
       ...(attachment ? { 
         attachment, 
@@ -321,7 +391,6 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       setAttachmentType('');
       setAudioBase64(null);
       setRecordingDuration(0);
-      setAreaTarget('all');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -388,16 +457,40 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
   // Filtered messages
   const filteredMessages = useMemo(() => {
     if (!currentUser) return [];
-    if (filterTarget === 'all') return messages;
 
-    // Filter directed/sent by my role or targeting all
-    const userRole = currentUser.role;
-    return messages.filter((m) => {
-      const isFromMe = m.senderUsername === currentUser.username;
-      const isToMe = m.areaTarget === 'all' || m.areaTarget === userRole;
-      return isFromMe || isToMe;
-    });
-  }, [messages, filterTarget, currentUser]);
+    if (activeChat.type === 'group') {
+      // Group channels matching filters
+      const groupMsgs = messages.filter((m) => {
+        if (m.isDirect) return false;
+
+        const isPublic = m.areaTarget === 'all';
+        const isToMyRole = m.areaTarget === currentUser.role;
+        const isFromMyRole = m.senderRole === currentUser.role;
+        const isFromMe = m.senderUsername === currentUser.username;
+
+        // Message visibility isolation: only public operational channels, or targeted to/from current role/user are received/displayed
+        return isPublic || isToMyRole || isFromMyRole || isFromMe;
+      });
+
+      if (filterTarget === 'all') {
+        return groupMsgs;
+      } else {
+        // Enforce localized category filter (Minha Área)
+        return groupMsgs.filter((m) => m.areaTarget === currentUser.role || m.senderRole === currentUser.role);
+      }
+    } else {
+      // Direct messaging 1-to-1 secure private conversation history
+      const targetUser = activeChat.user;
+      return messages.filter((m) => {
+        if (!m.isDirect) return false;
+
+        const isFromMeToTarget = m.senderUsername === currentUser.username && m.userTarget === targetUser.username;
+        const isFromTargetToMe = m.senderUsername === targetUser.username && m.userTarget === currentUser.username;
+
+        return isFromMeToTarget || isFromTargetToMe;
+      });
+    }
+  }, [messages, activeChat, filterTarget, currentUser]);
 
   if (!currentUser) return null;
 
@@ -406,6 +499,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       {/* Persistent Floating Trigger Button */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
+          id="chat-floating-trigger"
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={`relative w-14 h-14 rounded-full bg-primary-navy text-white flex items-center justify-center shadow-2xl border-2 border-primary-gold hover:scale-105 hover:bg-slate-900 active:scale-95 transition-all cursor-pointer group`}
@@ -428,19 +522,48 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
 
       {/* Floating Chat Panel Drawer */}
       {isOpen && (
-        <div className="fixed bottom-24 right-4 sm:right-6 md:right-8 w-[92vw] sm:w-[450px] h-[75vh] max-h-[640px] bg-white rounded-3xl border border-slate-200/80 shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 duration-300">
+        <div id="chat-panel-container" className="fixed bottom-24 right-4 sm:right-6 md:right-8 w-[92vw] sm:w-[450px] h-[75vh] max-h-[640px] bg-white rounded-3xl border border-slate-200/80 shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 duration-300">
           
           {/* Header Banner */}
           <div className="bg-primary-navy p-4 text-white flex items-center justify-between border-b border-primary-navy/40 relative">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shadow-inner border border-primary-gold animate-pulse">
-                <MessageSquare className="w-5 h-5 text-slate-900" />
+            {activeChat.type === 'direct' ? (
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveChat({ type: 'group' })}
+                  className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Voltar para Canais"
+                >
+                  <ArrowLeft className="w-5 h-5 animate-pulse" />
+                </button>
+                <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center font-black text-slate-900 border border-primary-gold relative">
+                  {(activeChat.user.fullName || activeChat.user.username).substring(0, 2).toUpperCase()}
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white"></span>
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary-gold">
+                    {activeChat.user.fullName || activeChat.user.username}
+                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-extrabold text-slate-300 uppercase">
+                      {ROLE_DETAILS_MAP[activeChat.user.role]?.label || activeChat.user.role}
+                    </span>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+                    <span className="text-[8px] font-black text-primary-gold uppercase tracking-widest bg-slate-900/40 px-1 py-0.2 rounded border border-primary-gold">Conversa Direta</span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-primary-gold">Feedbacks Interativos</h3>
-                <p className="text-[10px] font-bold text-slate-300">Comunicação e Alertas de Gate</p>
+            ) : (
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shadow-inner border border-primary-gold animate-pulse">
+                  <MessageSquare className="w-5 h-5 text-slate-900" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary-gold">Feedbacks Interativos</h3>
+                  <p className="text-[10px] font-bold text-slate-300">Comunicação e Alertas de Gate</p>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center gap-2">
               {/* Close Button */}
@@ -454,342 +577,594 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* Filter Bar */}
-          <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2 text-slate-600">
-            <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1">
-              <Filter className="w-3 h-3 text-slate-400" /> Filtros:
-            </span>
-            <div className="flex gap-1">
+          {/* Tab Switcher - Only shown in Group channel mode */}
+          {activeChat.type === 'group' && (
+            <div className="grid grid-cols-2 bg-slate-100 border-b border-slate-200 text-slate-600">
               <button
                 type="button"
-                onClick={() => setFilterTarget('all')}
-                className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md transition-all cursor-pointer ${
-                  filterTarget === 'all' 
-                    ? 'bg-primary-navy text-white shadow-xs' 
-                    : 'bg-slate-200/60 hover:bg-slate-200 text-slate-600'
+                onClick={() => setCurrentTab('messages')}
+                className={`py-2.5 text-xs font-black uppercase tracking-wide flex items-center justify-center gap-2 transition-all border-b-2 cursor-pointer ${
+                  currentTab === 'messages'
+                    ? 'border-primary-navy text-primary-navy bg-white font-black'
+                    : 'border-transparent hover:bg-slate-50 text-slate-500'
                 }`}
               >
-                Todos ({messages.length})
+                <MessageSquare className="w-4 h-4" />
+                Mensagens
               </button>
               <button
                 type="button"
-                onClick={() => setFilterTarget('my-area')}
-                className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md transition-all cursor-pointer ${
-                  filterTarget === 'my-area' 
-                    ? 'bg-primary-navy text-white shadow-xs' 
-                    : 'bg-slate-200/60 hover:bg-slate-200 text-slate-600'
+                onClick={() => setCurrentTab('contacts')}
+                className={`py-2.5 text-xs font-black uppercase tracking-wide flex items-center justify-center gap-2 transition-all border-b-2 cursor-pointer ${
+                  currentTab === 'contacts'
+                    ? 'border-primary-navy text-primary-navy bg-white font-black'
+                    : 'border-transparent hover:bg-slate-50 text-slate-500'
                 }`}
               >
-                Minha Área
+                <Users className="w-4 h-4" />
+                Contatos ({allUsers.length})
               </button>
-            </div>
-          </div>
-
-          {/* Chat Messages List Panel */}
-          <div 
-            ref={listContainerRef}
-            className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 relative"
-          >
-            {filteredMessages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center p-6 text-center text-slate-400 space-y-2">
-                <Users className="w-10 h-10 text-slate-300 stroke-1 animate-bounce" />
-                <p className="text-xs font-black uppercase tracking-wider">Histórico limpo</p>
-                <p className="text-[10px] font-medium max-w-xs text-slate-400/90 leading-relaxed">
-                  Inicie a comunicação! Selecione a área de destino, fale em tempo real ou anexe um documento de evidência.
-                </p>
-              </div>
-            ) : (
-              filteredMessages.map((msg) => {
-                const isMe = msg.senderUsername === currentUser.username;
-                const roleMeta = ROLE_DETAILS_MAP[msg.senderRole] || { label: 'Colaborador', bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-200' };
-                const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                return (
-                  <div 
-                    key={msg.id}
-                    className={`flex flex-col max-w-[85%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
-                  >
-                    {/* User and Role headers */}
-                    <div className="flex items-center gap-1.5 mb-1 flex-wrap shrink-0">
-                      <span className="text-[10px] font-black text-slate-700">{msg.senderName}</span>
-                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase border ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border} leading-none`}>
-                        {roleMeta.label}
-                      </span>
-                      {msg.areaTarget !== 'all' && (
-                        <span className="inline-flex rounded bg-rose-50 border border-rose-100 text-[8px] font-black uppercase text-rose-700 px-1 py-0.5 leading-none">
-                          ➜ {ROLE_DETAILS_MAP[msg.areaTarget]?.label || msg.areaTarget}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Chat Bubble Body Box */}
-                    <div className={`p-3 rounded-2xl border shadow-xs relative leading-snug break-words w-full ${
-                      isMe 
-                        ? 'bg-slate-900 border-slate-900 text-slate-100 rounded-tr-none' 
-                        : 'bg-white border-slate-200 text-slate-800 rounded-tl-none'
-                    }`}>
-                      {/* Attached File Preview inside bubble */}
-                      {msg.attachment && (
-                        <div className={`mb-2 p-2 rounded-xl border flex items-center justify-between gap-3 text-left ${
-                          isMe 
-                            ? 'bg-slate-800 border-slate-700 text-slate-200' 
-                            : 'bg-slate-50 border-slate-100 text-slate-700'
-                        }`}>
-                          <div className="flex items-center gap-2 min-w-0">
-                            {msg.attachmentType?.startsWith('image/') ? (
-                              <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-slate-100">
-                                <img src={msg.attachment} alt="Anexo" className="w-full h-full object-cover" />
-                              </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200">
-                                <FileText className="w-5 h-5 text-red-600" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-black truncate">{msg.attachmentName}</p>
-                              <p className="text-[8px] tracking-wider uppercase font-bold text-slate-400">Anexo Enviado</p>
-                            </div>
-                          </div>
-                          
-                          <a 
-                            href={msg.attachment} 
-                            download={msg.attachmentName}
-                            className={`p-1.5 rounded-lg border transition-all ${
-                              isMe 
-                                ? 'bg-slate-750 border-slate-700 text-slate-200 hover:bg-slate-700' 
-                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                            }`}
-                            title="Baixar anexo"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </a>
-                        </div>
-                      )}
-
-                      {/* Transmitted Audio message block */}
-                      {msg.audio && (
-                        <div className={`mb-2 py-2 px-3 rounded-xl border flex items-center gap-3 ${
-                          isMe 
-                            ? 'bg-slate-850 border-slate-700/60' 
-                            : 'bg-slate-50 border-slate-150'
-                        }`}>
-                          <button
-                            type="button"
-                            onClick={() => togglePlayAudio(msg.id, msg.audio!)}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-95 ${
-                              isMe 
-                                ? 'bg-primary-gold text-slate-900 border border-primary-gold hover:opacity-90' 
-                                : 'bg-primary-navy text-white border border-primary-navy hover:opacity-95'
-                            }`}
-                          >
-                            {playingAudioId === msg.id ? (
-                              <Pause className="w-4 h-4 fill-current" />
-                            ) : (
-                              <Play className="w-4 h-4 fill-current ml-0.5" />
-                            )}
-                          </button>
-                          
-                          <div className="flex-1 min-w-0">
-                            {/* Audio Wave Bar representing customized track progress */}
-                            <div className="h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden relative">
-                              <div 
-                                style={{ width: `${audioProgress[msg.id] || 0}%` }}
-                                className={`h-full absolute left-0 top-0 transition-all duration-100 ${
-                                  isMe ? 'bg-primary-gold' : 'bg-primary-navy'
-                                }`}
-                              />
-                            </div>
-                            <div className="flex justify-between items-center mt-1">
-                              <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-0.5">
-                                <Volume2 className="w-2.5 h-2.5" /> Mensagem de Áudio
-                              </span>
-                              <span className="text-[9px] font-mono font-bold text-slate-500">
-                                {msg.audioDuration ? formatAudioTime(msg.audioDuration) : 'Áudio'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Main Message Text */}
-                      {msg.text && (
-                        <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                      )}
-                    </div>
-
-                    {/* Footer sending indicator timestamp */}
-                    <span className="text-[8px] font-mono font-medium text-slate-400/90 mt-1 uppercase tracking-tight">
-                      {timeStr}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Pending Draft Attachments/Audio preview panel */}
-          {(attachment || audioBase64) && (
-            <div className="p-3 bg-slate-100 border-t border-slate-200 max-h-36 overflow-y-auto space-y-2 animate-in fade-in duration-200">
-              {attachment && (
-                <div className="flex items-center justify-between text-xs bg-white p-2 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-5 h-5 text-indigo-500 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-bold truncate text-[11px] text-slate-700">{attachmentName}</p>
-                      <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Pronto para Enviar</p>
-                    </div>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={removeAttachment}
-                    className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {audioBase64 && (
-                <div className="flex items-center justify-between text-xs bg-white p-2 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Volume2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-bold text-[11px] text-slate-700">Áudio Gravado ({recordingDuration}s)</p>
-                      <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Pronto para Enviar</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => playAudio('draft', audioBase64)}
-                      className="p-1 text-slate-500 hover:text-slate-800 transition"
-                      title="Ouvir rascunho"
-                    >
-                      <Play className="w-4 h-4" />
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setAudioBase64(null);
-                        setRecordingDuration(0);
-                      }}
-                      className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Chat Form Controls Section */}
-          <form 
-            onSubmit={handleSendMessage}
-            className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2 relative bg-linear-to-b from-white to-slate-50"
-          >
-            {/* Targeted Area Selector Row */}
-            <div className="flex items-center justify-between gap-2 border-b border-dashed border-slate-100 pb-2">
-              <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
-                Direcionar feedback a:
-              </span>
-              <select
-                value={areaTarget}
-                onChange={(e) => setAreaTarget(e.target.value as FeedbackMessage['areaTarget'])}
-                className="text-[10px] font-black text-slate-700 bg-slate-100 hover:bg-slate-150 border border-slate-200 rounded-lg px-2 py-0.5 uppercase tracking-wide focus:outline-hidden transition-all"
+          {/* Tab Content 1: Chat Stream and History */}
+          {(activeChat.type === 'direct' || currentTab === 'messages') ? (
+            <>
+              {/* Filter Bar (Only in group mode) */}
+              {activeChat.type === 'group' && (
+                <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2 text-slate-600">
+                  <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-slate-400" /> Filtros:
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterTarget('all')}
+                      className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md transition-all cursor-pointer ${
+                        filterTarget === 'all' 
+                          ? 'bg-primary-navy text-white shadow-xs' 
+                          : 'bg-slate-200/60 hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterTarget('my-area')}
+                      className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md transition-all cursor-pointer ${
+                        filterTarget === 'my-area' 
+                          ? 'bg-primary-navy text-white shadow-xs' 
+                          : 'bg-slate-200/60 hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      Minha Área
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Chat Messages List Panel */}
+              <div 
+                ref={listContainerRef}
+                className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 relative"
               >
-                <option value="all">TODAS AS ÁREAS</option>
-                <option value="expedition">➜ EXPEDIÇÃO</option>
-                <option value="central">➜ CENTRAL</option>
-                <option value="audit">➜ AUDITORIA</option>
-                <option value="analysis">➜ ANÁLISE</option>
-                <option value="portaria">➜ PORTARIA</option>
-              </select>
-            </div>
-
-            {/* Input field and actions row */}
-            <div className="flex items-center gap-2 relative">
-              {/* Attachment Triggers */}
-              <div className="flex items-center">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  onChange={handleFileChange}
-                />
-                
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="p-2 text-slate-450 hover:text-primary-navy hover:bg-slate-100 rounded-xl transition cursor-pointer"
-                  title="Anexar arquivo / foto"
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
-
-                {/* Voice Audio Recording trigger */}
-                {isRecording ? (
-                  <button
-                    type="button"
-                    onClick={stopRecordingAndKeep}
-                    className="p-2 bg-red-100 text-red-600 rounded-xl hover:bg-red-250 animate-pulse transition cursor-pointer flex items-center justify-center gap-1 shrink-0"
-                    title="Parar gravação e salvar"
-                  >
-                    <Square className="w-4 h-4 fill-current text-red-600" />
-                    <span className="text-[10px] font-black font-mono">{formatAudioTime(recordingDuration)}</span>
-                  </button>
+                {filteredMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center p-6 text-center text-slate-400 space-y-2">
+                    <Users className="w-10 h-10 text-slate-300 stroke-1 animate-bounce" />
+                    <p className="text-xs font-black uppercase tracking-wider">Histórico limpo</p>
+                    <p className="text-[10px] font-medium max-w-xs text-slate-400/90 leading-relaxed">
+                      {activeChat.type === 'direct' 
+                        ? `Não há mensagens privadas entre você e ${activeChat.user.fullName || activeChat.user.username}. Envie um texto ou áudio privado!`
+                        : 'Inicie a comunicação operacional! Selecione a área de destino, fale em tempo real ou envie um anexo.'
+                      }
+                    </p>
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={startRecording}
-                    className="p-2 text-slate-450 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
-                    title="Gravar mensagem de voz"
-                  >
-                    <Mic className="w-5 h-5" />
-                  </button>
+                  filteredMessages.map((msg) => {
+                    const isMe = msg.senderUsername === currentUser.username;
+                    const roleMeta = ROLE_DETAILS_MAP[msg.senderRole] || { label: 'Colaborador', bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-200' };
+                    const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    return (
+                      <div 
+                        key={msg.id}
+                        className={`flex flex-col max-w-[85%] ${isMe ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+                      >
+                        {/* User and Role headers */}
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap shrink-0">
+                          <span className="text-[10px] font-black text-slate-700">{msg.senderName}</span>
+                          <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase border ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border} leading-none`}>
+                            {roleMeta.label}
+                          </span>
+                          {!msg.isDirect ? (
+                            msg.areaTarget !== 'all' && (
+                              <span className="inline-flex rounded bg-rose-50 border border-rose-100 text-[8px] font-black uppercase text-rose-700 px-1 py-0.5 leading-none shadow-2xs">
+                                ➜ {ROLE_DETAILS_MAP[msg.areaTarget]?.label || msg.areaTarget}
+                              </span>
+                            )
+                          ) : (
+                            <span className="inline-flex rounded bg-amber-50 border border-amber-200 text-[8px] font-black uppercase text-amber-700 px-1 py-0.5 leading-none shadow-2xs">
+                              ⚙ DM Privada
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Chat Bubble Body Box */}
+                        <div className={`p-3 rounded-2xl border shadow-xs relative leading-snug break-words w-full ${
+                          isMe 
+                            ? 'bg-slate-900 border-slate-900 text-slate-100 rounded-tr-none' 
+                            : 'bg-white border-slate-200 text-slate-800 rounded-tl-none'
+                        }`}>
+                          {/* Attached File Preview inside bubble */}
+                          {msg.attachment && (
+                            <div className={`mb-2 p-2 rounded-xl border flex items-center justify-between gap-3 text-left ${
+                              isMe 
+                                ? 'bg-slate-800 border-slate-700 text-slate-200' 
+                                : 'bg-slate-50 border-slate-100 text-slate-700'
+                            }`}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                {msg.attachmentType?.startsWith('image/') ? (
+                                  <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-slate-100">
+                                    <img src={msg.attachment} alt="Anexo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  </div>
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200">
+                                    <FileText className="w-5 h-5 text-red-600" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-black truncate">{msg.attachmentName}</p>
+                                  <p className="text-[8px] tracking-wider uppercase font-bold text-slate-400">Anexo Enviado</p>
+                                </div>
+                              </div>
+                              
+                              <a 
+                                href={msg.attachment} 
+                                download={msg.attachmentName}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  isMe 
+                                    ? 'bg-slate-750 border-slate-700 text-slate-200 hover:bg-slate-700' 
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                }`}
+                                title="Baixar anexo"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                            </div>
+                          )}
+
+                          {/* Transmitted Audio message block */}
+                          {msg.audio && (
+                            <div className={`mb-2 py-2 px-3 rounded-xl border flex items-center gap-3 ${
+                              isMe 
+                                ? 'bg-slate-850 border-slate-700/60' 
+                                : 'bg-slate-50 border-slate-150'
+                            }`}>
+                              <button
+                                type="button"
+                                onClick={() => togglePlayAudio(msg.id, msg.audio!)}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-95 ${
+                                  isMe 
+                                    ? 'bg-primary-gold text-slate-900 border border-primary-gold hover:opacity-90' 
+                                    : 'bg-primary-navy text-white border border-primary-navy hover:opacity-95'
+                                }`}
+                              >
+                                {playingAudioId === msg.id ? (
+                                  <Pause className="w-4 h-4 fill-current" />
+                                ) : (
+                                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                                )}
+                              </button>
+                              
+                              <div className="flex-1 min-w-0">
+                                {/* Audio Wave Bar representing customized track progress */}
+                                <div className="h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden relative">
+                                  <div 
+                                    style={{ width: `${audioProgress[msg.id] || 0}%` }}
+                                    className={`h-full absolute left-0 top-0 transition-all duration-100 ${
+                                      isMe ? 'bg-primary-gold' : 'bg-primary-navy'
+                                    }`}
+                                  />
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                  <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-0.5">
+                                    <Volume2 className="w-2.5 h-2.5" /> Mensagem de Áudio
+                                  </span>
+                                  <span className="text-[9px] font-mono font-bold text-slate-500">
+                                    {msg.audioDuration ? formatAudioTime(msg.audioDuration) : 'Áudio'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Main Message Text */}
+                          {msg.text && (
+                            <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                          )}
+                        </div>
+
+                        {/* Footer sending indicator timestamp */}
+                        <span className="text-[8px] font-mono font-medium text-slate-400/90 mt-1 uppercase tracking-tight">
+                          {timeStr}
+                        </span>
+                      </div>
+                    );
+                  })
                 )}
 
-                {/* Discrad active recording */}
-                {isRecording && (
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Pending Draft Attachments/Audio preview panel */}
+              {(attachment || audioBase64) && (
+                <div className="p-3 bg-slate-100 border-t border-slate-200 max-h-36 overflow-y-auto space-y-2 animate-in fade-in duration-200">
+                  {attachment && (
+                    <div className="flex items-center justify-between text-xs bg-white p-2 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-5 h-5 text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-bold truncate text-[11px] text-slate-700">{attachmentName}</p>
+                          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Pronto para Enviar</p>
+                        </div>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={removeAttachment}
+                        className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {audioBase64 && (
+                    <div className="flex items-center justify-between text-xs bg-white p-2 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Volume2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-[11px] text-slate-700">Áudio Gravado ({recordingDuration}s)</p>
+                          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Pronto para Enviar</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => playAudio('draft', audioBase64)}
+                          className="p-1 text-slate-500 hover:text-slate-800 transition shadow-xs"
+                          title="Ouvir rascunho"
+                        >
+                          <Play className="w-4 h-4" />
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setAudioBase64(null);
+                            setRecordingDuration(0);
+                          }}
+                          className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Chat Form Controls Section */}
+              <form 
+                onSubmit={handleSendMessage}
+                className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2 relative bg-linear-to-b from-white to-slate-50"
+              >
+                {/* Dynamic Target Indicator / Selector Row */}
+                <div className="flex items-center justify-between gap-2 border-b border-dashed border-slate-100 pb-2">
+                  {activeChat.type === 'direct' ? (
+                    <div className="flex items-center gap-1.5 text-[9px] font-black text-amber-600 uppercase tracking-wide">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                      Conversando em canal privado criptografado com @{activeChat.user.username}
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                        Direcionar feedback a:
+                      </span>
+                      <select
+                        value={areaTarget}
+                        onChange={(e) => setAreaTarget(e.target.value as FeedbackMessage['areaTarget'])}
+                        className="text-[10px] font-black text-slate-700 bg-slate-100 hover:bg-slate-150 border border-slate-200 rounded-lg px-2 py-0.5 uppercase tracking-wide focus:outline-hidden transition-all"
+                      >
+                        <option value="all">TODAS AS ÁREAS</option>
+                        <option value="expedition">➜ EXPEDIÇÃO</option>
+                        <option value="central">➜ CENTRAL</option>
+                        <option value="audit">➜ AUDITORIA</option>
+                        <option value="analysis">➜ ANÁLISE</option>
+                        <option value="portaria">➜ PORTARIA</option>
+                      </select>
+                    </>
+                  )}
+                </div>
+
+                {/* Input field and actions row */}
+                <div className="flex items-center gap-2 relative">
+                  {/* Attachment Triggers */}
+                  <div className="flex items-center">
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      onChange={handleFileChange}
+                    />
+                    
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="p-2 text-slate-450 hover:text-primary-navy hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                      title="Anexar arquivo / foto"
+                    >
+                      <Paperclip className="w-5 h-5" />
+                    </button>
+
+                    {/* Voice Audio Recording trigger */}
+                    {isRecording ? (
+                      <button
+                        type="button"
+                        onClick={stopRecordingAndKeep}
+                        className="p-2 bg-red-100 text-red-600 rounded-xl hover:bg-red-250 animate-pulse transition cursor-pointer flex items-center justify-center gap-1 shrink-0 bg-rose-50"
+                        title="Parar gravação e salvar"
+                      >
+                        <Square className="w-4 h-4 fill-current text-red-600" />
+                        <span className="text-[10px] font-black font-mono">{formatAudioTime(recordingDuration)}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={startRecording}
+                        className="p-2 text-slate-450 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                        title="Gravar mensagem de voz"
+                      >
+                        <Mic className="w-5 h-5" />
+                      </button>
+                    )}
+
+                    {/* Discard active recording */}
+                    {isRecording && (
+                      <button
+                        type="button"
+                        onClick={cancelRecording}
+                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-xl ml-1 transition cursor-pointer"
+                        title="Descartar gravação"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Message Input Box */}
+                  <input
+                    type="text"
+                    placeholder={
+                      isRecording 
+                        ? 'Gravando áudio...' 
+                        : (activeChat.type === 'direct' 
+                            ? `Mensagem privada para ${activeChat.user.fullName || activeChat.user.username}...` 
+                            : 'Mensagem ou feedback operacional...'
+                          )
+                    }
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    disabled={isRecording}
+                    className="flex-1 px-3.5 py-2 text-xs font-semibold bg-slate-100 border border-slate-200 rounded-xl focus:outline-hidden focus:bg-white focus:border-primary-gold focus:ring-2 focus:ring-primary-gold/15 transition-all text-slate-800 placeholder:text-slate-450 placeholder:font-bold shadow-2xs"
+                  />
+
+                  {/* Trigger Submit Message Button */}
+                  <button
+                    type="submit"
+                    disabled={(!inputText.trim() && !audioBase64 && !attachment) || isRecording}
+                    className={`p-2.5 rounded-xl border border-primary-navy shadow-lg transition-all flex items-center justify-center shrink-0 cursor-pointer ${
+                      (inputText.trim() || audioBase64 || attachment) && !isRecording
+                        ? 'bg-primary-navy text-white hover:scale-105 hover:bg-slate-900 active:scale-95'
+                        : 'bg-slate-150 border-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                    title="Enviar mensagem"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : (
+            /* Tab Content 2: Contacts Book view */
+            <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
+              {/* Search Box */}
+              <div className="p-3 bg-white border-b border-slate-200 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Buscar contatos por nome ou área..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-1.5 text-xs font-semibold bg-slate-100 border border-slate-200 rounded-xl focus:outline-hidden focus:bg-white focus:border-primary-gold focus:ring-2 focus:ring-primary-gold/15 transition-all text-slate-800 placeholder:text-slate-400 placeholder:font-bold"
+                  />
+                </div>
+                {searchQuery && (
                   <button
                     type="button"
-                    onClick={cancelRecording}
-                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-xl ml-1 transition cursor-pointer"
-                    title="Descartar gravação"
+                    onClick={() => setSearchQuery('')}
+                    className="p-1 px-2.5 text-[10px] bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 font-bold transition-all"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    Limpar
                   </button>
                 )}
               </div>
 
-              {/* Message Input Box */}
-              <input
-                type="text"
-                placeholder={isRecording ? 'Gravando áudio...' : 'Mensagem ou feedback...'}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                disabled={isRecording}
-                className="flex-1 px-3.5 py-2 text-xs font-semibold bg-slate-100 border border-slate-200 rounded-xl focus:outline-hidden focus:bg-white focus:border-primary-gold focus:ring-2 focus:ring-primary-gold/15 transition-all text-slate-800 placeholder:text-slate-450 placeholder:font-bold"
-              />
+              {/* Contacts book list panel wrapper */}
+              <div className="flex-1 p-3 space-y-4">
+                {(() => {
+                  const queryNormalized = searchQuery.toLowerCase().trim();
+                  
+                  // Filter contacts dynamically
+                  const filtered = allUsers.filter((u) => {
+                    const fullNameLower = (u.fullName || '').toLowerCase();
+                    const usernameLower = (u.username || '').toLowerCase();
+                    const roleLabel = ROLE_DETAILS_MAP[u.role]?.label || u.role;
+                    return (
+                      fullNameLower.includes(queryNormalized) ||
+                      usernameLower.includes(queryNormalized) ||
+                      roleLabel.toLowerCase().includes(queryNormalized)
+                    );
+                  });
 
-              {/* Trigger Submit Message Button */}
-              <button
-                type="submit"
-                disabled={(!inputText.trim() && !audioBase64 && !attachment) || isRecording}
-                className={`p-2.5 rounded-xl border border-primary-navy shadow-lg transition-all flex items-center justify-center shrink-0 cursor-pointer ${
-                  (inputText.trim() || audioBase64 || attachment) && !isRecording
-                    ? 'bg-primary-navy text-white hover:scale-105 hover:bg-slate-900 active:scale-95'
-                    : 'bg-slate-150 border-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-                title="Enviar mensagem"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+                  const favUsers = filtered.filter((u) => favorites.includes(u.username));
+                  const normalUsers = filtered.filter((u) => !favorites.includes(u.username));
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
+                        <Users className="w-10 h-10 text-slate-300 stroke-1" />
+                        <p className="text-xs font-black uppercase tracking-wider">Nenhum membro ativo encontrado</p>
+                        <p className="text-[10px] text-slate-400/90 leading-relaxed max-w-xs">
+                          Tente digitar o nome completo ou use palavras-chave dos cargos (ex: portaria, auditoria).
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4 overflow-x-hidden">
+                      {/* Favorites subsection header */}
+                      {favUsers.length > 0 && (
+                        <div className="space-y-2 animate-in fade-in duration-200">
+                          <h4 className="text-[9px] font-black tracking-widest text-[#B58A3D] uppercase bg-slate-900 px-3 py-1 rounded-md inline-flex items-center gap-1 shadow-sm">
+                            ★ Meus Favoritos ({favUsers.length})
+                          </h4>
+                          <div className="space-y-1 bg-amber-500/[0.04] border border-amber-300/30 rounded-2xl p-1.5 shadow-xs">
+                            {favUsers.map((u) => {
+                              const roleMeta = ROLE_DETAILS_MAP[u.role] || { label: u.role, bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-200' };
+                              return (
+                                <div
+                                  key={u.id}
+                                  className="flex items-center justify-between p-2.5 hover:bg-white rounded-xl transition-all gap-2 shadow-xs border border-transparent hover:border-amber-300/20"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 font-black text-xs flex items-center justify-center shrink-0">
+                                      {(u.fullName || u.username).substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <span className="text-[11px] font-black text-slate-800 truncate leading-none">
+                                          {u.fullName || u.username}
+                                        </span>
+                                        <span className="text-[8px] font-bold text-slate-400">
+                                          @{u.username}
+                                        </span>
+                                      </div>
+                                      <span className={`inline-block border text-[8px] font-black uppercase rounded mt-1.5 px-1 py-0.2 leading-none shrink-0 ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border}`}>
+                                        {roleMeta.label}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {/* Unfavorite Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleFavorite(u.username)}
+                                      className="p-1 px-1.5 hover:bg-yellow-100 rounded-lg text-yellow-500 hover:text-yellow-600 transition-colors cursor-pointer"
+                                      title="Remover dos Favoritos"
+                                    >
+                                      <Star className="w-4 h-4 fill-current text-primary-gold" />
+                                    </button>
+
+                                    {/* Direct Conversation Initiation Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveChat({ type: 'direct', user: u });
+                                        setCurrentTab('messages');
+                                      }}
+                                      className="p-1.5 bg-primary-navy text-white hover:bg-slate-900 rounded-lg shadow-sm hover:scale-105 active:scale-95 transition-all text-[9px] font-black uppercase flex items-center gap-1 px-3 cursor-pointer"
+                                    >
+                                      Conversar
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* General Contacts subsection header */}
+                      <div className="space-y-2">
+                        {favUsers.length > 0 && normalUsers.length > 0 && (
+                          <h4 className="text-[9px] font-black tracking-widest text-slate-400 uppercase pl-1">
+                            Todos os Contatos ({normalUsers.length})
+                          </h4>
+                        )}
+                        <div className="space-y-1 bg-white border border-slate-200/60 rounded-2xl p-1.5">
+                          {normalUsers.map((u) => {
+                            const roleMeta = ROLE_DETAILS_MAP[u.role] || { label: u.role, bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-200' };
+                            return (
+                              <div
+                                key={u.id}
+                                className="flex items-center justify-between p-2.5 hover:bg-slate-50 rounded-xl transition-all gap-2"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-extrabold text-xs flex items-center justify-center shrink-0">
+                                    {(u.fullName || u.username).substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-[11px] font-black text-slate-800 truncate leading-none">
+                                        {u.fullName || u.username}
+                                      </span>
+                                      <span className="text-[8px] font-bold text-slate-400">
+                                        @{u.username}
+                                      </span>
+                                    </div>
+                                    <span className={`inline-block border text-[8px] font-black uppercase rounded mt-1.5 px-1 py-0.2 leading-none shrink-0 ${roleMeta.bg} ${roleMeta.text} ${roleMeta.border}`}>
+                                      {roleMeta.label}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {/* Favorite Button toggler */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFavorite(u.username)}
+                                    className="p-1 px-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-[#B58A3D] hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                                    title="Adicionar aos Favoritos"
+                                  >
+                                    <Star className="w-4 h-4 text-slate-300" />
+                                  </button>
+
+                                  {/* Direct Conversation Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveChat({ type: 'direct', user: u });
+                                      setCurrentTab('messages');
+                                    }}
+                                    className="p-1.5 bg-slate-100 text-slate-700 hover:bg-primary-navy hover:text-white rounded-lg hover:scale-105 active:scale-95 transition-all text-[9.5px] font-black uppercase border border-slate-250 hover:border-primary-navy flex items-center gap-1 px-3 cursor-pointer"
+                                  >
+                                    Conversar
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
-          </form>
+          )}
         </div>
       )}
     </>

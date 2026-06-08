@@ -83,7 +83,10 @@
         "attachment": { "type": "string" },
         "attachmentName": { "type": "string" },
         "attachmentType": { "type": "string" },
-        "areaTarget": { "type": "string" }
+        "areaTarget": { "type": "string" },
+        "isDirect": { "type": "boolean" },
+        "userTarget": { "type": "string" },
+        "userTargetName": { "type": "string" }
       },
       "required": ["id", "senderName", "senderUsername", "senderRole", "senderRoleLabel", "timestamp", "areaTarget"]
     }
