@@ -76,9 +76,13 @@ export const Layout: React.FC<LayoutProps> = ({
   ];
 
   // Logic: Admins see everything. Normal users only see their registered area.
+  // Exception: Perfil expedidor ('expedition') has access to both 'expedition' and 'portaria'.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
     if (user.systemRole === 'administrator') return true;
+    if (user.role === 'expedition') {
+      return tab.id === 'expedition' || tab.id === 'portaria';
+    }
     return tab.id === user.role;
   });
 

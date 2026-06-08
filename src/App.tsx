@@ -80,6 +80,40 @@ const App: React.FC = () => {
     }
   });
 
+  const saveLoadsToLocalStorage = (loadsArray: CargoLoad[]) => {
+    try {
+      const cleaned = loadsArray.map((load) => {
+        const {
+          photoPlate,
+          photoSeal,
+          photoManifest,
+          occurrencePhoto,
+          gatePhotoPlate,
+          gatePhotoSeal,
+          gatePhotoManifest,
+          ...rest
+        } = load;
+
+        let cleanedHistory = undefined;
+        if (load.occurrenceHistory) {
+          cleanedHistory = load.occurrenceHistory.map(occ => {
+            const { photo, ...occRest } = occ;
+            return occRest;
+          });
+        }
+
+        return {
+          ...rest,
+          ...(cleanedHistory !== undefined ? { occurrenceHistory: cleanedHistory } : {})
+        };
+      });
+
+      localStorage.setItem('cargoradar_loads', JSON.stringify(cleaned));
+    } catch (err) {
+      console.warn('Falha segura ao persistir cargas no local storage (limite excedido):', err);
+    }
+  };
+
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const persisted = localStorage.getItem('cargoradar_users');
@@ -178,11 +212,7 @@ const App: React.FC = () => {
 
       isFirstLoad.current = false;
       setLoads(liveLoads);
-      try {
-        localStorage.setItem('cargoradar_loads', JSON.stringify(liveLoads));
-      } catch (err) {
-        console.error('Erro ao persistir cargas no localStorage:', err);
-      }
+      saveLoadsToLocalStorage(liveLoads);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
       
@@ -367,11 +397,7 @@ const App: React.FC = () => {
     // Otimista: Salva localmente primeiro
     setLoads((prev) => {
       const updated = [newLoad, ...prev];
-      try {
-        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao salvar carga localmente:', e);
-      }
+      saveLoadsToLocalStorage(updated);
       return updated;
     });
 
@@ -404,11 +430,7 @@ const App: React.FC = () => {
     // Otimista: Atualiza localmente
     setLoads((prev) => {
       const updated = prev.map(l => l.id === id ? updatedLoad : l);
-      try {
-        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao atualizar status da carga localmente:', e);
-      }
+      saveLoadsToLocalStorage(updated);
       return updated;
     });
 
@@ -449,11 +471,7 @@ const App: React.FC = () => {
     // Otimista: Atualiza localmente
     setLoads((prev) => {
       const updated = prev.map(l => l.id === id ? updatedLoad : l);
-      try {
-        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao atualizar ocorrência localmente:', e);
-      }
+      saveLoadsToLocalStorage(updated);
       return updated;
     });
 
@@ -472,11 +490,7 @@ const App: React.FC = () => {
     // Otimista: Atualiza localmente
     setLoads((prev) => {
       const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
-      try {
-        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao atualizar carga localmente:', e);
-      }
+      saveLoadsToLocalStorage(updated);
       return updated;
     });
 
@@ -688,11 +702,7 @@ const App: React.FC = () => {
               // Otimista: Atualiza localmente
               setLoads((prev) => {
                 const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
-                try {
-                  localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
-                } catch (e) {
-                  console.error('Erro ao atualizar rota localmente:', e);
-                }
+                saveLoadsToLocalStorage(updated);
                 return updated;
               });
 

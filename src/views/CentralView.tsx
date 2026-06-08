@@ -1539,7 +1539,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 { key: 'ALL', label: 'TODOS', count: loads.length, activeBg: 'bg-primary-navy border-primary-navy text-white shadow-lg shadow-slate-900/10', hoverBg: 'hover:bg-slate-200' },
                 { 
                   key: CargoStatus.AWAITING, 
-                  label: 'AGUARDANDO', 
+                  label: 'PORTARIA', 
                   count: loads.filter(l => l.status === CargoStatus.AWAITING).length, 
                   activeBg: 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20', 
                   hoverBg: 'hover:bg-amber-100',
@@ -1625,8 +1625,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                         load.status === CargoStatus.BLOCKED ? 'bg-orange-500' : 'bg-amber-500'
                       }`} />
                       {load.status === CargoStatus.RELEASED ? 'EM TRÂNSITO' :
-                       load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 
-                       (load.gateStatus === 'Aguardando' ? 'AGUARDANDO GATE' : 'AGUARDANDO')}
+                       load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 'PORTARIA'}
                     </span>
                   </div>
                   
@@ -2843,7 +2842,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   selectedLoad.status === CargoStatus.RELEASED ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                   selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 border border-red-100 animate-pulse' : 'bg-amber-50 text-amber-700 border border-amber-100'
                 }`}>
-                  {selectedLoad.status}
+                  {selectedLoad.status === CargoStatus.RELEASED ? 'EM TRÂNSITO' :
+                   selectedLoad.status === CargoStatus.BLOCKED ? 'ALERTA / DIVERGÊNCIA' : 'PORTARIA'}
                 </span>
               </div>
 
