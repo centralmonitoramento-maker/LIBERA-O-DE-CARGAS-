@@ -1,7 +1,7 @@
 
 export enum CargoStatus {
   AWAITING = 'AGUARDANDO CONFERÊNCIA',
-  RELEASED = 'CARGA LIBERADA',
+  RELEASED = 'EM TRÂNSITO',
   BLOCKED = 'ALERTA DE DIVERGÊNCIA'
 }
 
@@ -71,6 +71,15 @@ export interface CargoLoad {
   currentDestinationIndex?: number;
   sealsByDest?: Record<string, string>;
   checkedDestinations?: string[];
+  // Portaria Validation
+  gateVerified?: boolean;
+  gateVerifiedAt?: string;
+  gateVerifiedBy?: string;
+  gatePhotoPlate?: string;
+  gatePhotoSeal?: string;
+  gatePhotoManifest?: string;
+  gateStatus?: 'Aguardando' | 'Aprovado' | 'Divergente';
+  gateObservation?: string;
 }
 
 export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer';
@@ -82,7 +91,7 @@ export interface User {
   fullName?: string;
   storeLocation?: string;
   jobFunction?: string;
-  role: 'expedition' | 'central' | 'audit' | 'analysis';
+  role: 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
   systemRole?: SystemRole;
   status: 'pending' | 'active' | 'rejected';
   createdAt: string;

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { CargoLoad, CargoType, EventLog } from '../types';
+import { CargoLoad, CargoType, CargoStatus, EventLog } from '../types';
 import { 
   Truck, 
   Plus, 
@@ -17,7 +17,9 @@ import {
   ArrowRight, 
   Navigation,
   Camera,
-  Trash2
+  Trash2,
+  Search,
+  Pencil
 } from 'lucide-react';
 
 const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
@@ -343,10 +345,12 @@ const VEHICLE_PLATES = [
 
 interface ExpeditionViewProps {
   onSubmit: (load: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => void;
+  onUpdateLoad?: (updatedLoad: CargoLoad) => Promise<void>;
+  loads: CargoLoad[];
   logs: EventLog[];
 }
 
-export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }) => {
+export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpdateLoad, loads = [], logs }) => {
   const [plate, setPlate] = useState('');
   const [driverName, setDriverName] = useState('');
   const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
@@ -461,6 +465,80 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
   const photoSealInputRef = React.useRef<HTMLInputElement>(null);
   const photoManifestInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sidebarTab, setSidebarTab] = useState<'resumo' | 'atividades'>('resumo');
+
+  const filteredLoads = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return loads;
+    return loads.filter(load => 
+      load.plate.toLowerCase().includes(q) ||
+      load.driverName.toLowerCase().includes(q) ||
+      load.destination.toLowerCase().includes(q) ||
+      (load.additionalDestinations && load.additionalDestinations.some(d => d.toLowerCase().includes(q))) ||
+      load.sealNumber.toLowerCase().includes(q) ||
+      load.cargoType.toLowerCase().includes(q)
+    );
+  }, [loads, searchQuery]);
+
+  const handleEditLoad = (load: CargoLoad) => {
+    setEditingLoadId(load.id);
+    setPlate(load.plate);
+    setDriverName(load.driverName);
+    setCargoType(load.cargoType);
+    setOrigin(load.origin);
+    setDestination(load.destination);
+    setAdditionalDestinations(load.additionalDestinations || []);
+    setSealNumber(load.sealNumber || '');
+    setIsHighRisk(!!load.isHighRisk);
+    setParType(load.parType || '');
+    setParInvoiceNumber(load.parInvoiceNumber || '');
+    setParDescription(load.parDescription || '');
+    setPhotoPlate(load.photoPlate || '');
+    setPhotoSeal(load.photoSeal || '');
+    setPhotoManifest(load.photoManifest || '');
+
+    // Now, let's load the palletDetailsByDest:
+    const newPalletDetailsByDest: Record<string, Record<string, number>> = {};
+    if (load.palletDetails && load.palletDetails.length > 0) {
+      load.palletDetails.forEach(detail => {
+        const destKey = detail.destination || load.destination || 'Principal';
+        if (!newPalletDetailsByDest[destKey]) {
+          newPalletDetailsByDest[destKey] = { ...defaultPallets };
+        }
+        newPalletDetailsByDest[destKey][detail.type] = detail.quantity;
+      });
+    } else {
+      const destKey = load.destination || 'Principal';
+      newPalletDetailsByDest[destKey] = { ...defaultPallets };
+    }
+    setPalletDetailsByDest(newPalletDetailsByDest);
+    setError('');
+
+    // Scroll up to form on mobile devices smoothly
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingLoadId(null);
+    setPlate('');
+    setDriverName('');
+    setOrigin('CD-01');
+    setDestination('');
+    setAdditionalDestinations([]);
+    setSealNumber('');
+    setPalletDetailsByDest({});
+    setIsHighRisk(false);
+    setParType('');
+    setParInvoiceNumber('');
+    setParDescription('');
+    setPhotoPlate('');
+    setPhotoSeal('');
+    setPhotoManifest('');
+    setError('');
+  };
+
   const handlePhotoPlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -567,39 +645,57 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
       });
     }
 
-    onSubmit({
-      plate: normalizedPlate,
-      driverName,
-      cargoType,
-      origin,
-      destination,
-      additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
-      sealNumber: sealNumber.toUpperCase(),
-      palletCount,
-      palletDetails: payloadPalletDetails,
-      isHighRisk,
-      parType: isHighRisk ? parType : undefined,
-      parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
-      parDescription: isHighRisk ? parDescription : undefined,
-      photoPlate: photoPlate || undefined,
-      photoSeal: photoSeal || undefined,
-      photoManifest: photoManifest || undefined,
-    });
-    
-    // Reset form
-    setPlate('');
-    setDriverName('');
-    setDestination('');
-    setAdditionalDestinations([]);
-    setSealNumber('');
-    setPalletDetailsByDest({});
-    setIsHighRisk(false);
-    setParType('');
-    setParInvoiceNumber('');
-    setParDescription('');
-    setPhotoPlate('');
-    setPhotoSeal('');
-    setPhotoManifest('');
+    if (editingLoadId) {
+      const originalLoad = loads.find(l => l.id === editingLoadId);
+      if (!originalLoad) {
+        setError('Carga original não encontrada.');
+        return;
+      }
+      const updatedLoad: CargoLoad = {
+        ...originalLoad,
+        plate: normalizedPlate,
+        driverName,
+        cargoType,
+        origin,
+        destination,
+        additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
+        sealNumber: sealNumber.toUpperCase(),
+        palletCount,
+        palletDetails: payloadPalletDetails,
+        isHighRisk,
+        parType: isHighRisk ? parType : undefined,
+        parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
+        parDescription: isHighRisk ? parDescription : undefined,
+        photoPlate: photoPlate || undefined,
+        photoSeal: photoSeal || undefined,
+        photoManifest: photoManifest || undefined,
+      };
+
+      if (onUpdateLoad) {
+        onUpdateLoad(updatedLoad);
+      }
+      handleCancelEdit();
+    } else {
+      onSubmit({
+        plate: normalizedPlate,
+        driverName,
+        cargoType,
+        origin,
+        destination,
+        additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
+        sealNumber: sealNumber.toUpperCase(),
+        palletCount,
+        palletDetails: payloadPalletDetails,
+        isHighRisk,
+        parType: isHighRisk ? parType : undefined,
+        parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
+        parDescription: isHighRisk ? parDescription : undefined,
+        photoPlate: photoPlate || undefined,
+        photoSeal: photoSeal || undefined,
+        photoManifest: photoManifest || undefined,
+      });
+      handleCancelEdit();
+    }
   };
 
   const addDestination = () => {
@@ -618,14 +714,33 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
       {/* Form Section */}
       <div className="lg:col-span-8 space-y-6">
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-primary-navy p-6 text-white flex items-center gap-3">
-            <div className="p-2 bg-primary-gold rounded-lg">
-              <Plus className="w-5 h-5 text-primary-navy" />
+          <div className="bg-primary-navy p-6 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary-gold rounded-lg shrink-0">
+                {editingLoadId ? (
+                  <Pencil className="w-5 h-5 text-primary-navy" />
+                ) : (
+                  <Plus className="w-5 h-5 text-primary-navy" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg md:text-xl font-black uppercase tracking-tight">
+                  {editingLoadId ? 'Alterar Liberação de Carga' : 'Nova Liberação de Carga'}
+                </h2>
+                <p className="text-[10px] font-bold text-primary-gold uppercase tracking-widest mt-0.5">
+                  {editingLoadId ? `Editando dados da placa: ${plate}` : 'Preencha os dados do manifesto'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight pl-[190px]">Nova Liberação de Carga</h2>
-              <p className="text-[10px] font-bold text-primary-gold uppercase tracking-widest pl-[210px]">Preencha os dados do manifesto</p>
-            </div>
+            {editingLoadId && (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-all active:scale-95 border-b-2 border-red-950 text-center cursor-pointer shrink-0"
+              >
+                Cancelar Edição
+              </button>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="p-8 space-y-8">
@@ -1389,10 +1504,10 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
 
             <button
               type="submit"
-              className="w-full bg-primary-gold hover:bg-primary-gold/90 text-white font-black py-5 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 text-sm uppercase tracking-widest border-b-4 border-primary-navy"
+              className="w-full bg-primary-gold hover:bg-primary-gold/90 text-white font-black py-5 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 text-sm uppercase tracking-widest border-b-4 border-primary-navy cursor-pointer"
             >
               <ShieldCheck className="w-5 h-5" />
-              REGISTRAR E LIBERAR PARA CENTRAL
+              {editingLoadId ? 'SALVAR ALTERAÇÕES DA CARGA' : 'REGISTRAR E LIBERAR PARA CENTRAL'}
             </button>
           </form>
         </div>
@@ -1401,22 +1516,156 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, logs }
       {/* Sidebar Section */}
       <div className="lg:col-span-4 space-y-6">
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden h-full flex flex-col min-h-[500px]">
-          <div className="p-6 border-b bg-primary-navy flex items-center gap-3">
-            <div className="p-2 bg-primary-gold rounded-lg">
-              <History className="w-5 h-5 text-primary-navy" />
+          {/* Sidebar Tab Options */}
+          <div className="bg-primary-navy border-b border-slate-800">
+            <div className="flex">
+              <button
+                type="button"
+                onClick={() => setSidebarTab('resumo')}
+                className={`flex-1 py-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 text-center flex items-center justify-center gap-2 cursor-pointer ${
+                  sidebarTab === 'resumo'
+                    ? 'border-primary-gold text-white bg-slate-900/40'
+                    : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                <Truck className="w-4 h-4 text-primary-gold" />
+                Resumo de Cargas
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarTab('atividades')}
+                className={`flex-1 py-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 text-center flex items-center justify-center gap-2 cursor-pointer ${
+                  sidebarTab === 'atividades'
+                    ? 'border-primary-gold text-white bg-slate-900/40'
+                    : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                <History className="w-4 h-4 text-primary-gold" />
+                Atividades ({logs.length})
+              </button>
             </div>
-            <h3 className="text-sm font-black uppercase tracking-tight text-white">Minhas Atividades</h3>
           </div>
 
+          {/* Search Box (only for Resumo de Cargas tab) */}
+          {sidebarTab === 'resumo' && (
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
+              <div className="relative">
+                <Search className="absolute left-3 top-[12px] w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2.5 text-xs text-primary-navy font-bold focus:ring-2 focus:ring-primary-gold outline-none transition-all"
+                  placeholder="Buscar placa, motorista, destino ou lacre..."
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-[9px] text-xs text-slate-400 hover:text-slate-650 font-bold border-0 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tab Content Display Area */}
           <div className="flex-grow overflow-y-auto p-6 space-y-4">
-            {logs.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40 py-12">
+            {sidebarTab === 'resumo' ? (
+              filteredLoads.length === 0 ? (
+                <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center p-6 space-y-4 opacity-40">
+                  <Truck className="w-12 h-12 text-slate-300" />
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400 leading-normal">
+                    {searchQuery ? 'Nenhuma carga correspondente' : 'Nenhuma carga lançada'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredLoads.map((load) => {
+                    const isCurrentEdit = editingLoadId === load.id;
+                    let statusBg = 'bg-amber-50 text-amber-805 border-amber-200';
+                    if (load.status === CargoStatus.RELEASED) {
+                      statusBg = 'bg-green-50 text-green-805 border-green-200';
+                    } else if (load.status === CargoStatus.BLOCKED) {
+                      statusBg = 'bg-red-50 text-red-805 border-red-200';
+                    }
+
+                    return (
+                      <div
+                        key={load.id}
+                        onClick={() => handleEditLoad(load)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col gap-3 text-left ${
+                          isCurrentEdit
+                            ? 'bg-blue-50/50 border-blue-400 shadow-md ring-2 ring-blue-400/20'
+                            : 'bg-white border-slate-200/80 hover:bg-slate-50/60 hover:shadow-sm hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-mono font-black tracking-widest text-primary-navy uppercase bg-slate-100 px-2 py-0.5 rounded border border-slate-200 group-hover:bg-primary-gold/10 group-hover:border-primary-gold/30 transition-colors">
+                                {load.plate}
+                              </span>
+                              <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${statusBg}`}>
+                                {load.status.split(' ')[1] || load.status}
+                              </span>
+                            </div>
+                            <div className="text-xs font-bold text-slate-700">
+                              Motorista: <span className="font-semibold text-slate-500">{load.driverName}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditLoad(load);
+                              }}
+                              className={`p-2 rounded-lg transition-all border-0 ${
+                                isCurrentEdit
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-750'
+                              }`}
+                              title="Editar Carga"
+                            >
+                              <Pencil className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <div>
+                            <span className="block text-[8px] text-slate-400 font-extrabold uppercase mb-0.5">Origem &rarr; Destino</span>
+                            <span className="truncate block text-slate-700">{load.origin} &rarr; {load.destination}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[8px] text-slate-400 font-extrabold uppercase mb-0.5">Lacre & Paletes</span>
+                            <span className="block text-slate-700 font-semibold">L- {load.sealNumber || 'N/A'} ({load.palletCount} P)</span>
+                          </div>
+                        </div>
+
+                        {load.createdAt && (
+                          <div className="text-[9px] text-slate-400 flex items-center gap-1.5 pt-2 border-t border-dashed border-slate-100 uppercase tracking-widest font-extrabold">
+                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>Lançado: {new Date(load.createdAt).toLocaleDateString('pt-BR')} {new Date(load.createdAt).toTimeString().substring(0, 5)}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : logs.length === 0 ? (
+              <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center p-6 space-y-4 opacity-40">
                 <History className="w-12 h-12 text-slate-300" />
                 <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Nenhuma atividade recente</p>
               </div>
             ) : (
               logs.map((log) => (
-                <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 group hover:bg-white hover:border-blue-200 transition-all">
+                <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-left group hover:bg-white hover:border-blue-200 transition-all">
                   <div className="flex justify-between items-start">
                     <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{log.action}</span>
                     <span className="text-[9px] text-slate-400 font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>

@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { LogOut, LayoutDashboard, Truck, ShieldCheck, BarChart3, Bell, BellOff, Sun, Moon } from 'lucide-react';
+import { LogOut, LayoutDashboard, Truck, ShieldCheck, BarChart3, Bell, BellOff, Sun, Moon, ClipboardCheck } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus } from '../types';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -72,6 +72,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
+    { id: 'portaria' as TabType, label: 'PORTARIA', icon: ClipboardCheck },
   ];
 
   // Logic: Admins see everything. Normal users only see their registered area.

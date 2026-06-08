@@ -267,9 +267,9 @@ const CountdownTracker: React.FC<{ load: CargoLoad; estimatedDurationMinutes: nu
       setNow(new Date());
     }, 1000);
     return () => clearInterval(timer);
-  }, [load.id, load.status, load.auditedAt]);
+  }, [load.id, load.status, load.auditedAt, load.gateVerifiedAt]);
 
-  const releaseTimeStr = load.auditedAt || load.createdAt;
+  const releaseTimeStr = load.gateVerifiedAt || load.auditedAt || load.createdAt;
   const releaseTime = new Date(releaseTimeStr);
   const totalLimitMs = estimatedDurationMinutes * 60 * 1000;
   
@@ -1547,7 +1547,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 },
                 { 
                   key: CargoStatus.RELEASED, 
-                  label: 'LIBERADOS', 
+                  label: 'EM TRÂNSITO', 
                   count: loads.filter(l => l.status === CargoStatus.RELEASED).length, 
                   activeBg: 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-600/20', 
                   hoverBg: 'hover:bg-emerald-100',
@@ -1624,8 +1624,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                         load.status === CargoStatus.RELEASED ? 'bg-emerald-500' :
                         load.status === CargoStatus.BLOCKED ? 'bg-orange-500' : 'bg-amber-500'
                       }`} />
-                      {load.status === CargoStatus.RELEASED ? 'LIBERADO' :
-                       load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 'AGUARDANDO'}
+                      {load.status === CargoStatus.RELEASED ? 'EM TRÂNSITO' :
+                       load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 
+                       (load.gateStatus === 'Aguardando' ? 'AGUARDANDO GATE' : 'AGUARDANDO')}
                     </span>
                   </div>
                   
@@ -1633,8 +1634,17 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     <div className="space-y-1">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate w-40">{load.driverName}</p>
                       <p className="text-[9px] font-black text-primary-navy uppercase tracking-tighter">{load.origin} ➔ {load.destination}</p>
+                      {load.gateStatus && (
+                        <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                          load.gateStatus === 'Aprovado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' :
+                          load.gateStatus === 'Divergente' ? 'bg-rose-50 text-rose-700 border-rose-200/50 animate-pulse' :
+                          'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}>
+                          Gate: {load.gateStatus === 'Aprovado' ? '✓ Aprovado' : load.gateStatus === 'Divergente' ? '✗ Divergente' : '⏱ Aguardando'}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-col items-end gap-1">
                       <span className="text-[9px] font-mono font-bold text-slate-400">{new Date(load.createdAt).toLocaleTimeString()}</span>
                       {load.isHighRisk && (
                         <div className="bg-red-100 p-1 rounded-lg">
@@ -2703,7 +2713,16 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                         }
                       } else {
                         // Standard load
-                        onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+                        const updatedLoad = {
+                          ...selectedLoad,
+                          gateStatus: 'Aguardando' as const,
+                          auditedAt: new Date().toISOString()
+                        };
+                        if (onUpdateLoad) {
+                          onUpdateLoad(updatedLoad);
+                        } else {
+                          onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+                        }
                       }
                     }}
                     disabled={

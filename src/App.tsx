@@ -6,6 +6,7 @@ import { CentralView } from './views/CentralView';
 import { AuditView } from './views/AuditView';
 import { AnalysisView } from './views/AnalysisView';
 import { LoginView } from './views/LoginView';
+import { PortariaView } from './views/PortariaView';
 import { CargoLoad, CargoStatus, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { 
   collection, 
@@ -24,7 +25,7 @@ import {
   signOut 
 } from 'firebase/auth';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -465,6 +466,29 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateLoad = async (updatedLoad: CargoLoad) => {
+    const username = loggedInUser?.username || 'Sistema';
+
+    // Otimista: Atualiza localmente
+    setLoads((prev) => {
+      const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
+      try {
+        localStorage.setItem('cargoradar_loads', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao atualizar carga localmente:', e);
+      }
+      return updated;
+    });
+
+    try {
+      await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
+      addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
+    } catch (err) {
+      console.warn('Conexão instável. Carga atualizada localmente.', err);
+      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} atualizada offline por ${username}`, username, updatedLoad.id);
+    }
+  };
+
   const handleRegisterUser = async (user: Omit<User, 'id' | 'status' | 'createdAt'>) => {
     try {
       const email = `${user.username.toLowerCase()}@cargarelease.com`;
@@ -645,7 +669,14 @@ const App: React.FC = () => {
 
     switch (activeTab) {
       case 'expedition':
-        return <ExpeditionView onSubmit={handleAddLoad} logs={logs.filter(l => l.username === loggedInUser?.username)} />;
+        return (
+          <ExpeditionView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            loads={loads} 
+            logs={logs.filter(l => l.username === loggedInUser?.username)} 
+          />
+        );
       case 'central':
         return (
           <CentralView 
@@ -691,6 +722,15 @@ const App: React.FC = () => {
         );
       case 'analysis':
         return <AnalysisView loads={loads} />;
+      case 'portaria':
+        return (
+          <PortariaView 
+            loads={loads}
+            onUpdateLoad={handleUpdateLoad}
+            logs={logs}
+            loggedInUser={loggedInUser}
+          />
+        );
       default:
         return null;
     }
