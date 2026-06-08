@@ -360,6 +360,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [newDestination, setNewDestination] = useState('');
   const [sealNumber, setSealNumber] = useState('');
   const [palletDetailsByDest, setPalletDetailsByDest] = useState<Record<string, Record<string, number>>>({});
+  const [sharedCargoDescriptions, setSharedCargoDescriptions] = useState<Record<string, string>>({});
 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
@@ -498,6 +499,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setPhotoPlate(getPhotosArray(load.photoPlate));
     setPhotoSeal(getPhotosArray(load.photoSeal));
     setPhotoManifest(getPhotosArray(load.photoManifest));
+    setSharedCargoDescriptions(load.sharedCargoDescriptions || {});
 
     // Now, let's load the palletDetailsByDest:
     const newPalletDetailsByDest: Record<string, Record<string, number>> = {};
@@ -529,6 +531,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setAdditionalDestinations([]);
     setSealNumber('');
     setPalletDetailsByDest({});
+    setSharedCargoDescriptions({});
     setIsHighRisk(false);
     setParType('');
     setParInvoiceNumber('');
@@ -704,6 +707,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
+        sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
         sealNumber: sealNumber.toUpperCase(),
         palletCount,
         palletDetails: payloadPalletDetails,
@@ -728,6 +732,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
+        sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
         sealNumber: sealNumber.toUpperCase(),
         palletCount,
         palletDetails: payloadPalletDetails,

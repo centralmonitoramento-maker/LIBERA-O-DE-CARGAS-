@@ -29,7 +29,8 @@
         "occurrenceHistory": { "type": "array" },
         "currentDestinationIndex": { "type": "number" },
         "sealsByDest": { "type": "object" },
-        "checkedDestinations": { "type": "array" }
+        "checkedDestinations": { "type": "array" },
+        "sharedCargoDescriptions": { "type": "object" }
       },
       "required": ["id", "plate", "driverName", "cargoType", "origin", "destination", "isHighRisk", "sealNumber", "palletCount", "status", "createdAt", "createdBy"]
     },

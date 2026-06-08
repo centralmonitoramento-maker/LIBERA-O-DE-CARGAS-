@@ -129,12 +129,12 @@ service cloud.firestore {
         !isSignedIn() ||
         isAdmin() || 
         // Dispatchers can edit general details of the cargo
-        (isDispatcher() && incoming().diff(existing()).affectedKeys().hasOnly(['plate', 'driverName', 'cargoType', 'origin', 'destination', 'additionalDestinations', 'isHighRisk', 'parType', 'parInvoiceNumber', 'parDescription', 'sealNumber', 'palletCount', 'palletDetails'])) ||
+        (isDispatcher() && incoming().diff(existing()).affectedKeys().hasOnly(['plate', 'driverName', 'cargoType', 'origin', 'destination', 'additionalDestinations', 'isHighRisk', 'parType', 'parInvoiceNumber', 'parDescription', 'sealNumber', 'palletCount', 'palletDetails', 'sharedCargoDescriptions'])) ||
         // Auditors can log occurrences and audit load status
         (isAuditor() && incoming().diff(existing()).affectedKeys().hasAny(['status', 'occurrenceType', 'occurrenceDescription', 'occurrencePhoto', 'auditedAt', 'occurrenceHistory'])) ||
         // Central operator can modify status or logistics details
         ((getUserRole() == 'administrator' || getUserGroup() == 'central') && 
-         incoming().diff(existing()).affectedKeys().hasAny(['status', 'currentDestinationIndex', 'sealsByDest', 'checkedDestinations', 'palletDetails']))
+         incoming().diff(existing()).affectedKeys().hasAny(['status', 'currentDestinationIndex', 'sealsByDest', 'checkedDestinations', 'palletDetails', 'sharedCargoDescriptions']))
       );
 
       allow delete: if !isSignedIn() || isAdmin();

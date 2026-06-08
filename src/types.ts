@@ -10,7 +10,8 @@ export enum CargoType {
   MISTA = 'Mista',
   SECA = 'Seca',
   TRANSFERENCIA = 'Transferência',
-  COMPARTILHADA = 'Carga Compartilhada'
+  COMPARTILHADA = 'Carga Compartilhada',
+  PERECIVEIS = 'Perecíveis'
 }
 
 export enum OccurrenceType {
@@ -71,6 +72,7 @@ export interface CargoLoad {
   currentDestinationIndex?: number;
   sealsByDest?: Record<string, string>;
   checkedDestinations?: string[];
+  sharedCargoDescriptions?: Record<string, string>;
   // Portaria Validation
   gateVerified?: boolean;
   gateVerifiedAt?: string;
