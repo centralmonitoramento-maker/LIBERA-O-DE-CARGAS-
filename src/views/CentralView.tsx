@@ -259,6 +259,42 @@ const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: str
   }
 };
 
+const getRegionForStore = (storeKey: string): 'DF' | 'GO' | 'BA' | 'TO' => {
+  const upper = storeKey.toUpperCase();
+  if (upper.includes('-GO') || 
+      upper.includes('GOIANIA') || 
+      upper.includes('GOIÂNIA') ||
+      upper.includes('LUZIANIA') || 
+      upper.includes('LUZIÂNIA') || 
+      upper.includes('NOVO GAMA') || 
+      upper.includes('SANTO ANTONIO') || 
+      upper.includes('SANTO ANTÔNIO') || 
+      upper.includes('FORMOSA') || 
+      upper.includes('CALDAS') || 
+      upper.includes('GOIANESIA') || 
+      upper.includes('GOIANÉSIA') || 
+      upper.includes('ITUMBIARA') || 
+      upper.includes('RIO VERDE') || 
+      upper.includes('LINDAS') ||
+      upper.includes('PLANLTINA GO') ||
+      upper.includes('AGUAS LINDAS')) {
+    return 'GO';
+  }
+  if (upper.includes('-BA') || 
+      upper.includes('LEM') || 
+      upper.includes('LUÍS EDUARDO') ||
+      upper.includes('LUIS EDUARDO') ||
+      upper.includes('MAGALHÃES') ||
+      upper.includes('MAGALHAES')) {
+    return 'BA';
+  }
+  if (upper.includes('-TO') || 
+      upper.includes('GURUPI')) {
+    return 'TO';
+  }
+  return 'DF';
+};
+
 const CountdownTracker: React.FC<{ load: CargoLoad; estimatedDurationMinutes: number }> = ({ load, estimatedDurationMinutes }) => {
   const [now, setNow] = useState<Date>(new Date());
 
@@ -463,6 +499,88 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showOccurrencesModal, setShowOccurrencesModal] = useState<boolean>(false);
+
+  const [selectedRegionName, setSelectedRegionName] = useState<string | null>(null);
+  const [selectedRegionStoreSearch, setSelectedRegionStoreSearch] = useState<string>('');
+  const [expandedStoreKey, setExpandedStoreKey] = useState<string | null>(null);
+
+  const regionStoresDetails = useMemo(() => {
+    if (!selectedRegionName) return [];
+
+    // 1. Collect all known store keys from ROUTE_COORDINATES + any destination from current loads
+    const allStoreNames = new Set<string>();
+    Object.keys(ROUTE_COORDINATES).forEach(k => allStoreNames.add(k));
+    loads.forEach(l => {
+      if (l.destination) allStoreNames.add(l.destination);
+      if (l.additionalDestinations) {
+        l.additionalDestinations.forEach(d => allStoreNames.add(d));
+      }
+    });
+
+    // 2. Filter stores that belong to the selected region and match search text
+    const selectedStoresFiltered = Array.from(allStoreNames).filter(storeName => {
+      const reg = getRegionForStore(storeName);
+      if (reg !== selectedRegionName) return false;
+
+      if (selectedRegionStoreSearch.trim()) {
+        const term = selectedRegionStoreSearch.toLowerCase();
+        const label = (ROUTE_COORDINATES[storeName]?.label || storeName).toLowerCase();
+        const address = (ROUTE_COORDINATES[storeName]?.address || '').toLowerCase();
+        return label.includes(term) || address.includes(term) || storeName.toLowerCase().includes(term);
+      }
+      return true;
+    });
+
+    // 3. For each store, calculate its metrics based on the loads
+    return selectedStoresFiltered.map(storeName => {
+      const storeLoads = loads.filter(l => {
+        const carriesToStore = l.destination === storeName || 
+          (l.additionalDestinations && l.additionalDestinations.includes(storeName));
+        return carriesToStore;
+      });
+
+      // Calculate pallets count specifically for this store
+      let totalPallets = 0;
+      storeLoads.forEach(l => {
+        if (l.palletDetails && l.palletDetails.length > 0) {
+          // Count specific pallets assigned to this store
+          const storePallets = l.palletDetails.filter(p => p.destination === storeName);
+          if (storePallets.length > 0) {
+            totalPallets += storePallets.reduce((sum, p) => sum + p.quantity, 0);
+          } else {
+            // Fallback if no specific destination mapped in details but this is the primary
+            if (l.destination === storeName) {
+              totalPallets += l.palletCount || 0;
+            }
+          }
+        } else {
+          if (l.destination === storeName) {
+            totalPallets += l.palletCount || 0;
+          }
+        }
+      });
+
+      const highRiskCount = storeLoads.filter(l => l.isHighRisk).length;
+      const releasedCount = storeLoads.filter(l => l.status === CargoStatus.RELEASED).length;
+      const blockedCount = storeLoads.filter(l => l.status === CargoStatus.BLOCKED).length;
+      const pendingCount = storeLoads.filter(l => l.status === CargoStatus.AWAITING).length;
+
+      const coord = ROUTE_COORDINATES[storeName] || { address: 'Endereço não cadastrado', label: storeName };
+
+      return {
+        key: storeName,
+        label: coord.label || storeName,
+        address: coord.address,
+        loadsCount: storeLoads.length,
+        palletsCount: totalPallets,
+        highRiskCount,
+        releasedCount,
+        blockedCount,
+        pendingCount,
+        loads: storeLoads
+      };
+    }).sort((a, b) => b.loadsCount - a.loadsCount); // Sort by most active store (highest manifest volume)
+  }, [selectedRegionName, selectedRegionStoreSearch, loads]);
 
   const handleReorderTargets = (fromIndex: number, toIndex: number) => {
     if (!selectedLoad) return;
@@ -1301,7 +1419,16 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   barSize={40}
                 >
                   {regionChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.color} 
+                      onClick={() => {
+                        setSelectedRegionName(selectedRegionName === entry.name ? null : entry.name);
+                        setExpandedStoreKey(null);
+                        setSelectedRegionStoreSearch('');
+                      }}
+                      className="cursor-pointer hover:opacity-80 transition-all"
+                    />
                   ))}
                 </Bar>
                 <Bar 
@@ -1317,45 +1444,302 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
           {/* Cards Rápidos de Detalhamento por Estado */}
           <div className="lg:col-span-5 flex flex-col justify-center gap-4">
-            {regionChartData.map((reg) => (
-              <div 
-                key={reg.name}
-                className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between hover:bg-slate-50 hover:shadow-sm transition-all duration-200"
-              >
+            {regionChartData.map((reg) => {
+              const isActive = selectedRegionName === reg.name;
+              return (
+                <button 
+                  type="button"
+                  key={reg.name}
+                  onClick={() => {
+                    setSelectedRegionName(isActive ? null : reg.name);
+                    setExpandedStoreKey(null);
+                    setSelectedRegionStoreSearch('');
+                  }}
+                  className={`w-full text-left p-4 rounded-2xl border flex items-center justify-between transition-all duration-200 cursor-pointer ${
+                    isActive 
+                      ? 'border-primary-gold bg-amber-50/40 ring-4 ring-primary-gold/15 shadow-md scale-[1.01]' 
+                      : 'border-slate-100 bg-slate-50/50 hover:bg-slate-150/40 hover:shadow-xs hover:scale-[1.005]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div 
+                      style={{ backgroundColor: reg.color }} 
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-md"
+                    >
+                      {reg.name}
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-700 uppercase tracking-tight">{reg.fullname}</h3>
+                      <p className="text-[10px] text-slate-500 font-bold">
+                        {reg['Volume de Paletes']} paletes movimentados
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-right">
+                    <div>
+                      <div className="font-mono font-black text-slate-800 text-lg leading-none">
+                        {reg['Total de Cargas']}
+                      </div>
+                      <span className="text-[9px] font-black tracking-widest uppercase text-slate-400">Manifestos</span>
+                    </div>
+                    <div className="border-l border-slate-200 pl-3">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                        reg['Alto Risco (PAR)'] > 0 
+                          ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                      }`}>
+                        {reg['Alto Risco (PAR)']} PAR
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Dynamic Regional Stores Panel */}
+        <div className="border-t border-slate-100 mt-8 pt-8">
+          {!selectedRegionName ? (
+            <div className="flex items-center justify-center py-6 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <Info className="w-4 h-4 text-slate-400 shrink-0" />
+                Clique em uma região no gráfico ou card acima para planejar e inspecionar o detalhamento das lojas
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+              {/* Header section */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                 <div className="flex items-center gap-3">
                   <div 
-                    style={{ backgroundColor: reg.color }} 
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-md"
+                    style={{ backgroundColor: regionChartData.find(r => r.name === selectedRegionName)?.color || '#64748B' }}
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-md"
                   >
-                    {reg.name}
+                    {selectedRegionName}
                   </div>
                   <div>
-                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-tight">{reg.fullname}</h3>
-                    <p className="text-[10px] text-slate-500 font-bold">
-                      {reg['Volume de Paletes']} paletes movimentados
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                        Lojas Monitoradas: Regional {selectedRegionName}
+                      </h3>
+                      <span className="bg-slate-200 text-slate-700 text-[10px] uppercase font-black px-2 py-0.5 rounded-full">
+                        {regionStoresDetails.length} {regionStoresDetails.length === 1 ? 'Loja' : 'Lojas'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                      {regionChartData.find(r => r.name === selectedRegionName)?.fullname || ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-right">
-                  <div>
-                    <div className="font-mono font-black text-slate-800 text-lg leading-none">
-                      {reg['Total de Cargas']}
-                    </div>
-                    <span className="text-[9px] font-black tracking-widest uppercase text-slate-400">Manifestos</span>
+
+                {/* Actions & Filters */}
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  {/* Search bar inside selected regional */}
+                  <div className="relative flex-1 md:flex-initial">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input 
+                      type="text" 
+                      placeholder={`Buscar loja nesta regional...`}
+                      value={selectedRegionStoreSearch}
+                      onChange={(e) => {
+                        setSelectedRegionStoreSearch(e.target.value);
+                        setExpandedStoreKey(null);
+                      }}
+                      className="w-full md:w-64 pl-10 pr-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:border-primary-gold focus:ring-2 focus:ring-primary-gold/15 transition-all placeholder:text-slate-400"
+                    />
+                    {selectedRegionStoreSearch && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setSelectedRegionStoreSearch('');
+                          setExpandedStoreKey(null);
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] uppercase font-black text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        Limpar
+                      </button>
+                    )}
                   </div>
-                  <div className="border-l border-slate-200 pl-4">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                      reg['Alto Risco (PAR)'] > 0 
-                        ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    }`}>
-                      {reg['Alto Risco (PAR)']} PAR
-                    </span>
-                  </div>
+
+                  {/* Close button */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setSelectedRegionName(null);
+                      setSelectedRegionStoreSearch('');
+                      setExpandedStoreKey(null);
+                    }}
+                    className="p-2 bg-slate-200 hover:bg-slate-300 text-slate-500 hover:text-slate-800 rounded-xl transition-all cursor-pointer"
+                    title="Fechar detalhamento"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
+
+              {/* Stores list */}
+              {regionStoresDetails.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 font-bold text-xs bg-slate-50/30 rounded-2xl border border-slate-100">
+                  Nenhuma loja encontrada para os filtros aplicados nesta regional.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {regionStoresDetails.map((store) => {
+                    const isExpanded = expandedStoreKey === store.key;
+                    return (
+                      <div 
+                        key={store.key}
+                        className={`rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col ${
+                          isExpanded 
+                            ? 'border-primary-gold bg-amber-50/5 ring-4 ring-primary-gold/5 shadow-md col-span-1 md:col-span-2 lg:col-span-3' 
+                            : 'border-slate-150 bg-white hover:bg-slate-50/50 hover:shadow-xs'
+                        }`}
+                      >
+                        {/* Upper card data */}
+                        <div 
+                          onClick={() => setExpandedStoreKey(isExpanded ? null : store.key)}
+                          className="p-4 flex items-start justify-between gap-4 cursor-pointer select-none"
+                        >
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-700 text-[9px] font-black uppercase tracking-wider px-2 py-0.5">
+                              ID: {store.key}
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">
+                              {store.label}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-medium truncate flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              {store.address || 'Endereço não cadastrado'}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-center shrink-0">
+                            {/* Metrics badges */}
+                            <div className="text-right">
+                              <div className="flex items-center gap-1 justify-end font-mono font-black text-slate-800 text-xs text-right">
+                                <Truck className="w-3 h-3 text-slate-400" />
+                                {store.loadsCount}
+                              </div>
+                              <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 text-right block">
+                                {store.loadsCount === 1 ? 'Manifesto' : 'Manifestos'}
+                              </span>
+                            </div>
+
+                            <div className="border-l border-slate-200 pl-3 text-right">
+                              <div className="flex items-center gap-1 justify-end font-mono font-black text-slate-800 text-xs text-right">
+                                <Package className="w-3 h-3 text-slate-400" />
+                                {store.palletsCount}
+                              </div>
+                              <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 text-right block">Paletes</span>
+                            </div>
+
+                            {/* Chevron indicators */}
+                            <div className="pl-1 text-slate-400">
+                              <span className={`block transition-transform duration-200 text-[10px] font-black ${isExpanded ? 'rotate-180 text-primary-gold' : ''}`}>
+                                ▼
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Store high alert banner */}
+                        {store.highRiskCount > 0 && !isExpanded && (
+                          <div className="px-4 py-1.5 bg-rose-50 border-t border-rose-100/50 flex items-center justify-between">
+                            <span className="text-[9px] font-black text-rose-700 uppercase tracking-wider flex items-center gap-1">
+                              <ShieldAlert className="w-3 h-3 text-rose-500" /> Possui {store.highRiskCount} {store.highRiskCount === 1 ? 'carga' : 'cargas'} de Alto Risco (PAR)
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Expanded details list */}
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 bg-slate-50/30 p-4 space-y-3 animate-in fade-in duration-200">
+                            <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                              <LayoutDashboard className="w-3.5 h-3.5 text-slate-400" />
+                              Manifestos Atribuídos a esta Loja ({store.loads.length})
+                            </h5>
+
+                            {store.loads.length === 0 ? (
+                              <p className="text-[11px] font-medium text-slate-400 py-2">Nenhum manifesto ativo ou programado em rota direta para esta loja no momento.</p>
+                            ) : (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                      <th className="p-3">Veículo / Placa</th>
+                                      <th className="p-3">Motorista</th>
+                                      <th className="p-3 text-center">Paletes</th>
+                                      <th className="p-3 text-center">Tipo PAR</th>
+                                      <th className="p-3">Status de Trânsito</th>
+                                      <th className="p-3 text-right">Ação</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-150 text-[11px]">
+                                    {store.loads.map((load) => {
+                                      // Get status styling
+                                      const isReleased = load.status === CargoStatus.RELEASED;
+                                      const isBlocked = load.status === CargoStatus.BLOCKED;
+
+                                      return (
+                                        <tr key={load.id} className="hover:bg-slate-50/50 transition-colors">
+                                          <td className="p-3 font-black text-slate-700">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
+                                              {load.plate}
+                                            </div>
+                                          </td>
+                                          <td className="p-3 font-bold text-slate-600">{load.driverName}</td>
+                                          <td className="p-3 font-mono font-black text-slate-700 text-center">
+                                            {load.palletCount} un
+                                          </td>
+                                          <td className="p-3 text-center">
+                                            {load.isHighRisk ? (
+                                              <span className="inline-flex items-center gap-1 rounded bg-rose-50 border border-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700 uppercase">
+                                                PAR
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-400">-</span>
+                                            )}
+                                          </td>
+                                          <td className="p-3">
+                                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                                              isReleased 
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                                : isBlocked
+                                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                            }`}>
+                                              {load.status}
+                                            </span>
+                                          </td>
+                                          <td className="p-3 text-right">
+                                            <button 
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedLoadId(load.id);
+                                              }}
+                                              className="px-2.5 py-1 text-[10px] font-black uppercase bg-primary-gold hover:bg-opacity-90 hover:scale-[1.02] text-slate-800 rounded-lg transition-all cursor-pointer"
+                                            >
+                                              Rastrear
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

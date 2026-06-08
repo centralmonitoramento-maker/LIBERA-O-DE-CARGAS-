@@ -3,6 +3,7 @@ import React from 'react';
 import { LogOut, LayoutDashboard, Truck, ShieldCheck, BarChart3, Bell, BellOff, Sun, Moon, ClipboardCheck } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus } from '../types';
+import { FeedbackChat } from './FeedbackChat';
 
 type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
 
@@ -293,6 +294,8 @@ export const Layout: React.FC<LayoutProps> = ({
           </div>
         </div>
       </footer>
+
+      {isAuthenticated && <FeedbackChat currentUser={user} />}
     </div>
   );
 };

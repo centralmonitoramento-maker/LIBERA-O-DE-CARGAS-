@@ -3,7 +3,8 @@
   "description": "A professional logistics management system for cargo release, featuring a two-step validation process for expedition and central command verification.",
   "requestFramePermissions": [
     "geolocation",
-    "camera"
+    "camera",
+    "microphone"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
