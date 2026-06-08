@@ -53,17 +53,17 @@ export interface CargoLoad {
   status: CargoStatus;
   createdAt: string;
   createdBy: string; // Username of the expedition user
-  photoPlate?: string;
-  photoSeal?: string;
-  photoManifest?: string;
+  photoPlate?: string | string[];
+  photoSeal?: string | string[];
+  photoManifest?: string | string[];
   occurrenceType?: OccurrenceType;
   occurrenceDescription?: string;
-  occurrencePhoto?: string;
+  occurrencePhoto?: string | string[];
   auditedAt?: string;
   occurrenceHistory?: {
     type: OccurrenceType;
     description: string;
-    photo?: string;
+    photo?: string | string[];
     auditor: string;
     timestamp: string;
   }[];
@@ -75,9 +75,9 @@ export interface CargoLoad {
   gateVerified?: boolean;
   gateVerifiedAt?: string;
   gateVerifiedBy?: string;
-  gatePhotoPlate?: string;
-  gatePhotoSeal?: string;
-  gatePhotoManifest?: string;
+  gatePhotoPlate?: string | string[];
+  gatePhotoSeal?: string | string[];
+  gatePhotoManifest?: string | string[];
   gateStatus?: 'Aguardando' | 'Aprovado' | 'Divergente';
   gateObservation?: string;
 }
@@ -126,4 +126,22 @@ const mapsKey = process.env.VITE_GOOGLE_MAPS_API_KEY ||
 export const CD_ROUTES_MAP: Record<string, string> = {
   'CD-01-SIA': `https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=SIA+Brasilia&destination=SIA+Brasilia&mode=driving`,
   'CD-02-SIA': `https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=SIA+Brasilia&destination=SIA+Brasilia&mode=driving`,
+};
+
+export const getPhotosArray = (photoVal: string | string[] | undefined): string[] => {
+  if (!photoVal) return [];
+  if (Array.isArray(photoVal)) return photoVal;
+  if (typeof photoVal === 'string' && photoVal.trim() !== '') {
+    if (photoVal.startsWith('[') && photoVal.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(photoVal);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    // Return single non-empty string as a single-element array
+    return [photoVal];
+  }
+  return [];
 };

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole } from '../types';
+import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
@@ -74,7 +74,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [occType, setOccType] = useState<OccurrenceType>(OccurrenceType.NONE);
   const [customOccType, setCustomOccType] = useState('');
   const [occDescription, setOccDescription] = useState('');
-  const [occPhoto, setOccPhoto] = useState<string | undefined>(undefined);
+  const [occPhoto, setOccPhoto] = useState<string[]>([]);
   const [sealInput, setSealInput] = useState('');
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -178,7 +178,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
         ? (customOccType.trim() as OccurrenceType) 
         : occType;
 
-      onUpdateOccurrence(selectedLoad.id, finalOccType, occDescription, occPhoto);
+      onUpdateOccurrence(selectedLoad.id, finalOccType, occDescription, occPhoto.length > 0 ? occPhoto : undefined);
       setSaveFeedback(true);
       setTimeout(() => setSaveFeedback(false), 3000);
     }
@@ -200,25 +200,34 @@ export const AuditView: React.FC<AuditViewProps> = ({
       }
 
       setOccDescription(load.occurrenceDescription || '');
-      setOccPhoto(load.occurrencePhoto);
+      setOccPhoto(getPhotosArray(load.occurrencePhoto));
       setSealInput('');
     }
     setSaveFeedback(false);
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setOccPhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const remainingSlots = 10 - occPhoto.length;
+      const filesToProcess = Array.from(files).slice(0, remainingSlots) as File[];
+      
+      filesToProcess.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setOccPhoto(prev => {
+            if (prev.length >= 10) return prev;
+            return [...prev, reader.result as string];
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const removePhoto = () => {
-    setOccPhoto(undefined);
+  const removePhoto = (idx: number) => {
+    setOccPhoto(prev => prev.filter((_, i) => i !== idx));
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -511,30 +520,34 @@ export const AuditView: React.FC<AuditViewProps> = ({
         // Image evidence
         if (occ.photo) {
           try {
-            const imgX = margin + 8;
-            const imgY = currentY + 19.5 + textHeight + 2;
-            const imgW = 85;
-            const imgH = 50;
-            
-            // Render photo placeholder or background border
-            doc.setFillColor(244, 244, 245);
-            doc.rect(imgX, imgY, imgW, imgH, 'F');
-            doc.setDrawColor(212, 212, 216);
-            doc.rect(imgX, imgY, imgW, imgH, 'D');
+            const pArray = getPhotosArray(occ.photo);
+            if (pArray.length > 0) {
+              const firstPhoto = pArray[0];
+              const imgX = margin + 8;
+              const imgY = currentY + 19.5 + textHeight + 2;
+              const imgW = 85;
+              const imgH = 50;
+              
+              // Render photo placeholder or background border
+              doc.setFillColor(244, 244, 245);
+              doc.rect(imgX, imgY, imgW, imgH, 'F');
+              doc.setDrawColor(212, 212, 216);
+              doc.rect(imgX, imgY, imgW, imgH, 'D');
 
-            // Find correct image type dynamically
-            let imgFormat = 'JPEG';
-            if (occ.photo.includes('image/png')) imgFormat = 'PNG';
-            if (occ.photo.includes('image/webp')) imgFormat = 'WEBP';
+              // Find correct image type dynamically
+              let imgFormat = 'JPEG';
+              if (firstPhoto.includes('image/png')) imgFormat = 'PNG';
+              if (firstPhoto.includes('image/webp')) imgFormat = 'WEBP';
 
-            // Draw Base64 image
-            doc.addImage(occ.photo, imgFormat, imgX + 1, imgY + 1, imgW - 2, imgH - 2);
+              // Draw Base64 image
+              doc.addImage(firstPhoto, imgFormat, imgX + 1, imgY + 1, imgW - 2, imgH - 2);
 
-            // Print Label below the photo
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(6.5);
-            doc.setTextColor(113, 113, 122);
-            doc.text('[ANEXO DE AUDITORIA] REGISTRO FOTOGRÁFICO DE EVIDÊNCIA DE GATE', imgX, imgY + imgH + 4);
+              // Print Label below the photo
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(6.5);
+              doc.setTextColor(113, 113, 122);
+              doc.text('[ANEXO DE AUDITORIA] REGISTRO FOTOGRÁFICO DE EVIDÊNCIA DE GATE', imgX, imgY + imgH + 4);
+            }
           } catch (err) {
             console.error("PDF image adding error:", err);
             doc.setTextColor(220, 38, 38);
@@ -1026,45 +1039,53 @@ export const AuditView: React.FC<AuditViewProps> = ({
                                       ? 'Lacre conferido com sucesso!' 
                                       : 'Atenção: Lacre não confere com o manifesto!')}
                               </p>
+                              <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase">Evidência Fotográfica ({occPhoto.length}/10)</label>
                             </div>
-                          )}
-
-                          <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">Evidência Fotográfica</label>
                             <div className="flex flex-col gap-3">
                               <input 
                                 type="file" 
+                                multiple
                                 accept="image/*" 
                                 capture="environment" 
                                 className="hidden" 
                                 ref={fileInputRef}
                                 onChange={handlePhotoChange}
                               />
-                              <button 
-                                onClick={() => fileInputRef.current?.click()}
-                                className="w-full bg-slate-800 border-2 border-dashed border-slate-700 hover:border-primary-gold hover:bg-slate-700 p-4 rounded-xl flex flex-col items-center justify-center gap-2 transition-all group"
-                              >
-                                <svg className="w-6 h-6 text-slate-500 group-hover:text-primary-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                <span className="text-[10px] font-bold text-slate-400 group-hover:text-primary-gold">ANEXAR OU TIRAR FOTO</span>
-                              </button>
+                              {occPhoto.length < 10 && (
+                                <button 
+                                  onClick={() => fileInputRef.current?.click()}
+                                  className="w-full bg-slate-800 border-2 border-dashed border-slate-700 hover:border-primary-gold hover:bg-slate-700 p-4 rounded-xl flex flex-col items-center justify-center gap-2 transition-all group cursor-pointer border-0"
+                                >
+                                  <svg className="w-6 h-6 text-slate-500 group-hover:text-primary-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                  <span className="text-[10px] font-bold text-slate-400 group-hover:text-primary-gold">ANEXAR OU TIRAR FOTO</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
+                      )}
+                    </div>
 
-                        <div className="flex items-center justify-center bg-slate-800 rounded-xl border border-slate-700 min-h-[200px] relative overflow-hidden">
-                          {occPhoto ? (
-                            <>
-                              <img src={occPhoto} alt="Evidência" className="w-full h-full object-cover" />
-                              <button 
-                                onClick={removePhoto}
-                                className="absolute top-2 right-2 bg-red-600/80 hover:bg-red-600 p-1.5 rounded-full text-white shadow-lg transition-all"
-                                title="Remover Foto"
-                              >
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path></svg>
-                              </button>
-                            </>
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 min-h-[200px] flex flex-col justify-center">
+                          {occPhoto.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-3">
+                              {occPhoto.map((p, idx) => (
+                                <div key={idx} className="relative h-28 bg-slate-900 border border-slate-700 rounded-lg overflow-hidden group">
+                                  <img src={p} alt={`Evidência ${idx + 1}`} className="w-full h-full object-cover" />
+                                  <button 
+                                    onClick={() => removePhoto(idx)}
+                                    className="absolute top-1.5 right-1.5 bg-red-650 hover:bg-red-500 p-1.5 rounded-lg text-white shadow-lg transition-all border-0 flex items-center justify-center cursor-pointer"
+                                    title="Remover Foto"
+                                  >
+                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path></svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           ) : (
-                            <span className="text-slate-600 text-[10px] font-bold italic">Sem visualização de mídia</span>
+                            <span className="text-slate-600 text-[10px] font-bold italic text-center">Sem visualização de mídia (anexe até 10 fotos)</span>
                           )}
                         </div>
                       </div>
