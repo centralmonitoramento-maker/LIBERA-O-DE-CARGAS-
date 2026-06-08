@@ -79,6 +79,16 @@ service cloud.firestore {
              data.action is string && data.action.size() <= 128;
     }
 
+    function isValidFeedback(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.senderName is string && data.senderName.size() <= 256 &&
+             data.senderUsername is string && data.senderUsername.size() <= 64 &&
+             data.senderRole is string &&
+             data.senderRoleLabel is string &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.areaTarget is string;
+    }
+
     // User Collection Rules
     match /users/{userId} {
       allow get: if true;
@@ -136,6 +146,18 @@ service cloud.firestore {
       );
       
       // Logs are append-only; updates and deletes are forbidden
+      allow update, delete: if false;
+    }
+
+    // Feedbacks Collection Rules
+    match /feedbacks/{feedbackId} {
+      allow get, list: if true;
+      
+      allow create: if isValidId(feedbackId) && isValidFeedback(incoming()) && (
+        incoming().id == feedbackId
+      );
+      
+      // Feedbacks are append-only; updates and deletes are forbidden
       allow update, delete: if false;
     }
   }

@@ -65,6 +65,27 @@
         "loadId": { "type": "string" }
       },
       "required": ["id", "timestamp", "username", "action", "details"]
+    },
+    "FeedbackMessage": {
+      "title": "FeedbackMessage",
+      "description": "Represents communication/feedback logs between areas",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderUsername": { "type": "string" },
+        "senderRole": { "type": "string" },
+        "senderRoleLabel": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "audio": { "type": "string" },
+        "audioDuration": { "type": "number" },
+        "attachment": { "type": "string" },
+        "attachmentName": { "type": "string" },
+        "attachmentType": { "type": "string" },
+        "areaTarget": { "type": "string" }
+      },
+      "required": ["id", "senderName", "senderUsername", "senderRole", "senderRoleLabel", "timestamp", "areaTarget"]
     }
   },
   "firestore": {
@@ -79,6 +100,10 @@
     "logs/{logId}": {
       "schema": "EventLog",
       "description": "Platform audit log records"
+    },
+    "feedbacks/{feedbackId}": {
+      "schema": "FeedbackMessage",
+      "description": "Interactive feedback and communication channel between operational areas"
     }
   }
 }

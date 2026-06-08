@@ -153,6 +153,22 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Restores active Firebase Auth session automatically on reload/boot if cached in localStorage
+  useEffect(() => {
+    if (isAuthenticated && loggedInUser && !auth.currentUser) {
+      const email = `${loggedInUser.username.toLowerCase()}@cargarelease.com`;
+      const authPassword = loggedInUser.password;
+      console.log("Restoring Firebase Auth session details:", email);
+      signInWithEmailAndPassword(auth, email, authPassword)
+        .then((credential) => {
+          console.log("Successfully restored Firebase Auth session on boot:", credential.user.email);
+        })
+        .catch((err) => {
+          console.warn("Failed to automatically restore Firebase Auth session:", err);
+        });
+    }
+  }, [isAuthenticated, loggedInUser]);
+
   const triggerNativeNotification = (load: CargoLoad) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
@@ -181,6 +197,65 @@ const App: React.FC = () => {
     }
   };
 
+  const playNotificationChime = (type: 'added' | 'blocked') => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      
+      const audioCtx = new AudioContextClass();
+      
+      if (type === 'added') {
+        const playTone = (freq: number, start: number, duration: number) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, start);
+          
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(0.02, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+        
+        const now = audioCtx.currentTime;
+        // G5 then C6 subtle high double-tone chime
+        playTone(783.99, now, 0.18);
+        playTone(1046.50, now + 0.08, 0.3);
+      } else if (type === 'blocked') {
+        const playTone = (freq: number, start: number, duration: number) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, start);
+          
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(0.03, start + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+        
+        const now = audioCtx.currentTime;
+        // Descriptive minor drop warning but sutil beep chime
+        playTone(554.37, now, 0.15);
+        playTone(466.16, now + 0.08, 0.25);
+      }
+    } catch (err) {
+      console.warn('Alerta sonoro com falha/bloqueado no navegador:', err);
+    }
+  };
+
   // Set up real-time onSnapshot listeners
   // 1. Cargo Loads (always subscribed)
   useEffect(() => {
@@ -193,6 +268,13 @@ const App: React.FC = () => {
       // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
       snapshot.docChanges().forEach((change) => {
         const load = change.doc.data() as CargoLoad;
+        const changeType = change.type;
+
+        if (changeType === 'added' && !isFirstLoad.current) {
+          // Play a subtle chime when load was live added
+          playNotificationChime('added');
+        }
+
         if (load.status === CargoStatus.BLOCKED) {
           if (isFirstLoad.current) {
             notifiedLoadIds.current.add(load.id);
@@ -200,6 +282,7 @@ const App: React.FC = () => {
             if (!notifiedLoadIds.current.has(load.id)) {
               notifiedLoadIds.current.add(load.id);
               triggerNativeNotification(load);
+              playNotificationChime('blocked');
             }
           }
         } else {

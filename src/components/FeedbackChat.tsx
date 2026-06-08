@@ -27,7 +27,7 @@ import {
   ArrowDown, 
   Users
 } from 'lucide-react';
-import { db, sanitizeFirestoreData } from '../firebase';
+import { db, sanitizeFirestoreData, handleFirestoreError, OperationType } from '../firebase';
 import { User } from '../types';
 
 interface FeedbackMessage {
@@ -150,6 +150,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       }
     }, (error) => {
       console.error('Erro ao escutar mensagens de feedback:', error);
+      handleFirestoreError(error, OperationType.LIST, 'feedbacks');
     });
 
     return () => unsubscribe();
@@ -331,7 +332,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       }, 50);
     } catch (err) {
       console.error('Falha ao enviar mensagem de feedback:', err);
-      alert('Erro de envio. Conexão oscilando ou instável.');
+      handleFirestoreError(err, OperationType.CREATE, 'feedbacks');
     }
   };
 
