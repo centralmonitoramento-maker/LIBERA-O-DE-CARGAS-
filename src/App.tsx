@@ -7,6 +7,7 @@ import { AuditView } from './views/AuditView';
 import { AnalysisView } from './views/AnalysisView';
 import { LoginView } from './views/LoginView';
 import { PortariaView } from './views/PortariaView';
+import { TrackingView } from './views/TrackingView';
 import { CargoLoad, CargoStatus, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { 
   collection, 
@@ -25,7 +26,7 @@ import {
   signOut 
 } from 'firebase/auth';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -822,6 +823,12 @@ const App: React.FC = () => {
             onUpdateLoad={handleUpdateLoad}
             logs={logs}
             loggedInUser={loggedInUser}
+          />
+        );
+      case 'tracking':
+        return (
+          <TrackingView 
+            loads={loads}
           />
         );
       default:

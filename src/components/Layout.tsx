@@ -1,11 +1,11 @@
 
 import React from 'react';
-import { LogOut, LayoutDashboard, Truck, ShieldCheck, BarChart3, Bell, BellOff, Sun, Moon, ClipboardCheck } from 'lucide-react';
+import { LogOut, LayoutDashboard, Truck, ShieldCheck, BarChart3, Bell, BellOff, Sun, Moon, ClipboardCheck, Compass } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -71,6 +71,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const allTabs = [
     { id: 'expedition' as TabType, label: 'EXPEDIÇÃO', icon: Truck },
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
+    { id: 'tracking' as TabType, label: 'RASTREAMENTO', icon: Compass },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
     { id: 'portaria' as TabType, label: 'PORTARIA', icon: ClipboardCheck },
@@ -78,9 +79,11 @@ export const Layout: React.FC<LayoutProps> = ({
 
   // Logic: Admins see everything. Normal users only see their registered area.
   // Exception: Perfil expedidor ('expedition') has access to both 'expedition' and 'portaria'.
+  // 'tracking' is a global feature accessible by all roles.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
     if (user.systemRole === 'administrator') return true;
+    if (tab.id === 'tracking') return true;
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }

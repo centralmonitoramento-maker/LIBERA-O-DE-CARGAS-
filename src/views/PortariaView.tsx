@@ -147,6 +147,42 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     setIsModalOpen(true); // Abre modal sobreposto
   };
 
+  // Synchronize checklist items with gateStatus
+  const handleToggleCheck = (type: 'plate' | 'seal' | 'romaneio', val: boolean) => {
+    let p = chkPlate;
+    let s = chkSeal;
+    let r = chkRomaneio;
+    if (type === 'plate') {
+      p = val;
+      setChkPlate(val);
+    } else if (type === 'seal') {
+      s = val;
+      setChkSeal(val);
+    } else {
+      r = val;
+      setChkRomaneio(val);
+    }
+
+    if (p && s && r) {
+      setGateStatus('Aprovado');
+    } else {
+      setGateStatus('Divergente');
+    }
+  };
+
+  const handleGateStatusChange = (val: 'Aguardando' | 'Aprovado' | 'Divergente') => {
+    setGateStatus(val);
+    if (val === 'Aprovado') {
+      setChkPlate(true);
+      setChkSeal(true);
+      setChkRomaneio(true);
+    } else if (val === 'Divergente') {
+      if (chkPlate && chkSeal && chkRomaneio) {
+        setChkSeal(false);
+      }
+    }
+  };
+
   // Convert uploaded image file to Base64 to enable direct localStorage / FireStore saves
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'plate' | 'seal' | 'manifest') => {
     const files = e.target.files;
@@ -203,20 +239,30 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       return;
     }
 
-    if (!chkPlate || !chkSeal || !chkRomaneio) {
-      setNotification({
-        type: 'error',
-        message: 'Por favor, realize a conferência visual e marque todo o checklist de aprovação física antes de salvar.'
-      });
-      return;
+    const finalGateStatus = gateStatus === 'Aguardando' 
+      ? (chkPlate && chkSeal && chkRomaneio ? 'Aprovado' : 'Divergente') 
+      : gateStatus;
+
+    if (finalGateStatus === 'Aprovado') {
+      if (!chkPlate || !chkSeal || !chkRomaneio) {
+        setNotification({
+          type: 'error',
+          message: 'Para aprovar a portaria e liberar a carga, todas as opções do checklist físico devem estar confirmadas.'
+        });
+        return;
+      }
+    } else if (finalGateStatus === 'Divergente') {
+      if (chkPlate && chkSeal && chkRomaneio && !gateObservation.trim()) {
+        setNotification({
+          type: 'error',
+          message: 'Para registrar uma divergência, desmarque os itens divergentes no checklist ou descreva a divergência nas Observações Gerais.'
+        });
+        return;
+      }
     }
 
     const valDate = new Date().toISOString();
     const valBy = loggedInUser?.fullName || loggedInUser?.username || 'Portaria G7';
-
-    // Se aprovado, move a carga para EM TRÂNSITO para começar a rodar o relógio temporizador e medir percurso
-    // Se "Portaria" validar a carga para 'Aprovado' (Status), muda o status da carga principal para CargoStatus.RELEASED (Em Trânsito)
-    const finalGateStatus = gateStatus === 'Aguardando' ? 'Aprovado' : gateStatus;
 
     const updated: CargoLoad = {
       ...selectedLoad,
@@ -230,16 +276,16 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       gateStatus: finalGateStatus,
       status: finalGateStatus === 'Aprovado' 
         ? CargoStatus.RELEASED 
-        : finalGateStatus === 'Divergente' 
-          ? CargoStatus.BLOCKED 
-          : selectedLoad.status
+        : CargoStatus.BLOCKED
     };
 
     try {
       await onUpdateLoad(updated);
       setNotification({
         type: 'success',
-        message: 'Confirmação registrada! Lançamento atualizado e carga alterada para em trânsito com sucesso.'
+        message: finalGateStatus === 'Aprovado'
+          ? 'Confirmação registrada! Carga aprovada e alterada para em trânsito.'
+          : 'Divergência de portaria constatada e registrada! Carga bloqueada no sistema.'
       });
       
       // Auto close overlay modal window after brief success display
@@ -251,7 +297,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     } catch (err: any) {
       setNotification({
         type: 'error',
-        message: 'Falha ao processar lançamento. Por favor, tente novamente.'
+        message: 'Falha ao processar lançamento na portaria. Por favor, tente novamente.'
       });
     }
   };
@@ -839,7 +885,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           <input 
                             type="checkbox" 
                             checked={chkPlate}
-                            onChange={(e) => setChkPlate(e.target.checked)}
+                            onChange={(e) => handleToggleCheck('plate', e.target.checked)}
                             className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
                           />
                           <div className="text-left">
@@ -852,7 +898,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           <input 
                             type="checkbox" 
                             checked={chkSeal}
-                            onChange={(e) => setChkSeal(e.target.checked)}
+                            onChange={(e) => handleToggleCheck('seal', e.target.checked)}
                             className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
                           />
                           <div className="text-left">
@@ -865,7 +911,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           <input 
                             type="checkbox" 
                             checked={chkRomaneio}
-                            onChange={(e) => setChkRomaneio(e.target.checked)}
+                            onChange={(e) => handleToggleCheck('romaneio', e.target.checked)}
                             className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
                           />
                           <div className="text-left">
@@ -882,7 +928,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                         <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest ml-1">Regulação no Acesso</label>
                         <select
                           value={gateStatus}
-                          onChange={(e) => setGateStatus(e.target.value as any)}
+                          onChange={(e) => handleGateStatusChange(e.target.value as any)}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-primary-navy uppercase tracking-wider focus:ring-2 focus:ring-primary-gold outline-none cursor-pointer h-12"
                         >
                           <option value="Aguardando">AGUARDANDO AVALIAÇÃO</option>
@@ -904,14 +950,25 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                     </div>
 
                     {/* Action button inside popup */}
-                    <button
-                      type="button"
-                      onClick={handleSavePortariaValidation}
-                      className="w-full bg-primary-navy hover:bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-slate-900 border-0"
-                    >
-                      <ShieldCheck className="w-5 h-5 text-primary-gold animate-bounce" />
-                      Aprovar e Liberar Carga (Em Trânsito)
-                    </button>
+                    {gateStatus === 'Divergente' ? (
+                      <button
+                        type="button"
+                        onClick={handleSavePortariaValidation}
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-rose-800 border-0"
+                      >
+                        <AlertCircle className="w-5 h-5 text-white animate-pulse" />
+                        CONSTATAR DIVERGÊNCIA E BLOQUEAR CARGA
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSavePortariaValidation}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-emerald-800 border-0"
+                      >
+                        <ShieldCheck className="w-5 h-5 text-primary-gold animate-bounce" />
+                        APROVAR E LIBERAR CARGA (EM TRÂNSITO)
+                      </button>
+                    )}
                   </div>
                 ) : (
                   /* FICHA DE EDICAO INSIDE POPUP OVERLAY WINDOW */
