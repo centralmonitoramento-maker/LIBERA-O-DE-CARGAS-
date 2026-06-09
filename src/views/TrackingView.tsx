@@ -131,6 +131,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const [trucks, setTrucks] = useState<TruckData[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [sidebarTab, setSidebarTab] = useState<'trucks' | 'geofence'>('trucks');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const [geofenceEnabled, setGeofenceEnabled] = useState<boolean>(true);
   const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-15.7953, -47.9622]);
@@ -790,13 +791,25 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     setActiveShortcutAction(activeShortcutAction === actionName ? null : actionName);
   };
 
-  const filteredTrucks = trucks.filter(t => 
-    t.ras_vei_placa.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.driverName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.destinationName?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTrucks = trucks.filter(t => {
+    const matchesSearch = 
+      t.ras_vei_placa.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.driverName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.destinationName?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'em_transito') return matchedLoad?.status === CargoStatus.RELEASED;
+    if (statusFilter === 'aguardando') return matchedLoad?.status === CargoStatus.AWAITING;
+    if (statusFilter === 'alerta') return matchedLoad?.status === CargoStatus.BLOCKED;
+    if (statusFilter === 'sem_carga') return !matchedLoad;
+    return true;
+  });
 
   const selectedTruckObj = trucks.find(t => t.ras_vei_placa === selectedPlaca);
+  const selectedTruckLoad = selectedTruckObj ? loads.find(l => platesMatch(l.plate, selectedTruckObj.ras_vei_placa)) : null;
 
   return (
     <div className={`flex flex-col lg:flex-row gap-5 ${isFullscreen ? 'fixed inset-0 z-[1050] bg-slate-100 p-6 h-screen' : 'h-[calc(100vh-10rem)] min-h-[580px]'} select-none transition-all duration-300 font-sans text-left`}>
@@ -913,7 +926,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             </div>
 
             {/* Quick telemetry counter */}
-            <div className="grid grid-cols-2 gap-3 mb-3 shrink-0 select-none">
+            <div className="grid grid-cols-2 gap-3 mb-3.5 shrink-0 select-none">
               <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-left">
                 <span className="text-[7.5px] font-black uppercase tracking-widest text-slate-400 block">Veículos monitorados</span>
                 <span className="text-sm font-black text-slate-800 block mt-0.5">{trucks.length}</span>
@@ -921,6 +934,71 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-left">
                 <span className="text-[7.5px] font-black uppercase tracking-widest text-slate-400 block">Último recebimento</span>
                 <span className="text-xs font-mono font-bold text-slate-650 block mt-1">{lastSyncTime || 'Síncrono'}</span>
+              </div>
+            </div>
+
+            {/* Status Filter Pills for Expedition coordination */}
+            <div className="mb-4 shrink-0 select-none text-left">
+              <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-450 block mb-2 pl-1">Filtrar por Status de Expedição</span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer transition-all ${
+                    statusFilter === 'all'
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-350'
+                  }`}
+                >
+                  Todos ({trucks.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('em_transito')}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer transition-all flex items-center gap-1 ${
+                    statusFilter === 'em_transito'
+                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm font-black'
+                      : 'bg-emerald-50/40 border-emerald-100 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Trânsito ({trucks.filter(t => loads.find(l => platesMatch(l.plate, t.ras_vei_placa))?.status === CargoStatus.RELEASED).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('aguardando')}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer transition-all flex items-center gap-1 ${
+                    statusFilter === 'aguardando'
+                      ? 'bg-amber-500 border-amber-500 text-white shadow-sm font-black'
+                      : 'bg-amber-50/40 border-amber-100 text-amber-700 hover:bg-amber-50 hover:border-amber-250'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  Aguardando ({trucks.filter(t => loads.find(l => platesMatch(l.plate, t.ras_vei_placa))?.status === CargoStatus.AWAITING).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('alerta')}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer transition-all flex items-center gap-1 ${
+                    statusFilter === 'alerta'
+                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm font-black'
+                      : 'bg-rose-50/40 border-rose-100 text-rose-700 hover:bg-rose-50 hover:border-rose-200'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                  Alerta ({trucks.filter(t => loads.find(l => platesMatch(l.plate, t.ras_vei_placa))?.status === CargoStatus.BLOCKED).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('sem_carga')}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer transition-all ${
+                    statusFilter === 'sem_carga'
+                      ? 'bg-slate-700 border-slate-700 text-white shadow-sm font-black'
+                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  Sem Carga ({trucks.filter(t => !loads.find(l => platesMatch(l.plate, t.ras_vei_placa))).length})
+                </button>
               </div>
             </div>
 
@@ -1024,6 +1102,36 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                           {voltage}
                         </span>
                       </div>
+
+                      {/* Active Cargo Info Sub-block */}
+                      {matchedLoad ? (
+                        <div className="mt-1 bg-slate-50 border border-slate-150 rounded-lg p-2.5 flex items-center justify-between text-[9px] font-medium text-slate-700 select-none">
+                          <div className="truncate pr-1 max-w-[160px] text-left">
+                            <span className="font-extrabold text-slate-400 block text-[7px] uppercase tracking-wide">Carga: {matchedLoad.id.substring(0, 8)}...</span>
+                            <span className="text-slate-800 font-extrabold truncate block leading-tight">{matchedLoad.driverName}</span>
+                            <span className="text-slate-500 text-[8px] font-bold truncate block leading-none mt-0.5">&rarr; {matchedLoad.destination}</span>
+                          </div>
+                          
+                          {/* Rich Status badge */}
+                          {matchedLoad.status === CargoStatus.RELEASED ? (
+                            <span className="px-1.5 py-0.5 rounded-md text-[7.5px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-250 shrink-0">
+                              Trânsito
+                            </span>
+                          ) : matchedLoad.status === CargoStatus.AWAITING ? (
+                            <span className="px-1.5 py-0.5 rounded-md text-[7.5px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-250 shrink-0">
+                              Conf.
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded-md text-[7.5px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200 shrink-0 animate-pulse">
+                              Alerta
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-1 bg-slate-50/50 rounded-lg p-1.5 border border-slate-100/40 flex items-center justify-between text-[7px] font-bold text-slate-400 select-none">
+                          <span>SEM EXPEDIÇÃO VINCULADA</span>
+                        </div>
+                      )}
 
                       {/* Client row bottom */}
                       <div className="border-t border-slate-100 pt-2 flex justify-between items-center text-[7.5px] font-black uppercase text-slate-400 tracking-wider font-sans select-none">
@@ -1283,6 +1391,124 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           <div className="flex items-center gap-2 px-2.5 py-2 bg-blue-50/70 border border-blue-100 rounded-xl mb-4 text-[9px] font-extrabold text-blue-800 tracking-tight font-sans select-none">
             <svg className="w-3.5 h-3.5 text-blue-600 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-15.86c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93V3.07z"/></svg>
             <span>Comunicou há 8 minutos em 09/06/2026 às {selectedTruckObj.lastUpdate || "14:32:39"}</span>
+          </div>
+
+          {/* Expedition & Cargo Release Status Card Segment */}
+          <div className="mb-4 bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 text-left font-sans shadow-sm select-none">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-200 mb-2.5">
+              <span className="text-[9px] font-black uppercase text-slate-450 tracking-wider">Estado da Expedição</span>
+              <span className="text-[8px] font-mono font-black py-0.5 px-1.5 rounded bg-slate-200 text-slate-700 uppercase tracking-widest">
+                INTEGRADA
+              </span>
+            </div>
+
+            {selectedTruckLoad ? (
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-slate-800 tracking-tight block uppercase">
+                    Status da Carga:
+                  </span>
+                  {selectedTruckLoad.status === CargoStatus.RELEASED ? (
+                    <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                      EM TRÂNSITO (LIBERADO)
+                    </span>
+                  ) : selectedTruckLoad.status === CargoStatus.AWAITING ? (
+                    <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-250 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                      AGUARDANDO CONFERÊNCIA
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-220 flex items-center gap-1 animate-pulse">
+                      <span className="w-1.5 h-1.5 bg-rose-600 rounded-full"></span>
+                      DIVERGÊNCIA / RESTRITO
+                    </span>
+                  )}
+                </div>
+
+                {/* Grid details */}
+                <div className="grid grid-cols-2 gap-2 text-[9px] border-t border-slate-100 pt-2.5">
+                  <div>
+                    <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block">ID / Registro</span>
+                    <strong className="text-slate-800 uppercase font-mono">{selectedTruckLoad.id.substring(0, 10).toUpperCase()}...</strong>
+                  </div>
+                  <div>
+                    <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block">Número Lacre</span>
+                    <strong className="text-slate-800 font-mono text-center tracking-normal">{selectedTruckLoad.sealNumber || "NÃO CONFERIDO"}</strong>
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block">Condutor / Motorista</span>
+                    <strong className="text-slate-800 uppercase truncate block max-w-[130px]">{selectedTruckLoad.driverName}</strong>
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block">Canal / Carga</span>
+                    <strong className="text-slate-800 uppercase">{selectedTruckLoad.cargoType}</strong>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-2.5 space-y-1.5">
+                  <div className="flex justify-between items-center text-[8.5px]">
+                    <span className="font-semibold text-slate-450 uppercase">Rota Operacional</span>
+                    <strong className="text-slate-750 uppercase truncate max-w-[160px]" title={`${selectedTruckLoad.origin} para ${selectedTruckLoad.destination}`}>
+                      {selectedTruckLoad.origin} &rarr; {selectedTruckLoad.destination}
+                    </strong>
+                  </div>
+                  {selectedTruckLoad.additionalDestinations && selectedTruckLoad.additionalDestinations.length > 0 && (
+                    <div className="flex justify-between items-center text-[8px]">
+                      <span className="font-semibold text-slate-400 uppercase">Paradas extras</span>
+                      <strong className="text-slate-650 uppercase truncate max-w-[160px]">
+                        {selectedTruckLoad.additionalDestinations.join(' | ')}
+                      </strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-[8.5px]">
+                    <span className="font-semibold text-slate-450 uppercase">Paletes Totais</span>
+                    <strong className="text-slate-700">{selectedTruckLoad.palletCount} Pls</strong>
+                  </div>
+                  
+                  {/* High Risk indicator */}
+                  {selectedTruckLoad.isHighRisk && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-lg p-2 text-[8px] font-black uppercase flex items-center gap-1.5 leading-snug">
+                      <AlertTriangle className="w-4.5 h-4.5 text-rose-600 shrink-0 animate-bounce" />
+                      <div>
+                        ALERTA DE ALTO RISCO DA EXPECIÇÃO! 
+                        <span className="block font-bold text-slate-500 text-[7px] mt-0.5 normal-case font-sans">Escolta veicular armada e sensores de baú em vigilância redundante.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Portaria Validation details */}
+                  <div className="mt-1.5 p-2 bg-white rounded-lg border border-slate-200 text-[8.5px] space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="font-black text-slate-400 uppercase text-[7.5px] tracking-wider">Verificação de Portaria</span>
+                      {selectedTruckLoad.gateVerified ? (
+                        <span className={`px-1 rounded text-[7.5px] font-black uppercase ${
+                          selectedTruckLoad.gateStatus === 'Aprovado' 
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-250' 
+                            : 'bg-rose-50 text-rose-800 border border-rose-250'
+                        }`}>
+                          {selectedTruckLoad.gateStatus || 'Verificado'}
+                        </span>
+                      ) : (
+                        <span className="px-1.5 bg-slate-50 text-slate-450 rounded text-[7.5px] font-black uppercase border border-slate-200">
+                          Pendente
+                        </span>
+                      )}
+                    </div>
+                    {selectedTruckLoad.gateVerified && (
+                      <div className="text-[7.5px] text-slate-550 uppercase leading-snug font-bold">
+                        Responsável: <strong className="text-slate-800">{selectedTruckLoad.gateVerifiedBy}</strong> em <strong className="text-slate-800">{selectedTruckLoad.gateVerifiedAt ? new Date(selectedTruckLoad.gateVerifiedAt).toLocaleTimeString() : 'N/D'}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-5 bg-slate-100/50 border border-dashed border-slate-200 rounded-lg text-slate-400">
+                <p className="text-[9.5px] font-black uppercase tracking-tight text-slate-455">Sem Expedição Ativa</p>
+                <p className="text-[8px] mt-0.5 uppercase tracking-wide px-2 font-medium">O dispositivo rastreador está transmitindo telemetria sem uma guia de carga correspondente.</p>
+              </div>
+            )}
           </div>
 
           {/* Accordion List exactly matching "Resumo do dia" and "Informações do Rastreado" dropdown structures */}
