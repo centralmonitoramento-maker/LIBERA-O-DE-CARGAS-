@@ -457,10 +457,35 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       const lat = parseFloat(truck.ras_eve_latitude);
       const lng = parseFloat(truck.ras_eve_longitude);
       
-      const isDivergent = loads.some(l => platesMatch(l.plate, truck.ras_vei_placa) && l.status === CargoStatus.BLOCKED);
+      const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+      const isDivergent = matchedLoad?.status === CargoStatus.BLOCKED;
       const distance = L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
       const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
       const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
+
+      let releaseStatus = 'Sem Carga Vinculada';
+      let releaseStatusBg = '#f1f5f9';
+      let releaseStatusColor = '#475569';
+      let releaseStatusBorder = '#cbd5e1';
+
+      if (matchedLoad) {
+        if (matchedLoad.status === CargoStatus.RELEASED) {
+          releaseStatus = 'Liberada';
+          releaseStatusBg = '#dcfce7';
+          releaseStatusColor = '#166534';
+          releaseStatusBorder = '#bbf7d0';
+        } else if (matchedLoad.status === CargoStatus.AWAITING) {
+          releaseStatus = 'Aguardando';
+          releaseStatusBg = '#fef9c3';
+          releaseStatusColor = '#854d0e';
+          releaseStatusBorder = '#fef08a';
+        } else if (matchedLoad.status === CargoStatus.BLOCKED) {
+          releaseStatus = 'Bloqueada';
+          releaseStatusBg = '#fee2e2';
+          releaseStatusColor = '#991b1b';
+          releaseStatusBorder = '#fecaca';
+        }
+      }
 
       let voltage = '12 V';
       if (truck.ras_vei_placa === 'NGY-7119') voltage = '27 V';
@@ -534,6 +559,26 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           <div style="font-size: 9.5px; color: #475569; margin-bottom: 7px; font-weight: 500;">
             ${address}
           </div>
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 2px 0;">
+            <span style="font-size: 8.5px; font-weight: 800; color: #64748b; text-transform: uppercase;">Expedição:</span>
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 950; background-color: ${releaseStatusBg}; color: ${releaseStatusColor}; border: 1px solid ${releaseStatusBorder}; text-transform: uppercase; letter-spacing: 0.3px;">
+              ${releaseStatus}
+            </span>
+          </div>
+
+          ${matchedLoad ? `
+          <div style="font-size: 8.5px; color: #475569; margin-bottom: 6px; padding: 4px 6px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #64748b; text-transform: uppercase;">Motorista:</span>
+              <span style="font-weight: 800; color: #334155; text-transform: uppercase;">${matchedLoad.driverName}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; color: #64748b; text-transform: uppercase;">Destino:</span>
+              <span style="font-weight: 850; color: #1e293b; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; max-width: 130px; text-align: right;" title="${matchedLoad.destination}">${matchedLoad.destination}</span>
+            </div>
+          </div>
+          ` : ''}
           
           <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px;">
             <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background: ${truck.ras_eve_ignicao === '1' ? '#3b82f6 text-white' : '#475569'}; background-color: ${truck.ras_eve_ignicao === '1' ? '#2563eb' : '#334155'}; color: #ffffff; border: 1px solid ${truck.ras_eve_ignicao === '1' ? '#1d4ed8' : '#1e293b'}; text-transform: uppercase;">

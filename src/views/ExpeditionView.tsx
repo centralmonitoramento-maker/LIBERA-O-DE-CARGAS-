@@ -361,7 +361,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [plate, setPlate] = useState('');
   const [driverName, setDriverName] = useState('');
   const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
-  const [origin, setOrigin] = useState('CD-01');
+  const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
   const [newDestination, setNewDestination] = useState('');
@@ -392,7 +392,11 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     if (!query) {
       return ROUTE_OPTIONS;
     }
-    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    const filtered = ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    if (filtered.length === 1 && filtered[0].toUpperCase() === query) {
+      return ROUTE_OPTIONS;
+    }
+    return filtered;
   }, [origin]);
 
   useEffect(() => {
@@ -407,7 +411,11 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     if (!query) {
       return ROUTE_OPTIONS;
     }
-    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    const filtered = ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    if (filtered.length === 1 && filtered[0].toUpperCase() === query) {
+      return ROUTE_OPTIONS;
+    }
+    return filtered;
   }, [destination]);
 
   useEffect(() => {
@@ -422,7 +430,11 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     if (!query) {
       return ROUTE_OPTIONS;
     }
-    return ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    const filtered = ROUTE_OPTIONS.filter(r => r.toUpperCase().includes(query));
+    if (filtered.length === 1 && filtered[0].toUpperCase() === query) {
+      return ROUTE_OPTIONS;
+    }
+    return filtered;
   }, [newDestination]);
 
   useEffect(() => {
@@ -533,7 +545,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setEditingLoadId(null);
     setPlate('');
     setDriverName('');
-    setOrigin('CD-01');
+    setOrigin('');
     setDestination('');
     setAdditionalDestinations([]);
     setSealNumber('');
