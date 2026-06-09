@@ -130,8 +130,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const [selectedPlaca, setSelectedPlaca] = useState<string | null>(null);
   const [trucks, setTrucks] = useState<TruckData[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [sidebarTab, setSidebarTab] = useState<'trucks' | 'geofence'>('trucks');
+  const [sidebarTab, setSidebarTab] = useState<'trucks' | 'loads' | 'geofence'>('trucks');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
+  const [hideOtherVehicles, setHideOtherVehicles] = useState<boolean>(false);
 
   const [geofenceEnabled, setGeofenceEnabled] = useState<boolean>(true);
   const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-15.7953, -47.9622]);
@@ -434,20 +436,24 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     };
   }, [trucks]);
 
-  // Update Map Markers
+   // Update Map Markers
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
+    const visibleTrucks = hideOtherVehicles && selectedLoadId
+      ? trucks.filter(t => t.realLoadId === selectedLoadId)
+      : trucks;
+
     Object.keys(markersRef.current).forEach(placa => {
-      const exists = trucks.some(t => t.ras_vei_placa === placa);
+      const exists = visibleTrucks.some(t => t.ras_vei_placa === placa);
       if (!exists) {
         markersRef.current[placa].remove();
         delete markersRef.current[placa];
       }
     });
 
-    trucks.forEach(truck => {
+    visibleTrucks.forEach(truck => {
       const lat = parseFloat(truck.ras_eve_latitude);
       const lng = parseFloat(truck.ras_eve_longitude);
       
@@ -461,8 +467,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       else if (truck.ras_vei_placa === 'BWP-1F60' || truck.ras_vei_placa === 'GWM-1F49') voltage = '14 V';
       else if (truck.ras_vei_placa === 'BYE-9369') voltage = '11 V';
 
+      const isSelectedLoad = selectedLoadId && truck.realLoadId === selectedLoadId;
+
       // Circle grey/green markers exactly matching image
-      const markerColor = isOutOfBounds 
+      let markerColor = isOutOfBounds 
         ? 'bg-rose-600 ring-4 ring-rose-500/20' 
         : isDivergent
           ? 'bg-amber-500 ring-2 ring-amber-400/25'
@@ -470,16 +478,23 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
             : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
 
+      if (isSelectedLoad) {
+        markerColor = 'bg-indigo-600 text-white border-2 border-primary-gold ring-8 ring-indigo-500/40 scale-125 z-[1000]';
+      }
+
       const iconHtml = `
         <div class="relative group cursor-pointer flex flex-col items-center">
           ${isOutOfBounds ? `
             <div class="absolute -inset-2 bg-rose-500/40 rounded-full animate-ping pointer-events-none duration-1000"></div>
           ` : ''}
+          ${isSelectedLoad ? `
+            <div class="absolute -inset-3 bg-indigo-500/30 rounded-full animate-ping pointer-events-none duration-1000"></div>
+          ` : ''}
 
           <!-- Grey/Green circular markers with flat truck design design -->
           <div class="relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg ${markerColor}">
             <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M19,8.18V5a1,1,0,0,0-1-1H3a1,1,0,0,0-1,1V17a1,1,0,0,0,1,1H5a3,3,0,0,0,6,0h4a3,3,0,0,0,6,0h1a1,1,0,0,0,1-1V11.23M7,19a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,7,19Zm4-3H8.22a2.92,2.92,0,0,0-2.44,0H4V6H16v8.42A3,3,0,0,0,11,16Zm6,3a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,17,19Zm4-1H18.78a2.92,2.92,0,0,0-2.43,0H15V10h4.56L21,11.78Z" />
+              <path d="M19,8.18V5a1,1,0,0,0-1-1H3a1,1,0,0,0-1,1V17a1,1,0,0,0,1,1H5a3,3,0,0,0,6,0h4a3,3,0,0,0,6,0h1a1,1,0,0,0,1-1V11.23M7,19a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,7,19Zm4-3H8.22a2.92,2.92,0,0,0-2.43,0H4V6H16v8.42A3,3,0,0,0,11,16Zm6,3a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,7,19Zm4-1H18.78a2.92,2.92,0,0,0-2.43,0H15V10h4.56L21,11.78Z" />
             </svg>
             
             ${truck.ras_eve_ignicao === '1' ? `
@@ -489,7 +504,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
           <!-- Pined text block plates -->
           ${mapLabelToggle ? `
-            <div class="absolute -bottom-5 bg-slate-900/90 border border-slate-700 text-white font-mono font-black text-[7.5px] px-1.5 py-0.5 rounded shadow whitespace-nowrap tracking-wider">
+            <div class="absolute -bottom-5 ${isSelectedLoad ? 'bg-indigo-900 border-primary-gold text-primary-gold font-bold scale-110 z-[1001]' : 'bg-slate-900/90 border border-slate-700 text-white'} font-mono font-black text-[7.5px] px-1.5 py-0.5 rounded shadow whitespace-nowrap tracking-wider">
               ${truck.ras_vei_placa}
             </div>
           ` : ''}
@@ -562,7 +577,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         markersRef.current[truck.ras_vei_placa] = marker;
       }
     });
-  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle]);
+  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle, selectedLoadId, hideOtherVehicles]);
 
   // Handle Focus On Vehicle
   const handleFocusTruck = (truck: TruckData) => {
@@ -850,6 +865,18 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           </button>
           <button
             type="button"
+            onClick={() => setSidebarTab('loads')}
+            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              sidebarTab === 'loads'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Cargas ({loads.length})
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setSidebarTab('geofence');
               setIsSettingCenter(false);
@@ -861,7 +888,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             } ${outOfGeofenceTrucks.length > 0 ? 'relative text-rose-600' : ''}`}
           >
             <Compass className="w-3.5 h-3.5" />
-            Cerca Virtual
+            Cerca
             {outOfGeofenceTrucks.length > 0 && (
               <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping absolute top-1 right-2"></span>
             )}
@@ -1152,6 +1179,190 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   );
                 })
               )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3 CONTENT: ACTIVE LOADS LIST */}
+        {sidebarTab === 'loads' && (
+          <div className="flex flex-col flex-grow overflow-hidden">
+            {/* Search loads can reuse searchQuery */}
+            <div className="flex gap-2 items-center mb-3">
+              <div className="relative flex-grow">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-3.5 w-3.5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs font-semibold text-slate-700 placeholder-slate-400 outline-none focus:ring-1 focus:ring-slate-300 transition-all"
+                  placeholder="Pesquisar cargas..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              {selectedLoadId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLoadId(null)}
+                  className="px-2 py-1.5 border border-rose-200 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all cursor-pointer"
+                  title="Limpar seleção"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+
+            {/* Smart Highlighting Control */}
+            <div className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-xl mb-3 flex items-center justify-between select-none shrink-0 text-left">
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-indigo-900 tracking-tight flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-indigo-600 animate-pulse" />
+                  Isolar Carga Selecionada
+                </span>
+                <span className="text-[7.5px] text-slate-400 font-bold uppercase block mt-0.5">Oculta outros marcadores</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={hideOtherVehicles} 
+                  onChange={(e) => setHideOtherVehicles(e.target.checked)}
+                  className="sr-only peer" 
+                />
+                <div className="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {/* Loads List scroll area */}
+            <div className="flex-grow overflow-y-auto space-y-2 pr-1 h-full">
+              {(() => {
+                const filteredLoads = loads.filter(l => 
+                  l.plate?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  l.driverName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  l.destination?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  l.id?.toLowerCase().includes(searchQuery.toLowerCase())
+                );
+
+                if (filteredLoads.length === 0) {
+                  return (
+                    <div className="py-12 border-2 border-dashed border-slate-100 rounded-2xl text-center">
+                      <FileText className="w-6 h-6 mx-auto text-slate-350 mb-2" />
+                      <p className="text-[9px] font-bold uppercase text-slate-400">Nenhuma carga encontrada</p>
+                    </div>
+                  );
+                }
+
+                return filteredLoads.map(load => {
+                  const isLoadSelected = selectedLoadId === load.id;
+                  const matchedTruck = trucks.find(t => platesMatch(t.ras_vei_placa, load.plate));
+                  
+                  return (
+                    <div
+                      key={load.id}
+                      onClick={() => {
+                        setSelectedLoadId(isLoadSelected ? null : load.id);
+                        if (matchedTruck) {
+                          handleFocusTruck(matchedTruck);
+                        }
+                      }}
+                      className={`relative border p-3.5 rounded-xl text-left cursor-pointer transition-all flex flex-col gap-2 ${
+                        isLoadSelected 
+                          ? 'border-indigo-600 bg-indigo-50/20 ring-1 ring-indigo-300'
+                          : 'border-slate-150 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      {/* Selection Pin */}
+                      {isLoadSelected && (
+                        <div className="absolute top-2.5 right-2.5 flex items-center justify-center p-0.5 text-indigo-600">
+                          <Check className="w-4 h-4 font-bold" />
+                        </div>
+                      )}
+
+                      {/* Header Row: Plate badge & Carga designation */}
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-black text-xs text-slate-800 uppercase tracking-widest leading-none bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+                              {load.plate || "SEM PLACA"}
+                            </span>
+                            <span className="text-[8px] font-extrabold uppercase text-slate-400">
+                              #{load.id.substring(0, 8)}
+                            </span>
+                          </div>
+                          
+                          <span className="block mt-1.5 font-black text-[10px] text-slate-800 uppercase tracking-tight">
+                            {load.driverName}
+                          </span>
+                        </div>
+
+                        {/* Status Badge */}
+                        {load.status === CargoStatus.RELEASED ? (
+                          <span className="px-2 py-0.5 rounded text-[7.5px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-250 shrink-0 flex items-center gap-1">
+                            <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
+                            Trânsito
+                          </span>
+                        ) : load.status === CargoStatus.AWAITING ? (
+                          <span className="px-2 py-0.5 rounded text-[7.5px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-250 shrink-0 flex items-center gap-1">
+                            <span className="w-1 h-1 bg-amber-500 rounded-full"></span>
+                            Conf.
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[7.5px] font-black uppercase bg-rose-50 text-rose-850 border border-rose-220 shrink-0 flex items-center gap-1 animate-pulse">
+                            <span className="w-1.5 h-1.5 bg-rose-600 rounded-full"></span>
+                            Alerta
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Middle Details: Origin/Destination & Cargo Details */}
+                      <div className="grid grid-cols-2 gap-2 border-t border-dashed border-slate-100 pt-2 text-[9px] font-semibold text-slate-600">
+                        <div>
+                          <span className="text-[7px] text-slate-400 uppercase font-black tracking-wider block">Destinatário</span>
+                          <span className="text-slate-800 font-extrabold truncate block leading-tight">
+                            {load.destination}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[7px] text-slate-400 uppercase font-black tracking-wider block">Canal / Carga</span>
+                          <span className="text-slate-800 font-extrabold truncate block leading-tight">
+                            {load.cargoType}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[7px] text-slate-400 uppercase font-black tracking-wider block">Paletes / Lacre</span>
+                          <span className="text-slate-700 font-extrabold truncate block leading-tight">
+                            {load.palletCount} Pls | {load.sealNumber || "S/ Lacre"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[7px] text-slate-400 uppercase font-black tracking-wider block">Rastreamento Gps</span>
+                          {matchedTruck ? (
+                            <span className="text-emerald-700 font-extrabold flex items-center gap-0.5 uppercase text-[8px] leading-tight">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Ativo
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-bold uppercase text-[8px] leading-tight">
+                              Sem GPS
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Footer Row: Actions or risk warnings */}
+                      <div className="flex items-center justify-between text-[7px] font-black uppercase tracking-wider text-slate-400 pt-1.5 border-t border-slate-50">
+                        <span>LDI Operacional</span>
+                        {load.isHighRisk && (
+                          <span className="text-rose-650 bg-rose-50 border border-rose-200 px-1 rounded flex items-center gap-0.5 animate-pulse">
+                            <AlertTriangle className="w-3 h-3" />
+                            Alto Risco
+                          </span>
+                        )}
+                      </div>
+
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
