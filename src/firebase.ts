@@ -33,7 +33,7 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -51,6 +51,21 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+
+  const errMsg = errInfo.error.toLowerCase();
+  const isQuotaOrLimitError = 
+    errMsg.includes('quota') || 
+    errMsg.includes('limit exceeded') || 
+    errMsg.includes('billing') ||
+    errMsg.includes('free tier') ||
+    errMsg.includes('exhausted') ||
+    errMsg.includes('resource_exhausted');
+
+  if (isQuotaOrLimitError) {
+    console.warn(`[Firestore Resiliency] Limite de cota excedido para caminho "${path}" (${operationType}). O aplicativo continuará funcionando em modo local / offline.`);
+    return;
+  }
+
   throw new Error(JSON.stringify(errInfo));
 }
 

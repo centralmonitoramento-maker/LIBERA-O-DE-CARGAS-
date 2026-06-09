@@ -16,10 +16,85 @@ import {
   Map as MapIcon,
   MapPinOff,
   User as UserIcon,
-  Sparkles
+  Sparkles,
+  ShieldAlert,
+  Locate,
+  Settings,
+  AlertTriangle,
+  RotateCcw,
+  ArrowUpDown,
+  Filter,
+  X,
+  Pin,
+  Bell,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Wrench,
+  Gauge,
+  Flag,
+  FileText,
+  Zap,
+  Battery,
+  Send,
+  Grid,
+  History,
+  Check,
+  Eye,
+  EyeOff,
+  Flame
 } from 'lucide-react';
 import { CargoLoad, CargoStatus } from '../types';
 import { Lojas_Atacadao } from '../data/lojas';
+import { TELEMETRY_DATA } from '../data/telemetryData';
+
+const normalizePlateStr = (p: string): string => {
+  return p.toUpperCase().replace(/[^A-Z0-9]/g, '');
+};
+
+const platesMatch = (p1?: string, p2?: string): boolean => {
+  if (!p1 || !p2) return false;
+  return normalizePlateStr(p1) === normalizePlateStr(p2);
+};
+
+// Custom coordinate to RA district reverse lookup
+const getAddressForCoords = (latStr: string, lngStr: string, plate?: string): string => {
+  const lat = parseFloat(latStr);
+  const lng = parseFloat(lngStr);
+  if (isNaN(lat) || isNaN(lng)) return "Brasília, DF, Brasil";
+  
+  if (plate === 'KTU-4C64') return "Santa Maria, DF, Brasil";
+  if (plate === 'BWP-1F60') return "Estrada Parque Núcleo Bandeirante, Samambaia, DF, Brasil";
+  if (plate === 'BYE-9369') return "Estrada Parque Industrial e Abastecimento, Guará, DF, Brasil";
+  if (plate === 'GWM-1F49') return "BR-040, Parque Três Poderes, Parque Três Pinheiros, DF, Brasil";
+  if (plate === 'NGY-7119') return "Estrada Parque Industrial e Abastecimento, Brasília, DF, Brasil";
+
+  // Dynamic thresholds
+  if (lat < -16.03) return "Santa Maria, DF, Brasil";
+  if (lat < -15.98) return "Gama, DF, Brasil";
+  if (lat < -15.89) return "Núcleo Bandeirante, DF, Brasil";
+  if (lat < -15.82) return "Guará, DF, Brasil";
+  if (lat < -15.75) return "Asa Sul, Brasília, DF, Brasil";
+  if (lat < -15.68) return "Asa Norte, Brasília, DF, Brasil";
+  if (lng < -48.12) return "Ceilândia, DF, Brasil";
+  if (lng < -48.05) return "Taguatinga, DF, Brasil";
+  if (lng < -47.98) return "Samambaia, DF, Brasil";
+  return "SIA, Brasília, DF, Brasil";
+};
+
+// Generates smooth realistic steps from standard CD SIA to selected vehicle target coordinates for paths tracing
+const generateHistoryPath = (startLat: number, startLng: number): [number, number][] => {
+  const cdLat = -15.7915;
+  const cdLng = -47.9622;
+  const path: [number, number][] = [];
+  for (let i = 0; i <= 6; i++) {
+    const ratio = i / 6;
+    const lat = cdLat + (startLat - cdLat) * ratio + (Math.random() - 0.5) * 0.003;
+    const lng = cdLng + (startLng - cdLng) * ratio + (Math.random() - 0.5) * 0.003;
+    path.push([lat, lng]);
+  }
+  return path;
+};
 
 interface TrackingViewProps {
   loads: CargoLoad[];
@@ -31,32 +106,63 @@ interface TruckData {
   ras_eve_longitude: string;
   ras_eve_velocidade: string;
   ras_eve_ignicao: string;
-  // Extended fields for richer integration with real loads
   driverName?: string;
   destinationName?: string;
   cargoType?: string;
   sealNumber?: string;
   realLoadId?: string;
-  progressPercent?: number; // 0 to 100
+  progressPercent?: number;
   lastUpdate?: string;
+  status?: CargoStatus;
 }
 
 export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [placa: string]: L.Marker }>({});
-  
-  // Simulation and search states
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const tracePolylineRef = useRef<L.Polyline | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
+
+  // States
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedPlaca, setSelectedPlaca] = useState<string | null>(null);
   const [trucks, setTrucks] = useState<TruckData[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [sidebarTab, setSidebarTab] = useState<'trucks' | 'geofence'>('trucks');
 
-  // Sede / CD coordinates (SIA)
-  const defaultCenter: [number, number] = [-15.7953, -47.9622];
+  const [geofenceEnabled, setGeofenceEnabled] = useState<boolean>(true);
+  const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-15.7953, -47.9622]);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(12000);
+  const [isSettingCenter, setIsSettingCenter] = useState<boolean>(false);
 
-  // Helper: Find store coordinates by name
+  // Leaflet Geofence drawings
+  const geofenceCircleRef = useRef<L.Circle | null>(null);
+  const geofenceCenterMarkerRef = useRef<L.Marker | null>(null);
+
+  const cdSiaCoordinates: [number, number] = [-15.7915, -47.9622];
+
+  // Visual/Interactive GIS States
+  const [mapStyle, setMapStyle] = useState<'osm' | 'dark' | 'satellite'>('osm');
+  const [mapLabelToggle, setMapLabelToggle] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  
+  // Selected Truck Drawer states
+  const [isDetailPinned, setIsDetailPinned] = useState<boolean>(false);
+  const [isResumoExpanded, setIsResumoExpanded] = useState<boolean>(true);
+  const [isInfoExpanded, setIsInfoExpanded] = useState<boolean>(true);
+  
+  // Interactive Shortcut Actions
+  const [activeTracePlaca, setActiveTracePlaca] = useState<string | null>(null);
+  const [activeRoutePlaca, setActiveRoutePlaca] = useState<string | null>(null);
+  const [activeShortcutAction, setActiveShortcutAction] = useState<string | null>(null);
+  const [traces, setTraces] = useState<{ [placa: string]: [number, number][] }>({});
+
+  const [comandosLogs, setComandosLogs] = useState<{ [placa: string]: string[] }>({});
+  const [blockLoading, setBlockLoading] = useState<boolean>(false);
+
+  // Helper: Find Coordinates
   const findStoreCoordinates = (destName: string): [number, number] | null => {
     if (!destName) return null;
     const normalizedDest = destName.toLowerCase();
@@ -70,103 +176,124 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     return null;
   };
 
-  // 1. Initial Sync of Trucks (requested base trucks + in-transit loads from DB)
-  useEffect(() => {
-    // Basic static test positions required by code guidelines
-    const initialStatic: TruckData[] = [
-      {
-        ras_vei_placa: 'BWU-8171',
-        ras_eve_latitude: '-15.877314',
-        ras_eve_longitude: '-47.986102',
-        ras_eve_velocidade: '0',
-        ras_eve_ignicao: '0',
-        driverName: 'Raimundo Silveira',
-        destinationName: 'Águas Claras (df-1)',
-        cargoType: 'Seca',
-        lastUpdate: new Date().toLocaleTimeString(),
-        progressPercent: 30
-      },
-      {
-        ras_vei_placa: 'BWH-4H66',
-        ras_eve_latitude: '-15.79361',
-        ras_eve_longitude: '-47.989587',
-        ras_eve_velocidade: '45',
-        ras_eve_ignicao: '1',
-        driverName: 'Valdir Brandão',
-        destinationName: 'Guará II (df-7)',
-        cargoType: 'Mista',
-        lastUpdate: new Date().toLocaleTimeString(),
-        progressPercent: 75
-      }
-    ];
+  // Helper: Distance
+  const getTruckDistance = (truck: TruckData): number => {
+    try {
+      const lat = parseFloat(truck.ras_eve_latitude);
+      const lng = parseFloat(truck.ras_eve_longitude);
+      if (isNaN(lat) || isNaN(lng)) return 0;
+      return L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
+    } catch (err) {
+      return 0;
+    }
+  };
 
-    // Read real "EM TRÂNSITO" shipments from Firestore to dynamically map them
-    const activeRouteLoads = loads.filter(
-      load => load.status === CargoStatus.RELEASED && load.plate
+  const outOfGeofenceTrucks = geofenceEnabled
+    ? trucks.filter(truck => getTruckDistance(truck) > geofenceRadius)
+    : [];
+
+  // Sync trucks from telemetry and Firestore loads
+  useEffect(() => {
+    const baseTrucks: TruckData[] = TELEMETRY_DATA.map(t => {
+      const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+      const existingTruck = trucks.find(x => platesMatch(x.ras_vei_placa, t.ras_vei_placa));
+      
+      const baselineProgress = existingTruck?.progressPercent !== undefined
+        ? existingTruck.progressPercent
+        : (matchedLoad?.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
+
+      return {
+        ras_vei_placa: t.ras_vei_placa,
+        ras_eve_latitude: t.ras_eve_latitude,
+        ras_eve_longitude: t.ras_eve_longitude,
+        ras_eve_velocidade: matchedLoad?.status === CargoStatus.RELEASED 
+          ? (existingTruck?.ras_eve_velocidade || String(Math.floor(Math.random() * 41) + 40)) 
+          : t.ras_eve_velocidade,
+        ras_eve_ignicao: matchedLoad?.status === CargoStatus.RELEASED 
+          ? "1" 
+          : t.ras_eve_ignicao,
+        driverName: matchedLoad?.driverName || (t.ras_vei_placa === 'KTU-4C64' ? 'Valdir Brandão' : 'Raimundo Silveira'),
+        destinationName: matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão CD SIA'),
+        cargoType: matchedLoad?.cargoType || "Mista",
+        sealNumber: matchedLoad?.sealNumber || "",
+        realLoadId: matchedLoad?.id,
+        progressPercent: baselineProgress,
+        lastUpdate: existingTruck?.lastUpdate || new Date().toLocaleTimeString(),
+        status: matchedLoad?.status
+      };
+    });
+
+    const customLoads = loads.filter(
+      l => l.plate && !TELEMETRY_DATA.some(t => platesMatch(t.ras_vei_placa, l.plate))
     );
 
-    const mappedActive: TruckData[] = activeRouteLoads.map((load, idx) => {
-      // Find coordinates of destination store with a sensible fallback around DF
+    const customMapped: TruckData[] = customLoads.map((load, idx) => {
       const destCoords = findStoreCoordinates(load.destination || '');
       const finalLat = destCoords ? destCoords[0] : -15.8115 - (idx * 0.05);
       const finalLng = destCoords ? destCoords[1] : -48.1189 + (idx * 0.03);
 
-      // Start somewhere on route (e.g. interpolation between SIA and target)
+      const existingTruck = trucks.find(x => platesMatch(x.ras_vei_placa, load.plate));
+      const baselineProgress = existingTruck?.progressPercent !== undefined
+        ? existingTruck.progressPercent
+        : (load.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
+
       return {
-        ras_vei_placa: load.plate.toUpperCase(),
-        ras_eve_latitude: String(finalLat),
-        ras_eve_longitude: String(finalLng),
-        ras_eve_velocidade: String(Math.floor(Math.random() * 41) + 40), // 40-80 km/h
-        ras_eve_ignicao: '1',
+        ras_vei_placa: load.plate ? load.plate.toUpperCase() : "PLA-0000",
+        ras_eve_latitude: existingTruck?.ras_eve_latitude || String(finalLat),
+        ras_eve_longitude: existingTruck?.ras_eve_longitude || String(finalLng),
+        ras_eve_velocidade: existingTruck?.ras_eve_velocidade || (load.status === CargoStatus.RELEASED ? String(Math.floor(Math.random() * 41) + 40) : "0"),
+        ras_eve_ignicao: existingTruck?.ras_eve_ignicao || (load.status === CargoStatus.RELEASED ? "1" : "0"),
         driverName: load.driverName,
         destinationName: load.destination,
-        cargoType: load.cargoType || 'Mista',
+        cargoType: load.cargoType || "Mista",
         sealNumber: load.sealNumber,
         realLoadId: load.id,
-        progressPercent: Math.floor(Math.random() * 50) + 25, // 25-75% progress
-        lastUpdate: new Date().toLocaleTimeString()
+        progressPercent: baselineProgress,
+        lastUpdate: existingTruck?.lastUpdate || new Date().toLocaleTimeString(),
+        status: load.status
       };
     });
 
-    // Merge lists avoiding duplicates on plate
-    const allMerged = [...initialStatic];
-    mappedActive.forEach(item => {
-      const idx = allMerged.findIndex(x => x.ras_vei_placa === item.ras_vei_placa);
+    const allMerged = [...baseTrucks];
+    customMapped.forEach(item => {
+      const idx = allMerged.findIndex(x => platesMatch(x.ras_vei_placa, item.ras_vei_placa));
       if (idx === -1) {
         allMerged.push(item);
       } else {
-        // Overlay and prefer active Firestore DB details
         allMerged[idx] = { ...allMerged[idx], ...item };
       }
     });
 
     setTrucks(allMerged);
-    setLastSyncTime(new Date().toLocaleTimeString());
+    setLastSyncTime(prev => prev || new Date().toLocaleTimeString());
   }, [loads]);
 
-  // 2. Leaflet Map Instance Initialization (Once on mount)
+  // Seed Traces for all trucks
+  useEffect(() => {
+    if (trucks.length === 0) return;
+    const seeded: { [plate: string]: [number, number][] } = {};
+    trucks.forEach(t => {
+      const lat = parseFloat(t.ras_eve_latitude);
+      const lng = parseFloat(t.ras_eve_longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        seeded[t.ras_vei_placa] = generateHistoryPath(lat, lng);
+      }
+    });
+    setTraces(seeded);
+  }, [trucks.length]);
+
+  // Leaflet Map Initial setup
   useEffect(() => {
     if (!mapContainerRef.current) return;
-
-    // Reset previous leaflet container reference if exists properties
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
     }
 
-    // 1. Initialise Map centered on Distrito Federal (Brasília area)
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false
     }).setView([-15.79361, -47.88215], 11);
-
-    // Add scale and custom zoom UI
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    // 2. Add visual map tiles (OpenStreetMap tiles)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19
-    }).addTo(map);
 
     mapInstanceRef.current = map;
 
@@ -178,163 +305,354 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     };
   }, []);
 
-  // 3. Update Markers Reactively when trucks list changes
+  // Map Click handler (for target geofencing)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
+      if (isSettingCenter) {
+        setGeofenceCenter([e.latlng.lat, e.latlng.lng]);
+        setIsSettingCenter(false);
+      }
+    };
+    map.on('click', handleMapClick);
+    return () => {
+      map.off('click', handleMapClick);
+    };
+  }, [isSettingCenter]);
+
+  // Dynamic Tile Layer Swapping
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Remove any markers from previous render that are no longer in the list
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove();
+    }
+
+    let url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    let attribution = '';
+    
+    if (mapStyle === 'dark') {
+      url = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+      attribution = '&copy; OpenStreetMap &copy; CARTO';
+    } else if (mapStyle === 'satellite') {
+      url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      attribution = 'Tiles &copy; Esri World Imagery';
+    } else {
+      url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      attribution = '&copy; OpenStreetMap';
+    }
+
+    const layer = L.tileLayer(url, {
+      maxZoom: 19,
+      attribution
+    }).addTo(map);
+
+    tileLayerRef.current = layer;
+  }, [mapStyle]);
+
+  // Geofence Circle overlay adjustments
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (geofenceCircleRef.current) {
+      geofenceCircleRef.current.remove();
+      geofenceCircleRef.current = null;
+    }
+    if (geofenceCenterMarkerRef.current) {
+      geofenceCenterMarkerRef.current.remove();
+      geofenceCenterMarkerRef.current = null;
+    }
+
+    if (geofenceEnabled) {
+      const circle = L.circle(geofenceCenter, {
+        color: '#334155',
+        fillColor: '#0ea5e9',
+        fillOpacity: 0.1,
+        radius: geofenceRadius,
+        weight: 1.5,
+        dashArray: '5, 8'
+      }).addTo(map);
+
+      circle.bindPopup(`
+        <div class="p-1 px-2 font-sans text-center">
+          <strong class="text-xs uppercase text-slate-800">Cerca Virtual</strong>
+          <p class="text-[9px] text-slate-500 font-bold mt-1">Raio: ${(geofenceRadius / 1000).toFixed(1)} km</p>
+        </div>
+      `);
+      geofenceCircleRef.current = circle;
+
+      const hubIconHtml = `
+        <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-900 border-2 border-primary-gold shadow-2xl animate-pulse">
+          <svg class="w-4 h-4 text-primary-gold" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </div>
+      `;
+
+      const hubIcon = L.divIcon({
+        html: hubIconHtml,
+        className: 'custom-hub-icon',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -10]
+      });
+
+      const centerMarker = L.marker(geofenceCenter, { icon: hubIcon })
+        .addTo(map)
+        .bindPopup(`
+          <div class="p-2 font-sans text-left">
+            <span class="text-[8px] font-black text-primary-gold bg-slate-900 px-2 py-0.5 rounded uppercase tracking-widest block mb-1 text-center font-mono">CD SIA</span>
+            <span class="text-[10px] font-black text-slate-700">Brasília CD Central</span>
+            <p class="text-[9px] font-mono text-slate-400 mt-1">SIA Trecho 4, DF</p>
+          </div>
+        `);
+      geofenceCenterMarkerRef.current = centerMarker;
+    }
+  }, [geofenceEnabled, geofenceCenter, geofenceRadius]);
+
+  // Marker click delegator (binds 'Ver também' inside Leaflet popup inside React)
+  useEffect(() => {
+    const handlePopupClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.id && target.id.startsWith('popup-ver-tambem-')) {
+        e.preventDefault();
+        const plate = target.id.replace('popup-ver-tambem-', '');
+        const truck = trucks.find(t => t.ras_vei_placa === plate);
+        if (truck) {
+          handleFocusTruck(truck);
+        }
+      }
+    };
+    document.addEventListener('click', handlePopupClick);
+    return () => {
+      document.removeEventListener('click', handlePopupClick);
+    };
+  }, [trucks]);
+
+  // Update Map Markers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
     Object.keys(markersRef.current).forEach(placa => {
-      const isPresent = trucks.some(t => t.ras_vei_placa === placa);
-      if (!isPresent) {
+      const exists = trucks.some(t => t.ras_vei_placa === placa);
+      if (!exists) {
         markersRef.current[placa].remove();
         delete markersRef.current[placa];
       }
     });
 
-    // Add or update markers for current list
     trucks.forEach(truck => {
       const lat = parseFloat(truck.ras_eve_latitude);
       const lng = parseFloat(truck.ras_eve_longitude);
-      const ignicaoStr = truck.ras_eve_ignicao === '1' ? 'Ligada' : 'Desligada';
       
-      const isDivergent = loads.some(l => l.plate?.toUpperCase() === truck.ras_vei_placa.toUpperCase() && l.status === CargoStatus.BLOCKED);
+      const isDivergent = loads.some(l => platesMatch(l.plate, truck.ras_vei_placa) && l.status === CargoStatus.BLOCKED);
+      const distance = L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
+      const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
+      const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
 
-      // Unique custom Tailwind HTML DivIcon for maximum style and ZERO assets-loading issues!
+      let voltage = '12 V';
+      if (truck.ras_vei_placa === 'NGY-7119') voltage = '27 V';
+      else if (truck.ras_vei_placa === 'BWP-1F60' || truck.ras_vei_placa === 'GWM-1F49') voltage = '14 V';
+      else if (truck.ras_vei_placa === 'BYE-9369') voltage = '11 V';
+
+      // Circle grey/green markers exactly matching image
+      const markerColor = isOutOfBounds 
+        ? 'bg-rose-600 ring-4 ring-rose-500/20' 
+        : isDivergent
+          ? 'bg-amber-500 ring-2 ring-amber-400/25'
+          : truck.ras_eve_ignicao === '1'
+            ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
+            : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
+
       const iconHtml = `
-        <div class="relative group cursor-pointer">
-          <!-- Ping warning pulses for active ignited vehicles -->
-          ${truck.ras_eve_ignicao === '1' ? `
-            <div class="absolute -inset-2.5 bg-sky-500/35 rounded-full animate-ping pointer-events-none duration-1000"></div>
+        <div class="relative group cursor-pointer flex flex-col items-center">
+          ${isOutOfBounds ? `
+            <div class="absolute -inset-2 bg-rose-500/40 rounded-full animate-ping pointer-events-none duration-1000"></div>
           ` : ''}
 
-          <!-- Outer badge ring colored differently based on status -->
-          <div class="relative w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-transform duration-300 hover:scale-110 shadow-xl ${
-            isDivergent 
-              ? 'bg-rose-600 border-rose-300 text-white' 
-              : truck.ras_eve_ignicao === '1' 
-                ? 'bg-primary-navy border-primary-gold text-primary-gold' 
-                : 'bg-slate-600 border-slate-350 text-slate-100'
-          }">
-            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <rect x="1" y="3" width="15" height="13" rx="2" ry="2"></rect>
-              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
-              <circle cx="5.5" cy="18.5" r="2.5"></circle>
-              <circle cx="18.5" cy="18.5" r="2.5"></circle>
+          <!-- Grey/Green circular markers with flat truck design design -->
+          <div class="relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg ${markerColor}">
+            <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19,8.18V5a1,1,0,0,0-1-1H3a1,1,0,0,0-1,1V17a1,1,0,0,0,1,1H5a3,3,0,0,0,6,0h4a3,3,0,0,0,6,0h1a1,1,0,0,0,1-1V11.23M7,19a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,7,19Zm4-3H8.22a2.92,2.92,0,0,0-2.44,0H4V6H16v8.42A3,3,0,0,0,11,16Zm6,3a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,17,19Zm4-1H18.78a2.92,2.92,0,0,0-2.43,0H15V10h4.56L21,11.78Z" />
             </svg>
             
-            <!-- Small speed or ignition indicator dot -->
-            <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border border-white flex items-center justify-center text-[7px] font-black ${
-              isDivergent 
-                ? 'bg-red-500 text-white' 
-                : truck.ras_eve_ignicao === '1' 
-                  ? 'bg-emerald-500 text-white' 
-                  : 'bg-slate-500 text-white'
-            }">
-              ${truck.ras_eve_ignicao === '1' ? '⚡' : '●'}
-            </span>
+            ${truck.ras_eve_ignicao === '1' ? `
+              <span class="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 border border-white rounded-full"></span>
+            ` : ''}
           </div>
 
-          <!-- Tiny license plate tooltip directly visible on map -->
-          <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700/80 text-white font-mono font-black text-[9px] px-2.5 py-0.5 rounded-md shadow-lg whitespace-nowrap tracking-wider pointer-events-none">
-            ${truck.ras_vei_placa}
-          </div>
+          <!-- Pined text block plates -->
+          ${mapLabelToggle ? `
+            <div class="absolute -bottom-5 bg-slate-900/90 border border-slate-700 text-white font-mono font-black text-[7.5px] px-1.5 py-0.5 rounded shadow whitespace-nowrap tracking-wider">
+              ${truck.ras_vei_placa}
+            </div>
+          ` : ''}
         </div>
       `;
 
       const divIcon = L.divIcon({
         html: iconHtml,
         className: 'custom-tracker-leaflet-div',
-        iconSize: [48, 48],
-        iconAnchor: [24, 24],
-        popupAnchor: [0, -18]
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -12]
       });
 
-      // Construct high-fidelity HTML popup mimicking Brazil's professional telemetry software
+      // Perfect popup balloons mirroring the screenshot
       const popupContent = `
-        <div class="p-3 font-sans max-w-[280px]">
-          <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-            <span class="font-mono font-black text-xs text-primary-navy bg-primary-gold/20 px-2 py-0.5 rounded border border-primary-gold/30 uppercase tracking-widest">
-              ${truck.ras_vei_placa}
+        <div style="font-family: sans-serif; font-size: 11px; padding: 4px; width: 232px; line-height: 1.4; color: #1e293b;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 5px;">
+            <span style="font-weight: 800; font-family: monospace; font-size: 13px; color: #0f172a;">${truck.ras_vei_placa}</span>
+            <span style="font-size: 8.5px; color: #64748b; display: flex; align-items: center; gap: 3px;">
+              <svg style="width: 10px; height: 10px; color: #475569;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path d="M12 18h.01M8.5 14.5a5 5 0 017 0M5 11a10 10 0 0114 0" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+              09/06/2026 ${truck.lastUpdate || '14:32:39'}
             </span>
-            <span class="text-[8px] font-black text-slate-400 uppercase">TELEMETRIA G7</span>
           </div>
-
-          <div class="space-y-1.5 text-[10px]">
-            <div class="flex justify-between">
-              <strong class="text-slate-400 font-bold uppercase">Motorista:</strong>
-              <span class="text-slate-700 font-extrabold uppercase">${truck.driverName || 'N/A'}</span>
-            </div>
-            <div class="flex justify-between">
-              <strong class="text-slate-400 font-bold uppercase">Destino:</strong>
-              <span class="text-slate-700 font-extrabold text-right max-w-[130px] truncate uppercase">${truck.destinationName || 'N/A'}</span>
-            </div>
-            <div class="flex justify-between">
-              <strong class="text-slate-400 font-bold uppercase">Ignição (Motor):</strong>
-              <span class="font-black ${truck.ras_eve_ignicao === '1' ? 'text-emerald-600' : 'text-slate-500'}">
-                ${ignicaoStr}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <strong class="text-slate-400 font-bold uppercase">Velocidade:</strong>
-              <span class="text-slate-800 font-black">${truck.ras_eve_velocidade} km/h</span>
-            </div>
-            ${truck.cargoType ? `
-              <div class="flex justify-between">
-                <strong class="text-slate-400 font-bold uppercase">Tipo de Carga:</strong>
-                <span class="text-slate-700 font-extrabold uppercase">${truck.cargoType}</span>
-              </div>
-            ` : ''}
-            <div class="flex justify-between items-center bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 mt-2">
-              <span class="text-[8px] text-slate-400 font-semibold uppercase">Último GPS:</span>
-              <span class="font-mono text-slate-500 font-bold text-[9px]">${truck.lastUpdate || ''}</span>
-            </div>
+          <div style="font-size: 9.5px; color: #475569; margin-bottom: 7px; font-weight: 500;">
+            ${address}
+          </div>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px;">
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background: ${truck.ras_eve_ignicao === '1' ? '#3b82f6 text-white' : '#475569'}; background-color: ${truck.ras_eve_ignicao === '1' ? '#2563eb' : '#334155'}; color: #ffffff; border: 1px solid ${truck.ras_eve_ignicao === '1' ? '#1d4ed8' : '#1e293b'}; text-transform: uppercase;">
+              ${truck.ras_eve_ignicao === '1' ? 'Ligado em movimento' : 'Ignição desligada'}
+            </span>
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background-color: #334155; color: #ffffff; border: 1px solid #1e293b; text-transform: uppercase;">
+              Não especificado
+            </span>
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background-color: #f8fafc; color: #475569; border: 1px solid #cbd5e1;">
+              ${truck.ras_eve_ignicao === '1' ? truck.ras_eve_velocidade + ' km/h' : '0 km/h'}
+            </span>
+          </div>
+          
+          <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+              ⚡ 100%
+            </span>
+            <span style="padding: 1.5px 5.5px; border-radius: 4px; font-size: 8.5px; font-weight: 900; background-color: #fef9c3; color: #854d0e; border: 1px solid #fef08a;">
+              ⚡ ${voltage}
+            </span>
+          </div>
+          
+          <div style="font-weight: 800; font-size: 9.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">
+            ATACADAO DIA A DIA
+          </div>
+          
+          <div style="margin-top: 8px; border-top: 1px solid #f1f5f9; padding-top: 6px; display: flex; justify-content: flex-end;">
+            <a href="#" style="color: #0284c7; font-weight: 700; text-decoration: none; font-size: 9px;" id="popup-ver-tambem-${truck.ras_vei_placa}">Ver também</a>
           </div>
         </div>
       `;
 
       if (markersRef.current[truck.ras_vei_placa]) {
-        // Move existing marker smoothly
         markersRef.current[truck.ras_vei_placa].setLatLng([lat, lng]);
+        markersRef.current[truck.ras_vei_placa].setIcon(divIcon);
         markersRef.current[truck.ras_vei_placa].getPopup()?.setContent(popupContent);
       } else {
-        // Initialize new marker
         const marker = L.marker([lat, lng], { icon: divIcon })
           .addTo(map)
           .bindPopup(popupContent);
-        
         markersRef.current[truck.ras_vei_placa] = marker;
       }
     });
-  }, [trucks, loads]);
+  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle]);
 
-  // 4. Smooth Move / Fly map to selected Vehicle helper function
+  // Handle Focus On Vehicle
   const handleFocusTruck = (truck: TruckData) => {
     setSelectedPlaca(truck.ras_vei_placa);
+    setIsResumoExpanded(true);
+    setIsInfoExpanded(true);
+    
     const map = mapInstanceRef.current;
     if (map) {
       const lat = parseFloat(truck.ras_eve_latitude);
       const lng = parseFloat(truck.ras_eve_longitude);
-      map.flyTo([lat, lng], 14, {
-        animate: true,
-        duration: 1.5
-      });
+      map.flyTo([lat, lng], 14, { animate: true, duration: 1.2 });
 
-      // Automatically pop up active info box
       setTimeout(() => {
         markersRef.current[truck.ras_vei_placa]?.openPopup();
-      }, 1500);
+      }, 1200);
     }
   };
 
-  // 5. Simulation Interval Loop (Requested 10-second updates)
+  const handleFocusGeofence = () => {
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.flyTo(geofenceCenter, 12, { animate: true, duration: 1.2 });
+    }
+  };
+
+  // Traces and scheduled routes Polyline overlay drawer
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (tracePolylineRef.current) {
+      tracePolylineRef.current.remove();
+      tracePolylineRef.current = null;
+    }
+    if (routePolylineRef.current) {
+      routePolylineRef.current.remove();
+      routePolylineRef.current = null;
+    }
+
+    if (activeTracePlaca && traces[activeTracePlaca]) {
+      const pts = traces[activeTracePlaca];
+      if (pts.length > 1) {
+        const poly = L.polyline(pts, {
+          color: '#2563eb',
+          weight: 4,
+          dashArray: '5, 8',
+          opacity: 0.9
+        }).addTo(map);
+        tracePolylineRef.current = poly;
+        try {
+          map.fitBounds(poly.getBounds(), { padding: [50, 50] });
+        } catch(e) {}
+      }
+    }
+
+    if (activeRoutePlaca) {
+      const truck = trucks.find(t => t.ras_vei_placa === activeRoutePlaca);
+      if (truck) {
+        const truckCoords: [number, number] = [parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude)];
+        const destCoords = findStoreCoordinates(truck.destinationName || '');
+        const finalDest = destCoords || [-16.048, -47.972];
+
+        // Layout operational logistics nodes starting from CD SIA
+        const routePts: [number, number][] = [
+          cdSiaCoordinates,
+          [-15.825, -47.978], 
+          truckCoords,
+          finalDest
+        ];
+
+        const poly = L.polyline(routePts, {
+          color: '#10b981',
+          weight: 5,
+          opacity: 0.85
+        }).addTo(map);
+        routePolylineRef.current = poly;
+        try {
+          map.fitBounds(poly.getBounds(), { padding: [50, 50] });
+        } catch(e) {}
+      }
+    }
+  }, [activeTracePlaca, activeRoutePlaca, traces, trucks]);
+
+  // Simulation Interval Tick (10 seconds refresh rate)
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
-      setTrucks(prevTrucks => {
-        return prevTrucks.map(truck => {
-          // If ignition is off, truck doesn't move
+      setTrucks(prev => {
+        return prev.map(truck => {
           if (truck.ras_eve_ignicao === '0') {
             return {
               ...truck,
@@ -342,42 +660,51 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             };
           }
 
-          // Move coordinates slightly to simulate transit towards their destination
           const currentLat = parseFloat(truck.ras_eve_latitude);
           const currentLng = parseFloat(truck.ras_eve_longitude);
           
-          // Slight jitter or direction steps
-          let dLat = (Math.random() - 0.45) * 0.004; // Slightly north/south
-          let dLng = (Math.random() - 0.5) * 0.004;  // Slightly east/west
+          let dLat = (Math.random() - 0.44) * 0.0035; 
+          let dLng = (Math.random() - 0.5) * 0.0035;  
           
           const newLat = (currentLat + dLat).toFixed(6);
           const newLng = (currentLng + dLng).toFixed(6);
 
-          // Speed fluctuations around average
-          const currentSpeedVal = Number(truck.ras_eve_velocidade);
-          let newSpeedVal = currentSpeedVal + (Math.random() > 0.5 ? 5 : -5);
-          if (newSpeedVal > 85) newSpeedVal = 80;
-          if (newSpeedVal < 25) newSpeedVal = 35;
+          const currentSpeed = Number(truck.ras_eve_velocidade);
+          let newSpeed = currentSpeed + (Math.random() > 0.5 ? 4 : -4);
+          if (newSpeed > 82) newSpeed = 75;
+          if (newSpeed < 30) newSpeed = 40;
 
           const nextProgress = Math.min((truck.progressPercent || 0) + Math.random() * 2, 100);
+
+          // Append to dynamic historical coordinates traces
+          setTraces(tPrev => {
+            const up = { ...tPrev };
+            if (!up[truck.ras_vei_placa]) {
+              up[truck.ras_vei_placa] = [];
+            }
+            up[truck.ras_vei_placa] = [
+              ...up[truck.ras_vei_placa],
+              [parseFloat(newLat), parseFloat(newLng)]
+            ];
+            return up;
+          });
 
           return {
             ...truck,
             ras_eve_latitude: newLat,
             ras_eve_longitude: newLng,
-            ras_eve_velocidade: String(Math.round(newSpeedVal)),
+            ras_eve_velocidade: String(Math.round(newSpeed)),
             progressPercent: parseFloat(nextProgress.toFixed(1)),
             lastUpdate: new Date().toLocaleTimeString()
           };
         });
       });
       setLastSyncTime(new Date().toLocaleTimeString());
-    }, 10000); // 10 seconds refresh rate exactly as specified
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  // Handle forcing a manual telemetry refresh
   const triggerManualFetch = () => {
     setTrucks(prev => prev.map(t => ({
       ...t,
@@ -387,7 +714,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     setLastSyncTime(new Date().toLocaleTimeString());
   };
 
-  // Switch Ignition state manually to demonstrate interactive telemetry handling
   const toggleIgnition = (placa: string) => {
     setTrucks(prev => prev.map(t => {
       if (t.ras_vei_placa === placa) {
@@ -395,12 +721,73 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         return {
           ...t,
           ras_eve_ignicao: isCurrentlyLigada ? '0' : '1',
-          ras_eve_velocidade: isCurrentlyLigada ? '0' : '45',
+          ras_eve_velocidade: isCurrentlyLigada ? '0' : '48',
           lastUpdate: new Date().toLocaleTimeString()
         };
       }
       return t;
     }));
+  };
+
+  // Post live telemetry commands
+  const sendTelemetryCommand = (cmd: string, p: string) => {
+    setBlockLoading(true);
+    setTimeout(() => {
+      setBlockLoading(false);
+      setComandosLogs(prev => {
+        const list = prev[p] || [];
+        const cleanTimestamp = new Date().toLocaleTimeString();
+        let feedback = `[${cleanTimestamp}] Comando enviado com sucesso!`;
+        if (cmd === 'lock') {
+          feedback = `[${cleanTimestamp}] Bloqueio de Ignição efetuado.`;
+          setTrucks(tr => tr.map(t => t.ras_vei_placa === p ? { ...t, ras_eve_ignicao: '0', ras_eve_velocidade: '0' } : t));
+        } else if (cmd === 'unlock') {
+          feedback = `[${cleanTimestamp}] Ignição Desbloqueada e liberada.`;
+          setTrucks(tr => tr.map(t => t.ras_vei_placa === p ? { ...t, ras_eve_ignicao: '1' } : t));
+        } else if (cmd === 'sirene') {
+          feedback = `[${cleanTimestamp}] Sirene de cabine ativa de emergência enviada.`;
+        } else if (cmd === 'buzzer') {
+          feedback = `[${cleanTimestamp}] Alerta sonoro de teclado ativo de cabine.`;
+        }
+        return {
+          ...prev,
+          [p]: [feedback, ...list]
+        };
+      });
+    }, 1200);
+  };
+
+  const handleShortcutClick = (actionName: string) => {
+    if (!selectedPlaca) return;
+    const truck = trucks.find(t => t.ras_vei_placa === selectedPlaca);
+    if (!truck) return;
+    
+    if (actionName === 'mapas') {
+      window.open(`https://www.google.com/maps?q=${truck.ras_eve_latitude},${truck.ras_eve_longitude}`, '_blank');
+      return;
+    }
+    
+    if (actionName === 'trajeto') {
+      if (activeTracePlaca === selectedPlaca) {
+        setActiveTracePlaca(null);
+      } else {
+        setActiveTracePlaca(selectedPlaca);
+        setActiveRoutePlaca(null);
+      }
+      return;
+    }
+    
+    if (actionName === 'rota') {
+      if (activeRoutePlaca === selectedPlaca) {
+        setActiveRoutePlaca(null);
+      } else {
+        setActiveRoutePlaca(selectedPlaca);
+        setActiveTracePlaca(null);
+      }
+      return;
+    }
+    
+    setActiveShortcutAction(activeShortcutAction === actionName ? null : actionName);
   };
 
   const filteredTrucks = trucks.filter(t => 
@@ -409,228 +796,1121 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     t.destinationName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const selectedTruckObj = trucks.find(t => t.ras_vei_placa === selectedPlaca);
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-13rem)] min-h-[580px]">
+    <div className={`flex flex-col lg:flex-row gap-5 ${isFullscreen ? 'fixed inset-0 z-[1050] bg-slate-100 p-6 h-screen' : 'h-[calc(100vh-10rem)] min-h-[580px]'} select-none transition-all duration-300 font-sans text-left`}>
       
-      {/* SIDEBAR LIST & CONFIGURATOR PANEL (4 cols) */}
-      <div className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col h-full overflow-hidden">
+      {/* PANEL 1: SIDEBAR LIST OF VEHICLES */}
+      <div className={`bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-full shrink-0 transition-all duration-300 ${isFullscreen ? 'w-full lg:w-96' : selectedPlaca ? 'w-full lg:w-80 xl:w-[330px]' : 'w-full lg:w-[420px]'}`}>
         
-        {/* Header telemetry titles */}
-        <div className="mb-5 flex justify-between items-start">
+        {/* Header Title Section */}
+        <div className="mb-4 flex justify-between items-center">
           <div>
-            <h2 className="text-xs font-black text-primary-navy tracking-widest uppercase flex items-center gap-2">
-              <Activity className="w-4.5 h-4.5 text-primary-gold animate-pulse" />
-              Rastreamento Ativo
+            <h2 className="text-xs font-black text-slate-850 tracking-wider uppercase flex items-center gap-1.5 font-sans">
+              <Activity className="w-4 h-4 text-emerald-600 animate-pulse" />
+              SISTEMA CARGA RADAR
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">
-              Satélites integrados em tempo real
+            <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">
+              Monitoramento Corporativo
             </p>
           </div>
-          <span className="text-[8px] font-black bg-primary-gold/15 text-primary-gold border border-primary-gold/10 px-2 py-1 rounded uppercase tracking-wider flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-primary-gold" />
-            VITE + LEAFLET
+          <span className="text-[8px] font-extrabold bg-primary-gold/10 text-primary-gold border border-primary-gold/20 px-2 py-0.5 rounded tracking-wider flex items-center gap-1">
+            <Sparkles className="w-2.5 h-2.5" />
+            TELEMETRIA G7
           </span>
         </div>
 
-        {/* Search controls */}
-        <div className="relative mb-4">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-slate-400" />
-          </div>
-          <input
-            type="text"
-            className="w-full bg-slate-50 border border-slate-200/90 rounded-2xl pl-10 pr-4 py-3 text-xs font-bold text-slate-700 placeholder-slate-400 outline-none focus:ring-1 focus:ring-primary-gold focus:border-primary-gold transition-all"
-            placeholder="Filtrar por placa, motorista ou destino..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        {/* Global actions (Play/Pause Simulation & Sync status) */}
-        <div className="flex bg-slate-50 rounded-2xl p-2 border border-slate-100 gap-2 mb-4">
+        {/* Column isolation tabs */}
+        <div className="flex bg-slate-100 rounded-xl p-1 mb-4 select-none">
           <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-              isPlaying 
-                ? 'bg-amber-600/10 text-amber-700 hover:bg-amber-600/15' 
-                : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'
+            type="button"
+            onClick={() => setSidebarTab('trucks')}
+            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              sidebarTab === 'trucks'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            {isPlaying ? (
-              <>
-                <Pause className="w-3.5 h-3.5 fill-current" />
-                Pausar Simulação
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                Iniciar Telemetria
-              </>
+            <Truck className="w-3.5 h-3.5" />
+            Veículos ({trucks.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSidebarTab('geofence');
+              setIsSettingCenter(false);
+            }}
+            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              sidebarTab === 'geofence'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            } ${outOfGeofenceTrucks.length > 0 ? 'relative text-rose-600' : ''}`}
+          >
+            <Compass className="w-3.5 h-3.5" />
+            Cerca Virtual
+            {outOfGeofenceTrucks.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping absolute top-1 right-2"></span>
             )}
           </button>
-          
-          <button
-            onClick={triggerManualFetch}
-            className="p-2.5 bg-white text-slate-600 hover:text-primary-navy hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer"
-            title="Atualizar posições instantaneamente"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
         </div>
 
-        {/* Simulated Telemetry Stats Cards */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col">
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Caminhões Conectados</span>
-            <span className="text-xl font-black text-primary-navy mt-1">{trucks.length}</span>
-          </div>
-          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col">
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Última Escuta</span>
-            <span className="text-xs font-mono font-bold text-slate-600 mt-2">{lastSyncTime || '--:--:--'}</span>
-          </div>
-        </div>
-
-        {/* List of active trucks */}
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          {filteredTrucks.length === 0 ? (
-            <div className="text-center py-12 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-2xl">
-              <MapPinOff className="w-8 h-8 text-slate-350 mb-2" />
-              <p className="text-[10px] font-black text-slate-400 uppercase">Nenhum caminhão monitorado</p>
+        {/* TAB 1 CONTENT: CAMINHÕES LIST */}
+        {sidebarTab === 'trucks' && (
+          <div className="flex flex-col flex-grow overflow-hidden">
+            
+            {/* Search, Filter, Sort and Gear buttons identical to mockups */}
+            <div className="flex gap-2 items-center mb-3">
+              <div className="relative flex-grow">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-3.5 w-3.5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs font-semibold text-slate-700 placeholder-slate-400 outline-none focus:ring-1 focus:ring-slate-300 transition-all"
+                  placeholder="Pesquisar..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <button 
+                onClick={triggerManualFetch}
+                className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer" 
+                title="Ordenar / Sincronizar"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+              </button>
+              <button className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50" title="Filtrar">
+                <Filter className="w-3.5 h-3.5" />
+              </button>
+              <button className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50" title="Configurar Painel">
+                <Settings className="w-3.5 h-3.5" />
+              </button>
             </div>
-          ) : (
-            filteredTrucks.map((truck) => {
-              const loadingIsBlocked = loads.some(load => load.plate?.toUpperCase() === truck.ras_vei_placa.toUpperCase() && load.status === CargoStatus.BLOCKED);
-              return (
-                <div
-                  key={truck.ras_vei_placa}
-                  onClick={() => handleFocusTruck(truck)}
-                  className={`border p-4 rounded-2xl text-left cursor-pointer transition-all ${
-                    selectedPlaca === truck.ras_vei_placa
-                      ? 'border-primary-gold bg-primary-gold/5 shadow-md scale-[1.01]'
-                      : 'border-slate-200/90 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-black text-xs text-primary-navy bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      {truck.ras_vei_placa}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {loadingIsBlocked && (
-                        <span className="text-[7px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider text-rose-700 bg-rose-100 border border-rose-200">
-                          Bloqueado
-                        </span>
+
+            {/* Simulation controls strip */}
+            <div className="flex bg-slate-50 rounded-xl p-1.5 border border-slate-100 gap-1.5 mb-3.5 select-none shrink-0">
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className={`flex-grow flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  isPlaying 
+                    ? 'bg-amber-600/10 text-amber-700 hover:bg-amber-600/15'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                }`}
+              >
+                {isPlaying ? (
+                  <>
+                    <Pause className="w-3 h-3 fill-current" />
+                    Simulador ON (10s)
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-current" />
+                    Ativar Telemetria
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Quick telemetry counter */}
+            <div className="grid grid-cols-2 gap-3 mb-3 shrink-0 select-none">
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-left">
+                <span className="text-[7.5px] font-black uppercase tracking-widest text-slate-400 block">Veículos monitorados</span>
+                <span className="text-sm font-black text-slate-800 block mt-0.5">{trucks.length}</span>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-left">
+                <span className="text-[7.5px] font-black uppercase tracking-widest text-slate-400 block">Último recebimento</span>
+                <span className="text-xs font-mono font-bold text-slate-650 block mt-1">{lastSyncTime || 'Síncrono'}</span>
+              </div>
+            </div>
+
+            {/* Interactive vehicle list */}
+            <div className="flex-grow overflow-y-auto space-y-2 pr-1 h-full max-h-[360px] lg:max-h-[none]">
+              {filteredTrucks.length === 0 ? (
+                <div className="py-12 border-2 border-dashed border-slate-100 rounded-2xl text-center">
+                  <MapPinOff className="w-6 h-6 mx-auto text-slate-350 mb-2" />
+                  <p className="text-[9px] font-bold uppercase text-slate-400">Nenhum veículo localizado</p>
+                </div>
+              ) : (
+                filteredTrucks.map(truck => {
+                  const matchedLoad = loads.find(load => platesMatch(load.plate, truck.ras_vei_placa));
+                  const distance = getTruckDistance(truck);
+                  const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
+                  const isSelected = selectedPlaca === truck.ras_vei_placa;
+                  
+                  const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
+                  const timestamp = "09/06/2026 às " + (truck.lastUpdate || "14:32:39");
+
+                  let voltage = '12 V';
+                  if (truck.ras_vei_placa === 'NGY-7119') voltage = '27 V';
+                  else if (truck.ras_vei_placa === 'BWP-1F60' || truck.ras_vei_placa === 'GWM-1F49') voltage = '14 V';
+                  else if (truck.ras_vei_placa === 'BYE-9369') voltage = '11 V';
+
+                  return (
+                    <div
+                      key={truck.ras_vei_placa}
+                      onClick={() => handleFocusTruck(truck)}
+                      className={`relative border p-3.5 rounded-xl text-left cursor-pointer transition-all flex flex-col gap-1.5 ${
+                        isSelected 
+                          ? 'border-primary-gold bg-primary-gold/5 ring-1 ring-primary-gold-30'
+                          : isOutOfBounds
+                            ? 'border-rose-200 bg-rose-50/20 hover:border-rose-350'
+                            : 'border-slate-150 hover:bg-slate-50 bg-white'
+                      }`}
+                    >
+                      {/* Pinned visual icon on selected cards */}
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 flex items-center justify-center p-0.5 text-primary-gold">
+                          <Pin className="w-3 h-3 fill-current rotate-45" />
+                        </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleIgnition(truck.ras_vei_placa);
-                        }}
-                        className={`text-[8px] font-black px-2 py-0.5 rounded border uppercase transition-all tracking-wider ${
-                          truck.ras_eve_ignicao === '1'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-slate-50 text-slate-500 border-slate-200'
-                        }`}
-                        title="Alternar motor (Ignição)"
+
+                      {/* Header row: Plate / GPS Stamp */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-black text-xs text-slate-800 uppercase tracking-widest leading-none">
+                            {truck.ras_vei_placa}
+                          </span>
+                          <span className="text-[8px] font-bold text-slate-450 uppercase font-mono">
+                            {truck.ras_vei_placa}
+                          </span>
+                        </div>
+                        <span className="text-[8px] text-slate-400 font-bold flex items-center gap-1 select-none font-sans">
+                          <svg className="w-2.5 h-2.5 text-slate-350" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-15.86c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93V3.07z"/></svg>
+                          {timestamp}
+                        </span>
+                      </div>
+
+                      {/* Dynamic Address Label */}
+                      <p className="text-[9.5px] font-medium text-slate-500 font-sans tracking-tight truncate max-w-[240px] select-none" title={address}>
+                        {address}
+                      </p>
+
+                      {/* Badges strip mirroring screenshot */}
+                      <div className="flex flex-wrap gap-1 px-0.5">
+                        {/* Ignition / Motion badge */}
+                        <span className={`text-[7.5px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide font-sans flex items-center gap-1 select-none ${
+                          truck.ras_eve_ignicao === '1' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-slate-800 text-white'
+                        }`}>
+                          {truck.ras_eve_ignicao === '1' ? (
+                            <>
+                              <Play className="w-2 h-2 fill-current" />
+                              Ligado em movimento
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                              Ignição desligada
+                            </>
+                          )}
+                        </span>
+
+                        {/* Steering badge */}
+                        <span className="text-[7.5px] font-black text-slate-100 bg-slate-800 uppercase px-1.5 py-0.5 rounded tracking-none flex items-center gap-0.5 select-none font-sans">
+                          Não especificado
+                        </span>
+
+                        {/* Battery backup */}
+                        <span className="text-[7.5px] font-black text-slate-700 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded flex items-center gap-0.5 select-none font-sans">
+                          <Battery className="w-2.5 h-2.5 text-slate-500" />
+                          100 %
+                        </span>
+
+                        {/* Voltage */}
+                        <span className="text-[7.5px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded flex items-center gap-0.5 select-none font-sans">
+                          <Zap className="w-2.5 h-2.5 text-amber-500 fill-current" />
+                          {voltage}
+                        </span>
+                      </div>
+
+                      {/* Client row bottom */}
+                      <div className="border-t border-slate-100 pt-2 flex justify-between items-center text-[7.5px] font-black uppercase text-slate-400 tracking-wider font-sans select-none">
+                        <span>ATACADAO DIA A DIA</span>
+                        {isOutOfBounds && (
+                          <span className="text-[7px] text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded animate-pulse">
+                            FORA C. VIRTUAL
+                          </span>
+                        )}
+                        {matchedLoad?.status === CargoStatus.BLOCKED && (
+                          <span className="text-[7px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded">
+                            RESTRITO
+                          </span>
+                        )}
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2 CONTENT: GEOFENCE CONFIG PANEL */}
+        {sidebarTab === 'geofence' && (
+          <div className="flex flex-col flex-grow overflow-hidden text-left font-sans">
+            <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-4 mb-4 shrink-0">
+              
+              {/* Toggle Cerca switch */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="text-left">
+                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider block">Monitor de Cerca</span>
+                  <span className="text-[8px] text-slate-400 font-bold uppercase">Controlador Geofence DF</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={geofenceEnabled} 
+                    onChange={(e) => setGeofenceEnabled(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Slider radius */}
+              <div className="space-y-1.5 text-left">
+                <div className="flex justify-between items-center text-[9.5px] font-black text-slate-700 uppercase">
+                  <span>Raio da Cerca</span>
+                  <span className="text-slate-800 font-mono font-black py-0.5 px-2 bg-slate-250/70 rounded-md text-[9px]">
+                    {(geofenceRadius / 1000).toFixed(1)} km
+                  </span>
+                </div>
+                <input 
+                  type="range" 
+                  min="2000" 
+                  max="35000" 
+                  step="500"
+                  disabled={!geofenceEnabled}
+                  value={geofenceRadius} 
+                  onChange={(e) => setGeofenceRadius(Number(e.target.value))}
+                  className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800 disabled:opacity-40" 
+                />
+                <div className="flex justify-between text-[7px] text-slate-400 font-black uppercase">
+                  <span>Mín: 2 km</span>
+                  <span>CD SIA</span>
+                  <span>Máx: 35 km</span>
+                </div>
+              </div>
+
+              {/* Centering controls */}
+              <div className="space-y-2 border-t border-slate-200 pt-3 text-left">
+                <div className="flex items-center justify-between text-[9.5px] font-black text-slate-800 uppercase">
+                  <span>Centro da Cerca</span>
+                  <span className="text-[8px] text-slate-500 font-mono">
+                    CD SIA (-15.795, -47.962)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingCenter(!isSettingCenter)}
+                    className={`p-2 font-black rounded-lg text-[8.5px] uppercase tracking-wider border text-center transition-all cursor-pointer ${
+                      isSettingCenter 
+                        ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {isSettingCenter ? 'Definindo...' : 'Definir no mapa'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeofenceCenter([-15.7953, -47.9622]);
+                      setIsSettingCenter(false);
+                    }}
+                    className="p-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-750 font-black rounded-lg text-[8.5px] uppercase tracking-wider text-center transition-all cursor-pointer"
+                  >
+                    Resetar SIA
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleFocusGeofence}
+                  className="w-full py-1.5 bg-slate-850 hover:bg-slate-900 text-white font-black rounded-lg text-[8.5px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Locate className="w-3 h-3 text-primary-gold" />
+                  Visualizar central no mapa
+                </button>
+              </div>
+            </div>
+
+            {/* List of out-of-limits infractions */}
+            <div className="flex-1 flex flex-col overflow-hidden text-left">
+              <h3 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                <span>INFRATORES DO ESPAÇO ({outOfGeofenceTrucks.length})</span>
+                {geofenceEnabled && outOfGeofenceTrucks.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+                )}
+              </h3>
+
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[160px] lg:max-h-[none]">
+                {!geofenceEnabled ? (
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
+                    <p className="text-[9px] font-black uppercase">Monitoramento Inoperante</p>
+                  </div>
+                ) : outOfGeofenceTrucks.length === 0 ? (
+                  <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-center">
+                    <strong className="text-[9px] font-black uppercase text-emerald-800">Cerca OK</strong>
+                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os caminhões integrados estão na área operacional.</p>
+                  </div>
+                ) : (
+                  outOfGeofenceTrucks.map(truck => {
+                    const distance = getTruckDistance(truck);
+                    return (
+                      <div
+                        key={truck.ras_vei_placa}
+                        onClick={() => handleFocusTruck(truck)}
+                        className="bg-rose-50/50 border border-rose-150 p-3 rounded-xl hover:bg-rose-50 cursor-pointer transition-all flex justify-between items-center"
                       >
-                        {truck.ras_eve_ignicao === '1' ? 'LIGADO' : 'DESLIGADO'}
+                        <div className="truncate pr-2">
+                          <span className="font-mono font-black text-xs text-rose-800 bg-rose-100/60 border border-rose-200 px-1.5 py-0.2 rounded">
+                            {truck.ras_vei_placa}
+                          </span>
+                          <span className="block mt-1 font-bold text-[8.5px] uppercase text-slate-705 truncate">
+                            {truck.driverName}
+                          </span>
+                          <span className="block font-mono text-[7.5px] text-rose-600 font-bold">
+                            {(distance / 1000).toFixed(1)} km do CD SIA
+                          </span>
+                        </div>
+                        <span className="text-[7.5px] bg-white border border-rose-200 text-rose-700 font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block">
+                          Focar
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* PANEL 2: INTEGRATED MIDDLE DETALHES SHEET */}
+      {selectedPlaca && selectedTruckObj && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-full shrink-0 w-full lg:w-80 xl:w-[350px] overflow-y-auto font-sans relative">
+          
+          {/* Details header row with action icons */}
+          <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-4 select-none">
+            <div className="flex items-center gap-1.5">
+              <button 
+                onClick={() => {
+                  setSelectedPlaca(null);
+                  setActiveShortcutAction(null);
+                  setActiveTracePlaca(null);
+                  setActiveRoutePlaca(null);
+                }}
+                className="text-slate-500 hover:text-slate-800 p-1 bg-slate-50 hover:bg-slate-100 rounded-lg transition-all border border-slate-200 cursor-pointer"
+                title="Fechar Detalhes"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                Detalhes
+              </h3>
+            </div>
+            
+            {/* Action buttons (Pin, bell, compass) matching mockup positioning */}
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => setIsDetailPinned(!isDetailPinned)}
+                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                  isDetailPinned 
+                    ? 'border-primary-gold bg-primary-gold/10 text-primary-gold' 
+                    : 'border-slate-200 bg-white text-slate-450 hover:bg-slate-50'
+                }`}
+                title="Fixar Veículo"
+              >
+                <Pin className="w-3.5 h-3.5 fill-current" />
+              </button>
+              <button className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-450 hover:bg-slate-50" title="Ativar Alertas Especiais">
+                <Bell className="w-3.5 h-3.5" />
+              </button>
+              <button className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-450 hover:bg-slate-50" title="Direção do Sensor">
+                <Compass className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Plate details and round vehicle category icon */}
+          <div className="flex justify-between items-start mb-4">
+            <div className="text-left font-sans">
+              <h1 className="text-base font-black text-slate-800 uppercase tracking-widest leading-none flex items-baseline gap-1.5 select-all">
+                {selectedTruckObj.ras_vei_placa}
+                <span className="text-xxs font-black text-slate-400 tracking-wider">
+                  {selectedTruckObj.ras_vei_placa}
+                </span>
+              </h1>
+              <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-tight">
+                {getAddressForCoords(selectedTruckObj.ras_eve_latitude, selectedTruckObj.ras_eve_longitude, selectedTruckObj.ras_vei_placa)}
+              </p>
+            </div>
+
+            {/* Circular grey truck category representative circle */}
+            <div className="w-10 h-10 rounded-full bg-slate-650 flex items-center justify-center text-white shrink-0 shadow-sm select-none">
+              <Truck className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* Multi-badges status row matching mockup spacing */}
+          <div className="flex flex-wrap gap-1.5 mb-2.5 px-0.5">
+            <span className="px-2 py-1 text-[8.5px] font-black text-slate-600 bg-slate-100 rounded flex items-center gap-1 select-none font-sans uppercase">
+              <Clock className="w-3 h-3 text-slate-400" />
+              09/06 {selectedTruckObj.lastUpdate || "14:32:39"}
+            </span>
+
+            <span className="px-2 py-1 text-[8.5px] font-black text-slate-600 bg-slate-100 rounded flex items-center gap-1 select-none font-sans uppercase">
+              Não especificado
+            </span>
+
+            <span className="px-2 py-1 text-[8.5px] font-black text-slate-600 bg-slate-100 rounded flex items-center gap-1 select-none font-sans uppercase">
+              <Gauge className="w-3 h-3 text-slate-400" />
+              {selectedTruckObj.ras_eve_ignicao === '1' ? selectedTruckObj.ras_eve_velocidade + ' km/h' : '0 km/h'}
+            </span>
+
+            <span className="px-2 py-1 text-[8.5px] font-black text-slate-600 bg-slate-100 rounded flex items-center gap-1 select-none font-sans uppercase">
+              ⚡ 100%
+            </span>
+          </div>
+
+          {/* Live communicator link row */}
+          <div className="flex items-center gap-2 px-2.5 py-2 bg-blue-50/70 border border-blue-100 rounded-xl mb-4 text-[9px] font-extrabold text-blue-800 tracking-tight font-sans select-none">
+            <svg className="w-3.5 h-3.5 text-blue-600 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-15.86c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93V3.07z"/></svg>
+            <span>Comunicou há 8 minutos em 09/06/2026 às {selectedTruckObj.lastUpdate || "14:32:39"}</span>
+          </div>
+
+          {/* Accordion List exactly matching "Resumo do dia" and "Informações do Rastreado" dropdown structures */}
+          <div className="space-y-2 mb-4">
+            
+            {/* Accordion 1: Resumo do dia */}
+            <div className="border border-slate-150 rounded-xl overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => setIsResumoExpanded(!isResumoExpanded)}
+                className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/80 flex justify-between items-center text-[10.5px] font-black uppercase text-slate-750 tracking-wider transition-all"
+              >
+                <span>Resumo do dia</span>
+                {isResumoExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+
+              {isResumoExpanded && (
+                <div className="p-3 text-[9px] text-slate-600 space-y-2 border-t border-slate-100 text-left font-sans select-text">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Motorista</span>
+                    <strong className="text-slate-800 uppercase">{selectedTruckObj.driverName || 'Raimundo Silveira'}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Destino Planejado</span>
+                    <strong className="text-slate-800 uppercase truncate max-w-[170px]">{selectedTruckObj.destinationName || 'Centro de Distribuição'}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Carga</span>
+                    <strong className="text-slate-800 uppercase">{selectedTruckObj.cargoType || 'Seca'}</strong>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-50 pt-1.5 font-mono">
+                    <span className="font-sans font-bold text-slate-400 uppercase">Progresso Estimado</span>
+                    <strong className="text-slate-800">{selectedTruckObj.progressPercent || 0}%</strong>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+                    <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${selectedTruckObj.progressPercent}%` }}></div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Accordion 2: Informações do Rastreado */}
+            <div className="border border-slate-150 rounded-xl overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => setIsInfoExpanded(!isInfoExpanded)}
+                className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/80 flex justify-between items-center text-[10.5px] font-black uppercase text-slate-750 tracking-wider transition-all"
+              >
+                <span>Informações do Rastreado</span>
+                {isInfoExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+
+              {isInfoExpanded && (
+                <div className="p-3 text-[9px] text-slate-650 space-y-1.5 border-t border-slate-100 text-left font-sans select-text">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Equipamento</span>
+                    <strong className="text-slate-800 uppercase font-mono">G7 Tracker Pro Dual</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Número do Lacre</span>
+                    <strong className="text-slate-800 uppercase font-mono">{selectedTruckObj.sealNumber || 'Não Relatado'}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Sinal GPS</span>
+                    <strong className="text-emerald-600 uppercase">Muito Forte (-61 dBm)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Coordenadas atuais</span>
+                    <strong className="text-slate-800 font-mono text-[8px]">
+                      {selectedTruckObj.ras_eve_latitude}, {selectedTruckObj.ras_eve_longitude}
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section: Atalhos (Action Shortcuts Grid identical to image) */}
+          <div className="text-left font-sans">
+            <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-widest pl-1 mb-3.5 flex items-center justify-between">
+              <span>Atalhos</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            </h3>
+
+            {/* Grid display perfectly square widgets */}
+            <div className="grid grid-cols-3 gap-2.5 mb-2 relative">
+              
+              <div 
+                onClick={() => handleShortcutClick('mapas')}
+                className="p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 transition-all font-sans cursor-pointer group shadow-sm hover:shadow active:scale-95 select-none"
+              >
+                <ExternalLink className="w-5 h-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Abrir ponto em outros mapas
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('referencia')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'referencia' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <MapPin className={`w-5 h-5 ${activeShortcutAction === 'referencia' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Ponto de referência
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('cerca')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'cerca' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <Grid className={`w-5 h-5 ${activeShortcutAction === 'cerca' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Cerca rápida
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('historico')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'historico' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <History className={`w-5 h-5 ${activeShortcutAction === 'historico' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Histórico de Posições
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('manutencao')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'manutencao' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <Wrench className={`w-5 h-5 ${activeShortcutAction === 'manutencao' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Manutenções programadas
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('comandos')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'comandos' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <Send className={`w-5 h-5 ${activeShortcutAction === 'comandos' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Comandos enviados
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('permanencia')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'permanencia' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <UserIcon className={`w-5 h-5 ${activeShortcutAction === 'permanencia' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Permanência em ponto
+                </span>
+              </div>
+
+              <div 
+                onClick={() => handleShortcutClick('velocidade')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'velocidade' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <Gauge className={`w-5 h-5 ${activeShortcutAction === 'velocidade' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Relatório de velocidade
+                </span>
+              </div>
+
+              {/* Trajeto percorrido - Draw paths history */}
+              <div 
+                onClick={() => handleShortcutClick('trajeto')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeTracePlaca === selectedPlaca ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <svg className={`w-5 h-5 ${activeTracePlaca === selectedPlaca ? 'text-white' : 'text-slate-500'}`} fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-15.86c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93V3.07z"/>
+                </svg>
+                <span className={`text-[8.5px] font-black leading-tight uppercase mt-1 ${activeTracePlaca === selectedPlaca ? 'text-white' : 'text-slate-700'}`}>
+                  {activeTracePlaca === selectedPlaca ? 'Remover Rota' : 'Trajeto percorrido'}
+                </span>
+              </div>
+
+              {/* Rota do veículo - Draw planned route */}
+              <div 
+                onClick={() => handleShortcutClick('rota')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeRoutePlaca === selectedPlaca ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <Flag className={`w-5 h-5 ${activeRoutePlaca === selectedPlaca ? 'text-white' : 'text-slate-500'}`} />
+                <span className={`text-[8.5px] font-black leading-tight uppercase mt-1 ${activeRoutePlaca === selectedPlaca ? 'text-white' : 'text-slate-700'}`}>
+                  {activeRoutePlaca === selectedPlaca ? 'Limpar rota' : 'Rota do veículo'}
+                </span>
+              </div>
+
+              {/* Relatório de eventos consolidados */}
+              <div 
+                onClick={() => handleShortcutClick('relatorio')}
+                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
+                  activeShortcutAction === 'relatorio' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                }`}
+              >
+                <FileText className={`w-5 h-5 ${activeShortcutAction === 'relatorio' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
+                  Relatório Consol.
+                </span>
+              </div>
+
+            </div>
+
+            {/* NESTED DYNAMIC SHORTCUT INTERFACES PANEL */}
+            {activeShortcutAction && (
+              <div className="mt-4 border border-indigo-100 bg-indigo-50/45 p-4 rounded-xl relative text-left font-sans animate-fadeIn select-text shrink-0">
+                <button 
+                  onClick={() => setActiveShortcutAction(null)}
+                  className="absolute top-2 right-2 text-indigo-400 hover:text-indigo-700 bg-white border border-indigo-150 p-1 rounded-md"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+
+                {/* 1. SHORTCUT: REFERÊNCIA */}
+                {activeShortcutAction === 'referencia' && (
+                  <div>
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-1">Pontos de Referência Importantes</strong>
+                    <p className="text-[9px] text-slate-600 uppercase font-medium leading-relaxed">
+                      Veículo associado ao CD central está localizado a:
+                    </p>
+                    <ul className="text-[8.5px] text-slate-700 space-y-1 mt-2 pl-2">
+                      <li className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                        <strong>1.2 km de:</strong> Atacadão Santa Maria
+                      </li>
+                      <li className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                        <strong>11.4 km de:</strong> Central operacional CD SIA
+                      </li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* 2. SHORTCUT: CERCA RÁPIDA */}
+                {activeShortcutAction === 'cerca' && (
+                  <div className="space-y-2">
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block">Cerca Virtual Individual (CVI)</strong>
+                    <p className="text-[8.5px] text-slate-600 uppercase leading-snug">
+                      Modifique remotamente o círculo de vigilância operacional do veículo no lote:
+                    </p>
+                    <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="text-[10px] font-mono font-bold text-slate-800">Cerca CVI</span>
+                      <button 
+                        onClick={() => {
+                          setGeofenceRadius(6000);
+                          setGeofenceCenter([parseFloat(selectedTruckObj.ras_eve_latitude), parseFloat(selectedTruckObj.ras_eve_longitude)]);
+                          setGeofenceEnabled(true);
+                        }}
+                        className="p-1 px-2.5 bg-slate-900 text-white font-bold rounded hover:bg-slate-800 text-[8px] uppercase tracking-wider"
+                      >
+                        Centralizar Radius
                       </button>
                     </div>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[9px] mb-2.5">
-                    <div className="flex flex-col">
-                      <span className="text-slate-400 font-bold uppercase text-[7px]">Motorista</span>
-                      <span className="text-slate-700 font-extrabold uppercase outline-none truncate">
-                        {truck.driverName || 'Nenhum'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-slate-400 font-bold uppercase text-[7px]">Destino</span>
-                      <span className="text-slate-700 font-extrabold uppercase truncate" title={truck.destinationName}>
-                        {truck.destinationName || 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col mt-1">
-                      <span className="text-slate-400 font-bold uppercase text-[7px]">Velocidade</span>
-                      <span className="text-slate-800 font-black">{truck.ras_eve_velocidade} KM/H</span>
-                    </div>
-                    <div className="flex flex-col mt-1">
-                      <span className="text-slate-400 font-bold uppercase text-[7px]">Última Comunicação</span>
-                      <span className="text-slate-500 font-mono font-bold">{truck.lastUpdate || '---'}</span>
+                {/* 3. SHORTCUT: TIMELINE HISTORICO */}
+                {activeShortcutAction === 'historico' && (
+                  <div>
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-2">Histórico de Transmissões (Hoje)</strong>
+                    <div className="space-y-2.5 pl-2 border-l border-slate-200 max-h-[140px] overflow-y-auto pr-1">
+                      <div className="relative">
+                        <span className="absolute -left-[11px] top-1 w-1.5 h-1.5 bg-indigo-600 rounded-full ring-2 ring-indigo-100"></span>
+                        <p className="text-[8.5px] font-black text-indigo-950 uppercase">{selectedTruckObj.lastUpdate || "14:32:39"}</p>
+                        <p className="text-[8px] text-slate-500 font-medium uppercase mt-0.5">SIA Trecho 4, DF - Transmissão GPS</p>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute -left-[11px] top-1 w-1.5 h-1.5 bg-slate-350 rounded-full"></span>
+                        <p className="text-[8.5px] font-bold text-slate-700 uppercase">14:15:20</p>
+                        <p className="text-[8px] text-slate-500 font-medium uppercase mt-0.5">Partida Operacional CD SIA - Motor ON</p>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute -left-[11px] top-1 w-1.5 h-1.5 bg-slate-350 rounded-full"></span>
+                        <p className="text-[8.5px] font-bold text-slate-700 uppercase">11:00:20</p>
+                        <p className="text-[8px] text-slate-500 font-medium uppercase mt-0.5">Estacionado Pátio - Portaria de Expedição</p>
+                      </div>
                     </div>
                   </div>
+                )}
 
-                  {/* Progress timeline bar built with styled classes only */}
-                  <div className="mt-2.5 pt-2 border-t border-slate-100">
-                    <div className="flex justify-between items-center text-[7.5px] font-bold text-slate-400 uppercase tracking-tight mb-1">
-                      <span>Progresso do Trajeto</span>
-                      <span>{truck.progressPercent}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-1000 ${
-                          loadingIsBlocked 
-                            ? 'bg-rose-500' 
-                            : truck.ras_eve_ignicao === '1' 
-                              ? 'bg-primary-navy' 
-                              : 'bg-slate-400'
-                        }`}
-                        style={{ width: `${truck.progressPercent || 0}%` }}
-                      ></div>
+                {/* 4. SHORTCUT: MANUTENÇÃO */}
+                {activeShortcutAction === 'manutencao' && (
+                  <div className="space-y-2 select-text">
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block">Status Técnico do Veículo</strong>
+                    <div className="space-y-1.5">
+                      <div className="p-1.5 bg-white border border-slate-150 rounded flex justify-between">
+                        <span className="font-bold text-[8.5px] text-slate-450 uppercase">Dispositivo Tracker</span>
+                        <strong className="text-emerald-600 text-[8.5px] uppercase">Operando OK (100% bateria)</strong>
+                      </div>
+                      <div className="p-1.5 bg-white border border-slate-150 rounded flex justify-between">
+                        <span className="font-bold text-[8.5px] text-slate-450 uppercase">Próxima Revisão</span>
+                        <strong className="text-slate-800 text-[8.5px] uppercase">Troca óleo: 14.500 km restantes</strong>
+                      </div>
+                      <div className="p-1.5 bg-white border border-slate-150 rounded flex justify-between">
+                        <span className="font-bold text-[8.5px] text-slate-450 uppercase">Sensor de Temperatura</span>
+                        <strong className="text-slate-700 text-[8.5px] font-mono">2.5 °C (Estabilizado)</strong>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })
-          )}
+                )}
+
+                {/* 5. SHORTCUT: COMANDOS ENVIADOS */}
+                {activeShortcutAction === 'comandos' && (
+                  <div className="space-y-2.5 select-none">
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block">Console de Comando Remoto</strong>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => sendTelemetryCommand('lock', selectedPlaca)}
+                        disabled={blockLoading}
+                        className="py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-[8px] rounded uppercase transition-all tracking-wider disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <LockToggleIcon className="w-3.5 h-3.5" />
+                        Cortar Ignição
+                      </button>
+
+                      <button
+                        onClick={() => sendTelemetryCommand('unlock', selectedPlaca)}
+                        disabled={blockLoading}
+                        className="py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-[8px] rounded uppercase transition-all tracking-wider disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-primary-gold" />
+                        Desbloquear
+                      </button>
+
+                      <button
+                        onClick={() => sendTelemetryCommand('sirene', selectedPlaca)}
+                        disabled={blockLoading}
+                        className="py-1.5 bg-indigo-650 hover:bg-indigo-750 text-white font-black text-[8px] rounded uppercase transition-all tracking-wider disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Flame className="w-3.5 h-3.5 text-primary-gold" />
+                        Disparar Sirene
+                      </button>
+
+                      <button
+                        onClick={() => sendTelemetryCommand('buzzer', selectedPlaca)}
+                        disabled={blockLoading}
+                        className="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-350 font-black text-[8px] rounded uppercase transition-all tracking-wider disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        Enviar BIP
+                      </button>
+                    </div>
+
+                    {blockLoading && (
+                      <div className="text-[8px] font-black uppercase text-rose-600 animate-pulse text-center">
+                        Processando comando satelital de barramento ...
+                      </div>
+                    )}
+
+                    {/* Command History inside container */}
+                    <div className="border-t border-indigo-150 pt-2 text-left font-sans">
+                      <span className="text-[7.5px] font-black text-indigo-400 uppercase tracking-widest block mb-1">Logs Consolidados do Dispositivo</span>
+                      <div className="bg-white p-2 rounded-lg border border-slate-200 h-16 overflow-y-auto space-y-1">
+                        {comandosLogs[selectedPlaca]?.map((log, index) => (
+                          <div key={index} className="text-[7.5px] font-bold text-indigo-950 font-sans leading-relaxed">
+                            {log}
+                          </div>
+                        )) || (
+                          <span className="text-[7.5px] text-slate-400 uppercase font-semibold">Sem transmissões recentes.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. SHORTCUT: PERMANENCIA EM PONTO */}
+                {activeShortcutAction === 'permanencia' && (
+                  <div>
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-1">Estacionamento e Permanência</strong>
+                    <p className="text-[9px] text-slate-600 leading-snug uppercase">
+                      Informações de carga parados nos pontos mapeados:
+                    </p>
+                    <div className="mt-2 space-y-1 border border-slate-100 bg-white p-2 rounded-lg">
+                      <div className="flex justify-between text-[8px]">
+                        <span className="font-bold text-slate-400">Tempo de Carga</span>
+                        <strong className="text-slate-850">03h 12m</strong>
+                      </div>
+                      <div className="flex justify-between text-[8px]">
+                        <span className="font-bold text-slate-400">Tempo de Deslocamento</span>
+                        <strong className="text-slate-850">02h 45m</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. SHORTCUT: VELOCIDADE CHARTS */}
+                {activeShortcutAction === 'velocidade' && (
+                  <div>
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-1">Registro de Velocidade (Última hora)</strong>
+                    <p className="text-[8px] text-slate-500 uppercase leading-snug mb-2">Flutuações de telemetria base:</p>
+                    {/* Visual styled SVG graph representing speed fluctuations */}
+                    <div className="bg-white p-2 rounded-lg border border-slate-150 flex items-end justify-between h-14 select-none">
+                      <div className="w-5 bg-indigo-500 rounded" style={{ height: '30%' }} title="30 km/h"></div>
+                      <div className="w-5 bg-indigo-650 rounded animate-pulse" style={{ height: '70%' }} title="70 km/h"></div>
+                      <div className="w-5 bg-indigo-500 rounded" style={{ height: '52%' }} title="52 km/h"></div>
+                      <div className="w-5 bg-indigo-500 rounded" style={{ height: '40%' }} title="40 km/h"></div>
+                      <div className="w-5 bg-indigo-650 rounded" style={{ height: '80%' }} title="80 km/h"></div>
+                    </div>
+                    <div className="flex justify-between text-[7px] text-slate-400 uppercase font-black pt-1">
+                      <span>14:00</span>
+                      <span>14:15</span>
+                      <span>14:30</span>
+                      <span>Agora</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 8. SHORTCUT: RELATORIO CONSOLIDADO */}
+                {activeShortcutAction === 'relatorio' && (
+                  <div>
+                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-1">Eventos Consolidados do Dispositivo</strong>
+                    <div className="space-y-1 mt-2">
+                      <div className="text-[7.5px] bg-white border border-slate-150 p-1 rounded-md text-slate-700 flex justify-between select-text uppercase">
+                        <span>Entrada em Geofence Santa Maria</span>
+                        <strong>14:31:02</strong>
+                      </div>
+                      <div className="text-[7.5px] bg-white border border-slate-150 p-1 rounded-md text-slate-700 flex justify-between select-text uppercase">
+                        <span>Transmissão Normal de GPS</span>
+                        <strong>14:26:00</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+          </div>
+
         </div>
-      </div>
+      )}
 
-      {/* MAP VIEWER (8 cols) */}
-      <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-full min-h-[460px]">
+      {/* PANEL 3: COMPREHENSIVE MAP ENGINE (Remaining columns) */}
+      <div className="flex-grow bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-full relative">
         
-        {/* Map view controls */}
-        <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center sticky top-0 z-10">
+        {/* Map Header Strip */}
+        <div className="px-4 py-3 border-b border-slate-100 bg-white flex justify-between items-center sticky top-0 z-10 select-none">
           <div className="flex items-center gap-2">
-            <MapIcon className="w-4 h-4 text-primary-navy" />
+            <MapIcon className="w-4 h-4 text-slate-600" />
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
               Painel de Rastreamento - CARGA RADAR
             </h3>
           </div>
-          <span className="font-mono text-[9px] text-slate-400 font-bold flex items-center gap-1">
-            <Clock className="w-3 h-3 text-slate-400" />
-            Reciclagem de dados a cada 10s
+          <span className="font-mono text-[9px] text-slate-400 font-bold flex items-center gap-1 font-sans">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            Recarregando a cada 10s
           </span>
         </div>
 
-        {/* Map Canvas Box */}
+        {/* Map Canvas Frame */}
         <div className="relative flex-1 bg-slate-50 h-full min-h-[300px]">
-          <div 
-            id="mapa-radar" 
-            ref={mapContainerRef} 
-            className="w-full h-full min-h-[380px] select-none rounded-b-3xl"
-            style={{ height: '100%', width: '100%', outline: 'none' }}
-          ></div>
           
-          {/* Custom floats over map layer */}
-          <div className="absolute top-4 left-4 z-[999] bg-white/95 backdrop-blur-md border border-slate-200 p-2.5 rounded-xl shadow-xl space-y-1 select-none flex flex-col">
-            <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest pl-1">Legenda Técnica</span>
-            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1 py-0.5">
-              <span className="w-2.5 h-2.5 bg-primary-navy border border-primary-gold rounded-md"></span>
-              Caminhão em Trânsito (Ignição Ligada)
+          <div 
+            id="mapa-radar-integrated" 
+            ref={mapContainerRef} 
+            className="w-full h-full min-h-[360px] lg:min-h-[none] outline-none select-none"
+            style={{ height: '100%', width: '100%' }}
+          ></div>
+
+          {/* DYNAMIC MAP GEOFENCING CORNER ALERTS */}
+          {geofenceEnabled && outOfGeofenceTrucks.length > 0 && (
+            <div className="absolute top-4 right-4 z-[999] bg-rose-600/95 backdrop-blur-md border border-rose-500 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce max-w-xs select-none">
+              <AlertTriangle className="w-4.5 h-4.5 text-white animate-pulse shrink-0" />
+              <div className="text-left font-sans">
+                <h4 className="text-[8px] font-black uppercase tracking-widest text-rose-200">Notificação de Alerta</h4>
+                <p className="text-[10px] font-black uppercase mt-0.5 leading-tight">
+                  {outOfGeofenceTrucks.length} {outOfGeofenceTrucks.length === 1 ? 'veículo ultrapassou' : 'veículos ultrapassaram'} a Cerca Virtual!
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1 py-0.5">
-              <span className="w-2.5 h-2.5 bg-slate-650/80 border border-slate-350 rounded-md"></span>
+          )}
+
+          {/* DYNAMIC GEOLOCATION FEEDBACK DIALOG */}
+          {isSettingCenter && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-slate-900 border border-primary-gold text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce select-none">
+              <MapPin className="w-4.5 h-4.5 text-primary-gold animate-pulse" />
+              <div className="text-left font-sans">
+                <h4 className="text-[8px] font-black uppercase text-primary-gold tracking-widest">Nova Cerca Virtual</h4>
+                <p className="text-[10.5px] font-extrabold uppercase mt-0.5 leading-none">Clique em qualquer ponto do mapa para definir o ponto central.</p>
+              </div>
+            </div>
+          )}
+
+          {/* PROFESSIONAL GIS MAP TOOLBAR RAIL FLOATING OVER MAP ON LEFT */}
+          <div className="absolute top-4 left-4 z-[999] flex flex-col gap-1.5 p-1.5 bg-white/90 backdrop-blur border border-slate-200/80 shadow-lg rounded-xl select-none select-none">
+            {/* 1. Center / Locate selected vehicle */}
+            <button
+              onClick={() => {
+                if (selectedTruckObj) {
+                  handleFocusTruck(selectedTruckObj);
+                } else {
+                  handleFocusGeofence();
+                }
+              }}
+              className="p-2 bg-white hover:bg-slate-50 text-slate-650 hover:text-slate-900 rounded-lg border border-slate-200 shadow-sm transition-all cursor-pointer group"
+              title="Locate Selected Vehicle"
+            >
+              <Locate className="w-4 h-4 text-indigo-600 group-hover:scale-110" />
+            </button>
+
+            {/* 2. Zoom In */}
+            <button
+              onClick={() => mapInstanceRef.current?.zoomIn()}
+              className="p-1.5 bg-white hover:bg-slate-50 text-slate-650 font-black rounded-lg border border-slate-200 shadow-sm transition-all cursor-pointer"
+              title="Mais Zoom"
+            >
+              <span className="text-xs font-black select-none">+</span>
+            </button>
+
+            {/* 3. Zoom Out */}
+            <button
+              onClick={() => mapInstanceRef.current?.zoomOut()}
+              className="p-1.5 bg-white hover:bg-slate-50 text-slate-650 font-black rounded-lg border border-slate-200 shadow-sm transition-all cursor-pointer"
+              title="Menos Zoom"
+            >
+              <span className="text-xs font-black select-none">-</span>
+            </button>
+
+            {/* divider */}
+            <div className="h-[1.5px] bg-slate-150 mx-1"></div>
+
+            {/* 4. Layer Selector button */}
+            <button
+              onClick={() => {
+                if (mapStyle === 'osm') setMapStyle('dark');
+                else if (mapStyle === 'dark') setMapStyle('satellite');
+                else setMapStyle('osm');
+              }}
+              className="p-2 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 shadow-sm transition-all text-slate-650 cursor-pointer"
+              title={`Mudar visual do mapa (Atual: ${mapStyle.toUpperCase()})`}
+            >
+              <MapIcon className="w-4 h-4 text-emerald-600" />
+            </button>
+
+            {/* 5. Plates Toggle Eye icon */}
+            <button
+              onClick={() => setMapLabelToggle(!mapLabelToggle)}
+              className="p-2 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 shadow-sm transition-all text-slate-650 cursor-pointer"
+              title="Alternar etiquetas de placas"
+            >
+              {mapLabelToggle ? (
+                <Eye className="w-4 h-4 text-indigo-600" />
+              ) : (
+                <EyeOff className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {/* 6. Quick Geofence Toggle */}
+            <button
+              onClick={() => setGeofenceEnabled(!geofenceEnabled)}
+              className={`p-2 rounded-lg border shadow-sm transition-all cursor-pointer ${
+                geofenceEnabled ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'
+              }`}
+              title="Ligar Cerca Virtual"
+            >
+              <Compass className="w-4 h-4" />
+            </button>
+
+            {/* 7. Fullscreen Canvas size Mode */}
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="p-2 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 shadow-sm transition-all text-slate-650 cursor-pointer"
+              title="Tela Inteira"
+            >
+              <Maximize2 className="w-4 h-4 text-slate-600" />
+            </button>
+          </div>
+
+          {/* MAP INFRASTRUCTURE TECHNICAL LEGEND FLOATING BOX */}
+          <div className="absolute bottom-4 left-4 z-[999] bg-white/95 backdrop-blur-md border border-slate-200/80 p-3 rounded-xl shadow-xl space-y-1.5 select-none flex flex-col text-left font-sans">
+            <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest pl-1 leading-none">Legenda</span>
+            
+            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1">
+              <span className="w-2.5 h-2.5 bg-emerald-600 border border-white rounded-full block"></span>
+              Ignição Ligada (Em Rota)
+            </div>
+            
+            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1">
+              <span className="w-2.5 h-2.5 bg-slate-500 border border-white rounded-full block"></span>
               Ignição Desligada (Parado)
             </div>
-            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1 py-0.5 animate-pulse">
-              <span className="w-2.5 h-2.5 bg-rose-600 rounded-md"></span>
-              Alerta de Divergência (Bloqueado)
+            
+            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1">
+              <span className="w-2.5 h-2.5 bg-rose-600 border border-white rounded-full block animate-pulse"></span>
+              Fora da Cerca Virtual (Infraconforme)
             </div>
           </div>
+
         </div>
       </div>
+
     </div>
   );
 };
+
+// Help icons supporting active commands
+const LockToggleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0110 0v4" />
+  </svg>
+);

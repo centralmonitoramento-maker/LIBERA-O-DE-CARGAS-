@@ -8,7 +8,7 @@ import { AnalysisView } from './views/AnalysisView';
 import { LoginView } from './views/LoginView';
 import { PortariaView } from './views/PortariaView';
 import { TrackingView } from './views/TrackingView';
-import { CargoLoad, CargoStatus, OccurrenceType, User, EventLog, SystemRole } from './types';
+import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { 
   collection, 
   doc, 
@@ -75,7 +75,60 @@ const App: React.FC = () => {
   const [loads, setLoads] = useState<CargoLoad[]>(() => {
     try {
       const persisted = localStorage.getItem('cargoradar_loads');
-      return persisted ? JSON.parse(persisted) : [];
+      if (persisted) {
+        const parsed = JSON.parse(persisted);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      const defaultLoads: CargoLoad[] = [
+        {
+          id: 'initial-1',
+          plate: 'BWU-8171',
+          driverName: 'Raimundo Silveira',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Águas Claras (df-1)',
+          cargoType: CargoType.SECA,
+          isHighRisk: false,
+          palletCount: 24,
+          sealNumber: 'L34891',
+          status: CargoStatus.RELEASED,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD',
+          auditedAt: new Date().toISOString()
+        },
+        {
+          id: 'initial-2',
+          plate: 'BWH-4H66',
+          driverName: 'Valdir Brandão',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Guará II (df-7)',
+          cargoType: CargoType.MISTA,
+          isHighRisk: true,
+          palletCount: 18,
+          sealNumber: 'L99112',
+          status: CargoStatus.RELEASED,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD',
+          auditedAt: new Date().toISOString()
+        },
+        {
+          id: 'initial-3',
+          plate: 'KJG-5512',
+          driverName: 'Carlos Eduardo',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Taguatinga Sul (df-3)',
+          cargoType: CargoType.PERECIVEIS,
+          isHighRisk: false,
+          palletCount: 12,
+          sealNumber: 'L22119',
+          status: CargoStatus.AWAITING,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD'
+        }
+      ];
+      localStorage.setItem('cargoradar_loads', JSON.stringify(defaultLoads));
+      return defaultLoads;
     } catch {
       return [];
     }
@@ -118,7 +171,21 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const persisted = localStorage.getItem('cargoradar_users');
-      return persisted ? JSON.parse(persisted) : [];
+      if (persisted) {
+        const parsed = JSON.parse(persisted);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      const defaultUsers: User[] = [
+        { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
+        { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
+        { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+        { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
+        { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+      ];
+      localStorage.setItem('cargoradar_users', JSON.stringify(defaultUsers));
+      return defaultUsers;
     } catch {
       return [];
     }
@@ -301,12 +368,14 @@ const App: React.FC = () => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
       
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
-                             errorMessage.toLowerCase().includes('connection') || 
-                             errorMessage.toLowerCase().includes('network') ||
-                             errorMessage.toLowerCase().includes('unavailable');
+      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
+                               errorMessage.toLowerCase().includes('connection') || 
+                               errorMessage.toLowerCase().includes('network') ||
+                               errorMessage.toLowerCase().includes('unavailable') ||
+                               errorMessage.toLowerCase().includes('quota') ||
+                               errorMessage.toLowerCase().includes('limit');
                              
-      if (!isOfflineError) {
+      if (!isOfflineOrQuota) {
         handleFirestoreError(error, OperationType.LIST, 'loads');
       }
     });
@@ -342,12 +411,14 @@ const App: React.FC = () => {
       console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
       
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
-                             errorMessage.toLowerCase().includes('connection') || 
-                             errorMessage.toLowerCase().includes('network') ||
-                             errorMessage.toLowerCase().includes('unavailable');
+      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
+                               errorMessage.toLowerCase().includes('connection') || 
+                               errorMessage.toLowerCase().includes('network') ||
+                               errorMessage.toLowerCase().includes('unavailable') ||
+                               errorMessage.toLowerCase().includes('quota') ||
+                               errorMessage.toLowerCase().includes('limit');
                              
-      if (!isOfflineError) {
+      if (!isOfflineOrQuota) {
         handleFirestoreError(error, OperationType.LIST, 'users');
       }
     });
@@ -382,12 +453,14 @@ const App: React.FC = () => {
       console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
       
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineError = errorMessage.toLowerCase().includes('offline') || 
-                             errorMessage.toLowerCase().includes('connection') || 
-                             errorMessage.toLowerCase().includes('network') ||
-                             errorMessage.toLowerCase().includes('unavailable');
+      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
+                               errorMessage.toLowerCase().includes('connection') || 
+                               errorMessage.toLowerCase().includes('network') ||
+                               errorMessage.toLowerCase().includes('unavailable') ||
+                               errorMessage.toLowerCase().includes('quota') ||
+                               errorMessage.toLowerCase().includes('limit');
                              
-      if (!isOfflineError) {
+      if (!isOfflineOrQuota) {
         handleFirestoreError(error, OperationType.LIST, 'logs');
       }
     });
@@ -409,11 +482,21 @@ const App: React.FC = () => {
           userSnap = await getDocs(q);
           console.log('Successfully read users collection. Empty?', userSnap.empty);
         } catch (readErr) {
-          console.error('Failed to read users collection during bootstrap check:', readErr);
-          throw readErr;
+          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
+          const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
+                                 errMsg.toLowerCase().includes('limit') ||
+                                 errMsg.toLowerCase().includes('exhausted') ||
+                                 errMsg.toLowerCase().includes('resource');
+          
+          if (isQuotaOrLimit) {
+            console.warn('[Firebase Resiliency] Quota or limit exceeded during read check. Working in local storage fallback mode.');
+          } else {
+            console.warn('Could not read users collection during bootstrap check:', readErr);
+          }
+          return; // Skip cloud writes when read check fails
         }
 
-        if (userSnap.empty) {
+        if (userSnap && userSnap.empty) {
           console.log('Bootstrapping default users to Firestore...');
           const defaultUsers: User[] = [
             { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
@@ -428,13 +511,21 @@ const App: React.FC = () => {
               await setDoc(doc(db, 'users', u.id), u);
               console.log(`Successfully bootstrapped user: ${u.username}`);
             } catch (writeErr) {
-              console.error(`Failed to write user doc ${u.id} (${u.username}):`, writeErr);
-              throw writeErr;
+              const errMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+              const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
+                                     errMsg.toLowerCase().includes('limit') ||
+                                     errMsg.toLowerCase().includes('exhausted') ||
+                                     errMsg.toLowerCase().includes('resource');
+              if (isQuotaOrLimit) {
+                console.warn(`[Firebase Resiliency] Quota or limit exceeded writing user doc ${u.id} (${u.username}).`);
+              } else {
+                console.warn(`Could not write user doc ${u.id} (${u.username}):`, writeErr);
+              }
             }
           }
         }
       } catch (err) {
-        console.error('Error bootstrapping default users:', err);
+        console.warn('Silent fallback: Error bootstrapping default users:', err);
       }
     };
     bootstrapData();

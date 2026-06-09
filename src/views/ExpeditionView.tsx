@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { CargoLoad, CargoType, CargoStatus, EventLog, getPhotosArray } from '../types';
+import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { 
   Truck, 
   Plus, 
@@ -287,7 +288,7 @@ const ROUTE_OPTIONS = [
   '04-SOBRADINHO'
 ];
 
-const VEHICLE_PLATES = [
+const BASE_VEHICLE_PLATES = [
   'NFU2C00',
   'KQP2410',
   'GVH1B52',
@@ -342,6 +343,12 @@ const VEHICLE_PLATES = [
   'CRY5H40',
   'CUB2320'
 ];
+
+const VEHICLE_PLATES = Array.from(new Set([
+  ...BASE_VEHICLE_PLATES,
+  ...getUniquePlatesRaw(),
+  ...getUniquePlatesNormalized()
+]));
 
 interface ExpeditionViewProps {
   onSubmit: (load: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => void;

@@ -99,7 +99,14 @@ const generateMessageId = (): string => {
 
 export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
-  const [messages, setMessages] = useState<FeedbackMessage[]>([]);
+  const [messages, setMessages] = useState<FeedbackMessage[]>(() => {
+    try {
+      const persisted = localStorage.getItem('cargoradar_feedback_messages');
+      return persisted ? JSON.parse(persisted) : [];
+    } catch {
+      return [];
+    }
+  });
   const [inputText, setInputText] = useState<string>('');
   const [filterTarget, setFilterTarget] = useState<'all' | 'my-area'>('all');
   const [areaTarget, setAreaTarget] = useState<FeedbackMessage['areaTarget']>('all');
@@ -162,7 +169,17 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       });
       setAllUsers(list);
     }, (error) => {
-      console.error('Erro ao escutar usuários para lista de contatos:', error);
+      console.warn('Erro ao escutar usuários para lista de contatos (usando cache local):', error);
+      try {
+        const cached = localStorage.getItem('cargoradar_users');
+        if (cached) {
+          const parsed = JSON.parse(cached) as User[];
+          const list = parsed.filter(u => u.status === 'active' && u.username !== currentUser.username);
+          setAllUsers(list);
+        }
+      } catch (cacheErr) {
+        console.error('Erro ao responder com cache local de contatos:', cacheErr);
+      }
     });
 
     return () => unsubscribe();
@@ -182,6 +199,13 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
         msgs.push(doc.data() as FeedbackMessage);
       });
       setMessages(msgs);
+
+      // Cache feedbacks locally
+      try {
+        localStorage.setItem('cargoradar_feedback_messages', JSON.stringify(msgs));
+      } catch (err) {
+        console.warn('Erro ao salvar feedbacks localmente:', err);
+      }
 
       // Automatically compute unread count when chat is closed
       if (!isOpen && currentUser) {
@@ -203,8 +227,23 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
         setUnreadCount(unread.length);
       }
     }, (error) => {
-      console.error('Erro ao escutar mensagens de feedback:', error);
-      handleFirestoreError(error, OperationType.LIST, 'feedbacks');
+      console.warn('Erro ao escutar mensagens de feedback (usando cache local):', error);
+      
+      try {
+        const cached = localStorage.getItem('cargoradar_feedback_messages');
+        if (cached) {
+          const msgs = JSON.parse(cached) as FeedbackMessage[];
+          setMessages(msgs);
+        }
+      } catch (cacheErr) {
+        console.error('Erro ao ler cache de feedbacks:', cacheErr);
+      }
+
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('limit');
+      if (!isQuotaOrLimit) {
+        handleFirestoreError(error, OperationType.LIST, 'feedbacks');
+      }
     });
 
     return () => unsubscribe();
@@ -402,6 +441,20 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     } catch (err) {
       console.error('Falha ao enviar mensagem de feedback:', err);
       handleFirestoreError(err, OperationType.CREATE, 'feedbacks');
+      
+      // Como o handleFirestoreError não lança erro em caso de cota excedida, podemos resetar os inputs aqui e seguir felizes localmente/offline
+      setInputText('');
+      setAttachment(null);
+      setAttachmentName('');
+      setAttachmentType('');
+      setAudioBase64(null);
+      setRecordingDuration(0);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
     }
   };
 
