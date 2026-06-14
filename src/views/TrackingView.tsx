@@ -223,7 +223,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
   // Route Deviation states and refs
   const [routeDeviationEnabled, setRouteDeviationEnabled] = useState<boolean>(true);
-  const [deviationThreshold, setDeviationThreshold] = useState<number>(1500); // meters (1.5 km)
+  const [deviationThreshold, setDeviationThreshold] = useState<number>(500); // meters (500 m)
   const [forcedDeviatedPlacas, setForcedDeviatedPlacas] = useState<Record<string, boolean>>({});
   
   const previousInsideCDRef = useRef<Record<string, boolean>>({});
@@ -231,6 +231,35 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const previousInsideStoreRef = useRef<Record<string, Record<string, boolean>>>({});
   const previousDeviatedRef = useRef<Record<string, boolean>>({});
   const isFirstLoadRef = useRef(true);
+
+  const playDeviationSiren = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioCtx = new AudioContextClass();
+      
+      const playTone = (freq: number, start: number, duration: number, type: 'sine' | 'sawtooth' | 'triangle' | 'square' = 'sine') => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.04, start + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+      };
+
+      const now = audioCtx.currentTime;
+      // High-pitched warning alarm tone alternating: 980Hz and 650Hz
+      playTone(980, now, 0.22, 'sawtooth');
+      playTone(650, now + 0.25, 0.22, 'sawtooth');
+    } catch (err) {
+      console.warn('Alerta sonoro falhou no navegador:', err);
+    }
+  };
 
   const addFenceAlert = (newAlert: FenceAlert) => {
     setFenceAlerts(prev => {
@@ -609,11 +638,35 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         previousInsideStoreRef.current[placa][storeKey] = isInsideStore;
       });
 
+      // 3. Route Deviation Alert (deviation > deviationThreshold)
+      if (routeDeviationEnabled && currentStatus === CargoStatus.RELEASED) {
+        const deviation = getTruckDeviation(truck);
+        const isCurrentlyDeviated = deviation > deviationThreshold;
+        const prevDeviated = previousDeviatedRef.current[placa];
+
+        if (isCurrentlyDeviated && !prevDeviated) {
+          const time = new Date().toLocaleTimeString();
+          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
+          addFenceAlert({
+            id: `deviation-${placa}-${Date.now()}`,
+            type: 'route_deviation',
+            placa,
+            driverName: driver,
+            message: `⚠️ ALERTA DE ROTA: O veículo ${placa} (${driver}) desviou-se ${Math.round(deviation)} metros da rota planejada!`,
+            timestamp: time,
+            loadId: matchedLoad?.id || truck.realLoadId,
+            deviationKm: parseFloat((deviation / 1000).toFixed(2))
+          });
+          playDeviationSiren();
+        }
+        previousDeviatedRef.current[placa] = isCurrentlyDeviated;
+      }
+
       // Update refs for next interval evaluation
       previousInsideCDRef.current[placa] = isInsideCD;
       previousStatusRef.current[placa] = currentStatus;
     });
-  }, [trucks, loads, geofenceRadius]);
+  }, [trucks, loads, geofenceRadius, deviationThreshold, routeDeviationEnabled]);
 
   // Leaflet Map Initial setup
   useEffect(() => {
@@ -862,6 +915,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       const isDivergent = matchedLoad?.status === CargoStatus.BLOCKED;
       const distance = L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
       const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
+      const truckDeviation = getTruckDeviation(truck);
+      const isDeviatedFromRoute = matchedLoad?.status === CargoStatus.RELEASED && truckDeviation > deviationThreshold;
       const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
 
       let releaseStatus = 'Sem Carga Vinculada';
@@ -898,11 +953,13 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       // Circle grey/green markers exactly matching image
       let markerColor = isOutOfBounds 
         ? 'bg-rose-600 ring-4 ring-rose-500/20' 
-        : isDivergent
-          ? 'bg-amber-500 ring-2 ring-amber-400/25'
-          : truck.ras_eve_ignicao === '1'
-            ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
-            : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
+        : isDeviatedFromRoute
+          ? 'bg-amber-600 text-white border border-rose-500 ring-4 ring-rose-500/30'
+          : isDivergent
+            ? 'bg-amber-500 ring-2 ring-amber-400/25'
+            : truck.ras_eve_ignicao === '1'
+              ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
+              : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
 
       if (isSelectedLoad) {
         markerColor = 'bg-indigo-600 text-white border-2 border-primary-gold ring-8 ring-indigo-500/40 scale-125 z-[1000]';
@@ -910,7 +967,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
       const iconHtml = `
         <div class="relative group cursor-pointer flex flex-col items-center">
-          ${isOutOfBounds ? `
+          ${isOutOfBounds || isDeviatedFromRoute ? `
             <div class="absolute -inset-2 bg-rose-500/40 rounded-full animate-ping pointer-events-none duration-1000"></div>
           ` : ''}
           ${isSelectedLoad ? `
@@ -957,6 +1014,13 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               09/06/2026 ${truck.lastUpdate || '14:32:39'}
             </span>
           </div>
+
+          ${isDeviatedFromRoute ? `
+          <div style="font-size: 8.5px; color: #991b1b; margin-bottom: 6px; padding: 4px 6px; background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 4px; font-weight: 800; text-transform: uppercase; text-align: center;">
+            ⚠️ DESVIO ATIVO: ${Math.round(truckDeviation)} METROS DA ROTA
+          </div>
+          ` : ''}
+
           <div style="font-size: 9.5px; color: #475569; margin-bottom: 7px; font-weight: 500;">
             ${address}
           </div>
@@ -1023,7 +1087,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         markersRef.current[truck.ras_vei_placa] = marker;
       }
     });
-  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle, selectedLoadId, hideOtherVehicles]);
+  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle, selectedLoadId, hideOtherVehicles, deviationThreshold]);
 
   // Handle Focus On Vehicle
   const handleFocusTruck = (truck: TruckData) => {
@@ -1629,11 +1693,16 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                       )}
 
                       {/* Client row bottom */}
-                      <div className="border-t border-slate-100 pt-2 flex justify-between items-center text-[7.5px] font-black uppercase text-slate-400 tracking-wider font-sans select-none">
+                      <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1 justify-between items-center text-[7.5px] font-black uppercase text-slate-400 tracking-wider font-sans select-none">
                         <span>ATACADAO DIA A DIA</span>
                         {isOutOfBounds && (
                           <span className="text-[7px] text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded animate-pulse">
                             FORA C. VIRTUAL
+                          </span>
+                        )}
+                        {matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(truck) > deviationThreshold && (
+                          <span className="text-[7px] text-rose-605 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded animate-pulse font-extrabold uppercase">
+                            ⚠️ DESVIO RETA ({Math.round(getTruckDeviation(truck))}m)
                           </span>
                         )}
                         {matchedLoad?.status === CargoStatus.BLOCKED && (
@@ -1938,6 +2007,49 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               </div>
             </div>
 
+            {/* MONITOR DE DESVIO DE ROTA COMPACTO */}
+            <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-4 mb-4 shrink-0 text-left">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="text-left">
+                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider block">Monitor de Rota</span>
+                  <span className="text-[8px] text-slate-400 font-bold uppercase">Afastamento máximo da rota ({deviationThreshold}m)</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={routeDeviationEnabled} 
+                    onChange={(e) => setRouteDeviationEnabled(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+
+              <div className="space-y-1.5 text-left">
+                <div className="flex justify-between items-center text-[9.5px] font-black text-slate-700 uppercase">
+                  <span>Limite de Desvio</span>
+                  <span className="text-indigo-800 font-mono font-black py-0.5 px-2 bg-indigo-50 border border-indigo-200/50 rounded-md text-[9px]">
+                    {deviationThreshold} m
+                  </span>
+                </div>
+                <input 
+                  type="range" 
+                  min="100" 
+                  max="3000" 
+                  step="50"
+                  disabled={!routeDeviationEnabled}
+                  value={deviationThreshold} 
+                  onChange={(e) => setDeviationThreshold(Number(e.target.value))}
+                  className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-40" 
+                />
+                <div className="flex justify-between text-[7px] text-slate-400 font-black uppercase">
+                  <span>Mín: 100m</span>
+                  <span>Sugerido: 500m</span>
+                  <span>Máx: 3.000m</span>
+                </div>
+              </div>
+            </div>
+
             {/* List of out-of-limits infractions */}
             <div className="flex-1 flex flex-col overflow-hidden text-left">
               <h3 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
@@ -1947,7 +2059,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 )}
               </h3>
 
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[160px] lg:max-h-[none]">
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[140px] lg:max-h-[none] mb-4">
                 {!geofenceEnabled ? (
                   <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
                     <p className="text-[9px] font-black uppercase">Monitoramento Inoperante</p>
@@ -1955,7 +2067,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 ) : outOfGeofenceTrucks.length === 0 ? (
                   <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-center">
                     <strong className="text-[9px] font-black uppercase text-emerald-800">Cerca OK</strong>
-                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os caminhões integrados estão na área operacional.</p>
+                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os caminhões integrados estão na área operational.</p>
                   </div>
                 ) : (
                   outOfGeofenceTrucks.map(truck => {
@@ -1978,6 +2090,66 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                           </span>
                         </div>
                         <span className="text-[7.5px] bg-white border border-rose-200 text-rose-700 font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block">
+                          Focar
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* List of route deviation infractions */}
+              <h3 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                <span>DESVIOS DE ROTA CRÍTICOS ({trucks.filter(t => {
+                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+                  return routeDeviationEnabled && matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
+                }).length})</span>
+                {routeDeviationEnabled && trucks.some(t => {
+                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+                  return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
+                }) && (
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+                )}
+              </h3>
+
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[140px] lg:max-h-[none]">
+                {!routeDeviationEnabled ? (
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
+                    <p className="text-[9px] font-black uppercase">Monitoramento Rota Inativo</p>
+                  </div>
+                ) : trucks.filter(t => {
+                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+                  return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
+                }).length === 0 ? (
+                  <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-center">
+                    <strong className="text-[9px] font-black uppercase text-emerald-800">Rotas Planificadas OK</strong>
+                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os veículos em trânsito mantêm o trajeto predefinido.</p>
+                  </div>
+                ) : (
+                  trucks.filter(t => {
+                    const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+                    return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
+                  }).map(truck => {
+                    const dev = getTruckDeviation(truck);
+                    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+                    return (
+                      <div
+                        key={truck.ras_vei_placa}
+                        onClick={() => handleFocusTruck(truck)}
+                        className="bg-rose-50/50 border border-rose-150 p-3 rounded-xl hover:bg-rose-50 cursor-pointer transition-all flex justify-between items-center"
+                      >
+                        <div className="truncate pr-2">
+                          <span className="font-mono font-black text-xs text-rose-800 bg-rose-100/60 border border-rose-200 px-1.5 py-0.2 rounded">
+                            {truck.ras_vei_placa}
+                          </span>
+                          <span className="block mt-1 font-bold text-[8.5px] uppercase text-slate-705 truncate">
+                            {matchedLoad?.driverName || truck.driverName}
+                          </span>
+                          <span className="block font-mono text-[7.5px] text-rose-600 font-bold">
+                            {Math.round(dev)} metros de desvio
+                          </span>
+                        </div>
+                        <span className="text-[7.5px] bg-rose-500 border border-rose-400 text-white font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block hover:bg-rose-650 cursor-pointer">
                           Focar
                         </span>
                       </div>
@@ -2240,6 +2412,29 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   <div className="w-full bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
                     <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${selectedTruckObj.progressPercent}%` }}></div>
                   </div>
+
+                  {selectedTruckLoad?.status === CargoStatus.RELEASED && (
+                    <div className={`p-2 rounded-lg border flex flex-col gap-1 mt-2.5 ${
+                      getTruckDeviation(selectedTruckObj) > deviationThreshold 
+                        ? 'bg-rose-50 border-rose-200 text-rose-850' 
+                        : 'bg-emerald-50 border-emerald-150 text-emerald-850'
+                    }`}>
+                      <div className="flex justify-between items-center text-[7.5px] font-black uppercase tracking-wider">
+                        <span>Desvio de Rota Atual</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          getTruckDeviation(selectedTruckObj) > deviationThreshold ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'
+                        }`} />
+                      </div>
+                      <div className="flex justify-between items-end">
+                        <strong className="text-[10px] font-black font-mono">
+                          {Math.round(getTruckDeviation(selectedTruckObj))} m
+                        </strong>
+                        <span className="text-[7.5px] font-bold opacity-80 uppercase font-sans">
+                          {getTruckDeviation(selectedTruckObj) > deviationThreshold ? `Afastamento Crítico (>${deviationThreshold}m)` : 'Dentro do Trajeto'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2710,12 +2905,12 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
                   exit={{ opacity: 0, scale: 0.9, x: 100 }}
                   transition={{ type: 'spring', damping: 15 }}
-                  className="pointer-events-auto bg-slate-900/95 backdrop-blur border border-primary-gold p-3 rounded-xl shadow-2xl flex flex-col gap-1.5 text-left text-white"
+                  className={`pointer-events-auto bg-slate-900/95 backdrop-blur border ${alert.type === 'route_deviation' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-primary-gold'} p-3 rounded-xl shadow-2xl flex flex-col gap-1.5 text-left text-white`}
                 >
                   <div className="flex justify-between items-center bg-slate-950/60 p-1 px-2 rounded-md">
                     <span className="text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                      {alert.type === 'exit_cd' ? '🚨 Saída de CD' : '🎯 Chegada na Cerca da Loja'}
+                      {alert.type === 'exit_cd' ? '🚨 Saída de CD' : alert.type === 'route_deviation' ? '⚠️ Desvio de Rota' : '🎯 Chegada na Cerca da Loja'}
                     </span>
                     <button
                       onClick={() => setFenceAlerts(prev => prev.filter(x => x.id !== alert.id))}
