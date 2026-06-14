@@ -119,6 +119,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
     timestamp: string;
     targetEmails: string[];
     occurrenceDetails: string;
+    originEmail?: string;
   } | null>(null);
 
   // Synchronize alert email list from Firestore
@@ -314,11 +315,21 @@ export const AuditView: React.FC<AuditViewProps> = ({
       // Envia alerta de e-mail de imediato se habilitado
       if (autoEmailEnabled && alertEmails.length > 0) {
         const timestampStr = new Date().toLocaleString('pt-BR');
+        
+        // Vincula usuários de auditoria e administradores ao e-mail de origem especificado
+        const isAuditorOrAdmin = currentUser?.role === 'audit' || 
+                                 currentUser?.systemRole === 'administrator' || 
+                                 currentUser?.systemRole === 'auditor';
+        const originEmail = isAuditorOrAdmin 
+          ? 'central.monitoramento@atacadaodiaadia.com.br' 
+          : `${(currentUser?.username || 'sistema').toLowerCase()}@cargarelease.com`;
+
         setLastSentNotification({
           success: true,
           timestamp: timestampStr,
           targetEmails: [...alertEmails],
-          occurrenceDetails: `${finalOccType} - ${occDescription || 'Sem observações adicionais'}`
+          occurrenceDetails: `${finalOccType} - ${occDescription || 'Sem observações adicionais'}`,
+          originEmail: originEmail
         });
 
         // Tenta tocar uma notificação discreta (chime de envio de alerta)
@@ -348,6 +359,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
             action: 'Alerta de E-mail de Ocorrência',
             details: `Relatório para carga ${selectedLoad.plate} enviado para: ${alertEmails.join(', ')}`,
             username: currentUser?.username || 'Sistema',
+            senderEmail: originEmail,
             timestamp: new Date().toISOString(),
             loadId: selectedLoad.id
           }, { merge: true });
@@ -1601,6 +1613,15 @@ export const AuditView: React.FC<AuditViewProps> = ({
                       <span className="text-[9px] font-black text-slate-400 uppercase">Função:</span>
                       <span className="text-[9px] font-bold text-slate-700">{user.jobFunction || 'N/A'}</span>
                     </div>
+                    <div className="flex justify-between border-t border-slate-100/50 pt-1.5 mt-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase">Vínculo de Alertas:</span>
+                      <span className="text-[9px] font-black text-emerald-600 font-mono">
+                        {user.role === 'audit' || user.systemRole === 'administrator' || user.systemRole === 'auditor'
+                          ? 'central.monitoramento@atacadaodiaadia.com.br'
+                          : `${user.username.toLowerCase()}@cargarelease.com`
+                        }
+                      </span>
+                    </div>
                     <div className="flex flex-col gap-1 pt-1 border-t border-slate-100 mt-1">
                       <span className="text-[9px] font-black text-slate-400 uppercase">Perfil de Sistema:</span>
                       <select 
@@ -1876,6 +1897,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
               <strong className="text-primary-gold uppercase block text-[8px] tracking-wider mb-0.5">Assunto do E-mail</strong>
               <span className="text-slate-100">[ALERTA DE OCORRÊNCIA] Carga {selectedLoad?.plate} - {selectedLoad?.driverName}</span>
             </div>
+            {lastSentNotification.originEmail && (
+              <div className="text-[10px] font-medium leading-relaxed">
+                <strong className="text-primary-gold uppercase block text-[8px] tracking-wider mb-0.5">Remetente (Origem)</strong>
+                <span className="text-emerald-400 font-mono text-[9px] font-bold">{lastSentNotification.originEmail}</span>
+              </div>
+            )}
             <div className="text-[10px] font-medium leading-relaxed col-span-2">
               <strong className="text-primary-gold uppercase block text-[8px] tracking-wider mb-0.5">Destinatários ({lastSentNotification.targetEmails.length})</strong>
               <div className="flex flex-wrap gap-1 mt-1 max-h-[60px] overflow-y-auto">
