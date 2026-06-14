@@ -275,13 +275,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
   // Helper: Get origin coordinates for a truck based on its associated cargo load
   const getOriginCoordinates = (truck: TruckData): [number, number] => {
-    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
-    if (matchedLoad) {
-      if (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) {
-        return cdSantaMariaCoordinates;
-      }
-    }
-    return cdSiaCoordinates;
+    return cdSantaMariaCoordinates;
   };
 
   // Helper: Get destination coordinates for a truck
@@ -416,7 +410,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   };
 
   const outOfGeofenceTrucks = geofenceEnabled
-    ? trucks.filter(truck => getTruckDistance(truck) > geofenceRadius)
+    ? trucks.filter(truck => {
+        const hasLoad = loads.some(l => platesMatch(l.plate, truck.ras_vei_placa));
+        return hasLoad && getTruckDistance(truck) > geofenceRadius;
+      })
     : [];
 
   // Sync trucks from telemetry and Firestore loads
@@ -429,8 +426,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         ? existingTruck.progressPercent
         : (matchedLoad?.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
 
-      const destinationName = matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão CD SIA');
-      const originCoords = matchedLoad?.origin && (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+      const destinationName = matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão SIA');
+      const originCoords = cdSantaMariaCoordinates;
       const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
       const isDeviated = forcedDeviatedPlacas[t.ras_vei_placa];
 
@@ -475,7 +472,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
     const customMapped: TruckData[] = customLoads.map((load, idx) => {
       const destinationName = load.destination || '';
-      const originCoords = load.origin && (load.origin.includes('Santa Maria') || load.origin.includes('CD-01') || load.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+      const originCoords = cdSantaMariaCoordinates;
       const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
       const isDeviated = load.plate ? forcedDeviatedPlacas[load.plate.toUpperCase()] : false;
 
@@ -791,18 +788,13 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         popupAnchor: [0, -10]
       });
 
-      const isSiaCenter = L.latLng(geofenceCenter[0], geofenceCenter[1]).distanceTo(L.latLng(cdSiaCoordinates[0], cdSiaCoordinates[1])) < 500;
       const isSantaMariaCenter = L.latLng(geofenceCenter[0], geofenceCenter[1]).distanceTo(L.latLng(cdSantaMariaCoordinates[0], cdSantaMariaCoordinates[1])) < 500;
 
       let centerLabel = "Cerca Customizada";
       let centerSub = "Ponto Central Definido";
       let centerAddress = `${geofenceCenter[0].toFixed(4)}, ${geofenceCenter[1].toFixed(4)}`;
 
-      if (isSiaCenter) {
-        centerLabel = "CD SIA";
-        centerSub = "Brasília CD Central";
-        centerAddress = "SIA Trecho 4, DF";
-      } else if (isSantaMariaCenter) {
+      if (isSantaMariaCenter) {
         centerLabel = "CD SANTA MARIA";
         centerSub = "Brasília CD Principal / Sul";
         centerAddress = "Área de Carga, Santa Maria, DF";
@@ -914,7 +906,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
       const isDivergent = matchedLoad?.status === CargoStatus.BLOCKED;
       const distance = L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
-      const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
+      const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius) && !!matchedLoad;
       const truckDeviation = getTruckDeviation(truck);
       const isDeviatedFromRoute = matchedLoad?.status === CargoStatus.RELEASED && truckDeviation > deviationThreshold;
       const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
@@ -1151,10 +1143,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         const destCoords = findStoreCoordinates(truck.destinationName || '');
         const finalDest = destCoords || [-16.048, -47.972];
 
-        // Layout operational logistics nodes starting from CD SIA
+        // Layout operational logistics nodes starting from CD Santa Maria
         const routePts: [number, number][] = [
-          cdSiaCoordinates,
-          [-15.825, -47.978], 
+          cdSantaMariaCoordinates,
+          [-15.900, -47.975], 
           truckCoords,
           finalDest
         ];
@@ -1197,7 +1189,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
           if (matchedLoad?.status === CargoStatus.RELEASED) {
             const destinationName = matchedLoad.destination;
-            const originCoords = matchedLoad.origin && (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+            const originCoords = cdSantaMariaCoordinates;
             const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
             const routePos = getTruckPositionOnRoute(originCoords, destCoords, nextProgress);
             
@@ -1572,7 +1564,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 filteredTrucks.map(truck => {
                   const matchedLoad = loads.find(load => platesMatch(load.plate, truck.ras_vei_placa));
                   const distance = getTruckDistance(truck);
-                  const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius);
+                  const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius) && !!matchedLoad;
                   const isSelected = selectedPlaca === truck.ras_vei_placa;
                   
                   const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
@@ -1956,11 +1948,11 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 <div className="flex items-center justify-between text-[9.5px] font-black text-slate-800 uppercase">
                   <span>Centro da Cerca</span>
                   <span className="text-[8px] text-slate-500 font-mono">
-                    {Math.abs(geofenceCenter[0] - cdSantaMariaCoordinates[0]) < 0.01 ? 'CD Santa Maria' : Math.abs(geofenceCenter[0] - cdSiaCoordinates[0]) < 0.01 ? 'CD SIA' : 'Customizado'} ({geofenceCenter[0].toFixed(3)}, {geofenceCenter[1].toFixed(3)})
+                    {Math.abs(geofenceCenter[0] - cdSantaMariaCoordinates[0]) < 0.01 ? 'CD Santa Maria' : 'Customizado'} ({geofenceCenter[0].toFixed(3)}, {geofenceCenter[1].toFixed(3)})
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setIsSettingCenter(!isSettingCenter)}
@@ -1982,17 +1974,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                     className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-755 font-black rounded-lg text-[8px] uppercase tracking-wider text-center transition-all cursor-pointer"
                   >
                     S. Maria (CD)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGeofenceCenter([-15.7953, -47.9622]);
-                      setIsSettingCenter(false);
-                    }}
-                    className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-755 font-black rounded-lg text-[8px] uppercase tracking-wider text-center transition-all cursor-pointer"
-                  >
-                    SIA
                   </button>
                 </div>
 
@@ -2650,7 +2631,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                       </li>
                       <li className="flex items-center gap-1">
                         <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
-                        <strong>11.4 km de:</strong> Central operacional CD SIA
+                        <strong>11.4 km de:</strong> Central operacional CD Santa Maria
                       </li>
                     </ul>
                   </div>
