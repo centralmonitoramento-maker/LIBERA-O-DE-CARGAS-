@@ -90,6 +90,16 @@
         "userTargetName": { "type": "string" }
       },
       "required": ["id", "senderName", "senderUsername", "senderRole", "senderRoleLabel", "timestamp", "areaTarget"]
+    },
+    "OccurrenceAlertSettings": {
+      "title": "OccurrenceAlertSettings",
+      "description": "Email alerts configuration for cargo occurrences",
+      "type": "object",
+      "properties": {
+        "emails": { "type": "array" },
+        "autoEmailEnabled": { "type": "boolean" }
+      },
+      "required": ["emails", "autoEmailEnabled"]
     }
   },
   "firestore": {
@@ -108,6 +118,10 @@
     "feedbacks/{feedbackId}": {
       "schema": "FeedbackMessage",
       "description": "Interactive feedback and communication channel between operational areas"
+    },
+    "settings/{settingId}": {
+      "schema": "OccurrenceAlertSettings",
+      "description": "System settings configurations including email alerts"
     }
   }
 }

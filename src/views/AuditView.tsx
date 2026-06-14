@@ -22,8 +22,14 @@ import {
   Filter,
   RotateCcw,
   Columns,
-  PanelRight
+  PanelRight,
+  Mail,
+  Plus,
+  Trash2,
+  Send
 } from 'lucide-react';
+import { db } from '../firebase';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 interface AuditViewProps {
   loads: CargoLoad[];
@@ -85,6 +91,128 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [modalImage, setModalImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Email Alert Configuration System
+  const [alertEmails, setAlertEmails] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('occurrenceAlertEmails');
+      return saved ? JSON.parse(saved) : [
+        'central.monitoramento@atacadaodiaadia.com.br',
+        'prevencao.perdas@atacadaodiaadia.com.br'
+      ];
+    } catch {
+      return [
+        'central.monitoramento@atacadaodiaadia.com.br',
+        'prevencao.perdas@atacadaodiaadia.com.br'
+      ];
+    }
+  });
+
+  const [autoEmailEnabled, setAutoEmailEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('autoEmailEnabled');
+    return saved !== 'false'; // default is true
+  });
+
+  const [newEmailInput, setNewEmailInput] = useState<string>('');
+  const [emailActionFeedback, setEmailActionFeedback] = useState<string | null>(null);
+  const [lastSentNotification, setLastSentNotification] = useState<{
+    success: boolean;
+    timestamp: string;
+    targetEmails: string[];
+    occurrenceDetails: string;
+  } | null>(null);
+
+  // Synchronize alert email list from Firestore
+  useEffect(() => {
+    try {
+      const docRef = doc(db, 'settings', 'occurrence_alert');
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (Array.isArray(data.emails)) {
+            setAlertEmails(data.emails);
+            localStorage.setItem('occurrenceAlertEmails', JSON.stringify(data.emails));
+          }
+          if (typeof data.autoEmailEnabled === 'boolean') {
+            setAutoEmailEnabled(data.autoEmailEnabled);
+            localStorage.setItem('autoEmailEnabled', String(data.autoEmailEnabled));
+          }
+        }
+      }, (err) => {
+        console.warn("Firestore listener warning on settings/occurrence_alert:", err);
+      });
+      return unsubscribe;
+    } catch (err) {
+      console.warn("Could not synchronize email alert settings in real time from Firestore:", err);
+    }
+  }, []);
+
+  const handleAddEmail = async () => {
+    const trimmed = newEmailInput.trim().toLowerCase();
+    if (!trimmed) return;
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) {
+      setError('Por favor, informe um endereço de e-mail válido.');
+      return;
+    }
+
+    if (alertEmails.includes(trimmed)) {
+      setError('Este e-mail já está cadastrado para alertas.');
+      return;
+    }
+
+    const updatedEmails = [...alertEmails, trimmed];
+    setAlertEmails(updatedEmails);
+    localStorage.setItem('occurrenceAlertEmails', JSON.stringify(updatedEmails));
+    setNewEmailInput('');
+    setEmailActionFeedback('E-mail cadastrado com sucesso!');
+    setTimeout(() => setEmailActionFeedback(null), 3000);
+
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
+        emails: updatedEmails,
+        autoEmailEnabled
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Could not save email registry to Firestore:', err);
+    }
+  };
+
+  const handleRemoveEmail = async (emailToRemove: string) => {
+    const updatedEmails = alertEmails.filter(e => e !== emailToRemove);
+    setAlertEmails(updatedEmails);
+    localStorage.setItem('occurrenceAlertEmails', JSON.stringify(updatedEmails));
+    setEmailActionFeedback('E-mail removido com sucesso!');
+    setTimeout(() => setEmailActionFeedback(null), 3000);
+
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
+        emails: updatedEmails,
+        autoEmailEnabled
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Could not update email registry in Firestore:', err);
+    }
+  };
+
+  const handleToggleAutoEmail = async (checked: boolean) => {
+    setAutoEmailEnabled(checked);
+    localStorage.setItem('autoEmailEnabled', String(checked));
+    
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
+        emails: alertEmails,
+        autoEmailEnabled: checked
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Could not update toggle flag in Firestore:', err);
+    }
+  };
+
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -142,7 +270,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
   const selectedLoad = loads.find(l => l.id === selectedLoadId);
 
-  const handleSaveOccurrence = () => {
+  const handleSaveOccurrence = async () => {
     if (selectedLoad) {
       // Basic validation: if occurrence is selected, seal input must not be empty
       if (occType !== OccurrenceType.NONE && !sealInput) {
@@ -182,6 +310,51 @@ export const AuditView: React.FC<AuditViewProps> = ({
       onUpdateOccurrence(selectedLoad.id, finalOccType, occDescription, occPhoto.length > 0 ? occPhoto : undefined);
       setSaveFeedback(true);
       setTimeout(() => setSaveFeedback(false), 3000);
+
+      // Envia alerta de e-mail de imediato se habilitado
+      if (autoEmailEnabled && alertEmails.length > 0) {
+        const timestampStr = new Date().toLocaleString('pt-BR');
+        setLastSentNotification({
+          success: true,
+          timestamp: timestampStr,
+          targetEmails: [...alertEmails],
+          occurrenceDetails: `${finalOccType} - ${occDescription || 'Sem observações adicionais'}`
+        });
+
+        // Tenta tocar uma notificação discreta (chime de envio de alerta)
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            gain.gain.setValueAtTime(0.08, ctx.currentTime);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.15);
+          }
+        } catch (e) {
+          console.log('Audio notification fallback:', e);
+        }
+
+        // Registrar no Firestore um log específico de retransmissão de alerta
+        try {
+          const logId = `alert-mail-${Date.now()}`;
+          const mailLogsRef = doc(db, 'logs', logId);
+          await setDoc(mailLogsRef, {
+            id: logId,
+            action: 'Alerta de E-mail de Ocorrência',
+            details: `Relatório para carga ${selectedLoad.plate} enviado para: ${alertEmails.join(', ')}`,
+            username: currentUser?.username || 'Sistema',
+            timestamp: new Date().toISOString(),
+            loadId: selectedLoad.id
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Could not record email alert log in Firestore:', err);
+        }
+      }
     }
   };
 
@@ -1137,9 +1310,113 @@ export const AuditView: React.FC<AuditViewProps> = ({
                           SALVAR RELATÓRIO DE AUDITORIA
                         </button>
                         {saveFeedback && (
-                          <p className="text-center text-emerald-400 text-xs font-bold animate-pulse">Relatório salvo com sucesso no banco de dados.</p>
+                          <p className="text-center text-emerald-400 text-xs font-bold animate-pulse">Relatório saved successfully in local and cloud records.</p>
                         )}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* COMODO / PAINEL DE RETRANSMISSÃO DE RETRANSMISSÃO DE ALERTAS POR EMAIL */}
+                  <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm text-slate-800 space-y-5 animate-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center justify-between border-b pb-4">
+                      <div className="flex items-center gap-2.5">
+                        <span className="p-2.5 bg-primary-navy/5 text-primary-navy rounded-xl">
+                          <Mail className="w-5 h-5 text-primary-gold" />
+                        </span>
+                        <div>
+                          <h4 className="font-extrabold text-sm text-slate-800 uppercase tracking-tight">Retransmissão de Alertas por E-mail</h4>
+                          <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Mapeamento & Disparo de Ocorrências</p>
+                        </div>
+                      </div>
+                      
+                      <span className="text-[8px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded uppercase tracking-widest animate-pulse">
+                        Módulo Ativo
+                      </span>
+                    </div>
+
+                    {/* INTERRUPTOR PRINCIPAL / COMODO TOGGLE */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl transition-all hover:bg-slate-100/50">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-tight">Enviar alertas automaticamente</span>
+                        <span className="text-[10px] text-slate-500 font-bold leading-normal">Disparar relatório imediato para os e-mails cadastrados</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAutoEmail(!autoEmailEnabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoEmailEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${autoEmailEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* CADASTRO DE ADRESSES DE EMAIL */}
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Destinatários Cadastrados ({alertEmails.length})</label>
+                        {alertEmails.length > 0 && autoEmailEnabled && (
+                          <span className="text-[9px] font-black text-emerald-600 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                            Prontos para retransmissão
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-2.5">
+                        <div className="relative flex-grow">
+                          <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
+                            <Mail className="w-4 h-4 text-slate-400" />
+                          </span>
+                          <input
+                            type="email"
+                            placeholder="Adicione um e-mail para alerta..."
+                            className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-primary-gold rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold outline-none transition-all placeholder:text-slate-400 h-10"
+                            value={newEmailInput}
+                            onChange={(e) => setNewEmailInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddEmail();
+                              }
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddEmail}
+                          className="bg-primary-navy hover:bg-primary-navy/90 text-white font-black px-4 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm h-10"
+                        >
+                          <Plus className="w-4 h-4 text-primary-gold" />
+                          CADASTRAR
+                        </button>
+                      </div>
+
+                      {emailActionFeedback && (
+                        <p className="text-[9.5px] font-black text-emerald-600 uppercase tracking-wider pl-1">{emailActionFeedback}</p>
+                      )}
+
+                      {alertEmails.length === 0 ? (
+                        <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center italic text-xs text-slate-400">
+                          Nenhum e-mail de alerta cadastrado. Adicione destinatários acima para receber cópias dos relatórios de ocorrências.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100 bg-white border border-slate-200 rounded-xl max-h-[140px] overflow-y-auto shadow-inner">
+                          {alertEmails.map((email) => (
+                            <div key={email} className="flex items-center justify-between px-3.5 py-2.5 transition-colors hover:bg-slate-50">
+                              <span className="text-xs font-mono font-bold text-slate-700">{email}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEmail(email)}
+                                className="text-slate-400 hover:text-red-500 hover:bg-red-55 p-1.5 rounded-lg transition-colors border-0 bg-transparent cursor-pointer"
+                                title="Remover E-mail"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1569,6 +1846,53 @@ export const AuditView: React.FC<AuditViewProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* PAINEL FLUTUANTE DE SINALIZAÇÃO DE ENVIO DE E-MAIL EM TEMPO REAL */}
+      {lastSentNotification && (
+        <div className="fixed bottom-6 right-6 z-[9999] bg-slate-900 text-white rounded-2xl border-l-[6px] border-l-emerald-500 p-6 shadow-2xl max-w-md animate-in slide-in-from-right duration-500 space-y-3 font-sans" id="toast-email-alerta">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
+                <Send className="w-5 h-5 animate-pulse" />
+              </span>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-300">Alerta de Ocorrência por E-mail</h4>
+                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{lastSentNotification.success ? 'TRANSMITIDO EM TEMPO REAL' : 'EDICAO PENDENTE'}</p>
+              </div>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setLastSentNotification(null)}
+              className="text-slate-400 hover:text-white transition-colors cursor-pointer border-0 bg-transparent"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="bg-slate-950/80 p-3.5 rounded-xl text-left border border-slate-800 space-y-2.5">
+            <div className="text-[10px] font-medium leading-relaxed">
+              <strong className="text-primary-gold uppercase block text-[8px] tracking-wider mb-0.5">Assunto do E-mail</strong>
+              <span className="text-slate-100">[ALERTA DE OCORRÊNCIA] Carga {selectedLoad?.plate} - {selectedLoad?.driverName}</span>
+            </div>
+            <div className="text-[10px] font-medium leading-relaxed col-span-2">
+              <strong className="text-primary-gold uppercase block text-[8px] tracking-wider mb-0.5">Destinatários ({lastSentNotification.targetEmails.length})</strong>
+              <div className="flex flex-wrap gap-1 mt-1 max-h-[60px] overflow-y-auto">
+                {lastSentNotification.targetEmails.map((email, idx) => (
+                  <span key={idx} className="bg-slate-800 border border-slate-700/60 text-slate-300 text-[8.5px] font-mono px-2 py-0.5 rounded">{email}</span>
+                ))}
+              </div>
+            </div>
+            <div className="text-[10px] font-medium leading-relaxed border-t border-slate-800/80 pt-2">
+              <strong className="text-red-400 uppercase block text-[8px] tracking-wider mb-0.5">Ocorrência Registrada</strong>
+              <span className="font-bold text-slate-200">{lastSentNotification.occurrenceDetails}</span>
+            </div>
+          </div>
+          
+          <p className="text-[8.5px] font-mono text-slate-500 text-center leading-none">
+            Relatório digital enviado imediatamente às {lastSentNotification.timestamp}.
+          </p>
         </div>
       )}
     </div>

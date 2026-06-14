@@ -79,6 +79,11 @@ service cloud.firestore {
              data.action is string && data.action.size() <= 128;
     }
 
+    function isValidSettings(data) {
+      return data.emails is list &&
+             (!data.keys().hasAny(['autoEmailEnabled']) || data.autoEmailEnabled is bool);
+    }
+
     // User Collection Rules
     match /users/{userId} {
       allow get, list: if true;
@@ -131,6 +136,17 @@ service cloud.firestore {
       
       // Logs are append-only; updates and deletes are forbidden
       allow update, delete: if false;
+    }
+
+    // Settings Collection Rules
+    match /settings/{settingId} {
+      allow get, list, read: if true;
+
+      allow create, update: if isValidId(settingId) && isValidSettings(incoming()) && (
+        !isSignedIn() || isAdmin() || isAuditor() || (getUserGroup() == 'central')
+      );
+
+      allow delete: if !isSignedIn() || isAdmin();
     }
   }
 }
