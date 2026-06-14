@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray } from '../types';
+import { compressImage } from '../utils/imageCompressor';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
@@ -214,10 +215,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
       
       filesToProcess.forEach(file => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
           setOccPhoto(prev => {
             if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
+            return [...prev, compressed];
           });
         };
         reader.readAsDataURL(file);

@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { CargoLoad, CargoType, CargoStatus, EventLog, getPhotosArray } from '../types';
+import { compressImage } from '../utils/imageCompressor';
 import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { 
   Truck, 
@@ -569,10 +570,12 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
       
       filesToProcess.forEach(file => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
           setPhotoPlate(prev => {
             if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
+            return [...prev, compressed];
           });
         };
         reader.readAsDataURL(file);
@@ -593,10 +596,12 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
       
       filesToProcess.forEach(file => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
           setPhotoSeal(prev => {
             if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
+            return [...prev, compressed];
           });
         };
         reader.readAsDataURL(file);
@@ -617,10 +622,12 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
       
       filesToProcess.forEach(file => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
           setPhotoManifest(prev => {
             if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
+            return [...prev, compressed];
           });
         };
         reader.readAsDataURL(file);

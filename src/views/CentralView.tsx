@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { CargoLoad, CargoStatus, CargoType, OccurrenceType } from '../types';
+import { CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { 
   LayoutDashboard, 
   Search, 
@@ -2117,15 +2117,13 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate w-40">{load.driverName}</p>
                         <p className="text-[9px] font-black text-primary-navy uppercase tracking-tighter">{load.origin} ➔ {load.destination}</p>
-                        {load.gateStatus && (
-                          <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
-                            load.gateStatus === 'Aprovado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' :
-                            load.gateStatus === 'Divergente' ? 'bg-rose-50 text-rose-700 border-rose-200/50 animate-pulse' :
-                            'bg-slate-50 text-slate-600 border-slate-200'
-                          }`}>
-                            Gate: {load.gateStatus === 'Aprovado' ? '✓ Aprovado' : load.gateStatus === 'Divergente' ? '✗ Divergente' : '⏱ Aguardando'}
-                          </span>
-                        )}
+                        <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                          load.gateStatus === 'Aprovado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' :
+                          load.gateStatus === 'Divergente' ? 'bg-rose-50 text-rose-700 border-rose-200/50 animate-pulse' :
+                          'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}>
+                          Gate: {load.gateStatus === 'Aprovado' ? '✓ Aprovado' : load.gateStatus === 'Divergente' ? '✗ Divergente' : '⏱ Aguardando'}
+                        </span>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <span className="text-[9px] font-mono font-bold text-slate-400">{new Date(load.createdAt).toLocaleTimeString()}</span>
@@ -2958,6 +2956,107 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             onClick={() => setPreviewImage(selectedLoad.photoManifest || null)}
                           >
                             <img src={selectedLoad.photoManifest} alt="Romaneio / Manifesto" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Evidências Fotográficas e Verificação da Portaria */}
+              {selectedLoad.gateVerified && (
+                <div className="px-8 pb-8">
+                  <div className={`border rounded-3xl p-6 space-y-4 ${
+                    selectedLoad.gateStatus === 'Aprovado' 
+                      ? 'bg-emerald-50/50 border-emerald-200' 
+                      : 'bg-rose-50/50 border-rose-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Camera className={`w-5 h-5 ${selectedLoad.gateStatus === 'Aprovado' ? 'text-emerald-500' : 'text-rose-500'}`} />
+                        <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">Verificação & Fotos da Portaria</h3>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-widest ${
+                        selectedLoad.gateStatus === 'Aprovado' 
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                          : 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                      }`}>
+                        {selectedLoad.gateStatus === 'Aprovado' ? '✓ Aprovado na Saída' : '✗ Divergência na Portaria'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-600 bg-white/70 rounded-2xl p-4 border border-slate-100 space-y-2">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Verificado por</p>
+                          <p className="text-slate-800 font-extrabold">{selectedLoad.gateVerifiedBy}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Data/Hora da Saída</p>
+                          <p className="text-slate-800 font-bold">{new Date(selectedLoad.gateVerifiedAt!).toLocaleString('pt-BR')}</p>
+                        </div>
+                      </div>
+                      {selectedLoad.gateObservation && (
+                        <div className="border-t border-slate-100 pt-2 mt-2">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Observações da Portaria</p>
+                          <p className="text-slate-700 italic font-medium">{selectedLoad.gateObservation}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Photos list */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {selectedLoad.gatePhotoPlate && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">1. Placa (Portaria)</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => {
+                              const arr = getPhotosArray(selectedLoad.gatePhotoPlate);
+                              if (arr.length > 0) setPreviewImage(arr[0]);
+                            }}
+                          >
+                            <img src={getPhotosArray(selectedLoad.gatePhotoPlate)[0]} alt="Placa Portaria" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedLoad.gatePhotoSeal && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">2. Lacre (Portaria)</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => {
+                              const arr = getPhotosArray(selectedLoad.gatePhotoSeal);
+                              if (arr.length > 0) setPreviewImage(arr[0]);
+                            }}
+                          >
+                            <img src={getPhotosArray(selectedLoad.gatePhotoSeal)[0]} alt="Lacre Portaria" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedLoad.gatePhotoManifest && (
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center gap-2 shadow-sm">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">3. Manifesto (Portaria)</span>
+                          <div 
+                            className="w-full h-32 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 relative group cursor-pointer" 
+                            onClick={() => {
+                              const arr = getPhotosArray(selectedLoad.gatePhotoManifest);
+                              if (arr.length > 0) setPreviewImage(arr[0]);
+                            }}
+                          >
+                            <img src={getPhotosArray(selectedLoad.gatePhotoManifest)[0]} alt="Manifesto Portaria" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <span className="text-[9px] text-white font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Zoom</span>
                             </div>

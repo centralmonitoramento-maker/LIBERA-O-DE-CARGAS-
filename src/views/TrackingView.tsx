@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { 
@@ -136,15 +137,209 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const [hideOtherVehicles, setHideOtherVehicles] = useState<boolean>(false);
 
   const [geofenceEnabled, setGeofenceEnabled] = useState<boolean>(true);
-  const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-15.7953, -47.9622]);
-  const [geofenceRadius, setGeofenceRadius] = useState<number>(12000);
+  const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-16.048231, -47.971867]);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(3000);
   const [isSettingCenter, setIsSettingCenter] = useState<boolean>(false);
 
   // Leaflet Geofence drawings
   const geofenceCircleRef = useRef<L.Circle | null>(null);
   const geofenceCenterMarkerRef = useRef<L.Marker | null>(null);
 
-  const cdSiaCoordinates: [number, number] = [-15.7915, -47.9622];
+  const cdSiaCoordinates: [number, number] = [-15.7953, -47.9622];
+  const cdSantaMariaCoordinates: [number, number] = [-16.048231, -47.971867];
+
+  // Store Coordinates for 500m geofencing
+  const ROUTE_STORE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
+    '07 -SIA': {
+      lat: -15.7953,
+      lng: -47.9622,
+      address: 'SIA Trecho 5, Brasília - DF',
+      label: 'SIA'
+    },
+    '28-AGUAS CLARAS': {
+      lat: -15.8396,
+      lng: -48.0261,
+      address: 'Av. das Castanheiras, Águas Claras, Brasília - DF',
+      label: 'Águas Claras'
+    },
+    '29-GUARA': {
+      lat: -15.8190,
+      lng: -47.9863,
+      address: 'QE 13, Guará II, Brasília - DF',
+      label: 'Guará'
+    },
+    '42-JARDIM BOTANICO': {
+      lat: -15.8821,
+      lng: -47.8189,
+      address: 'SMDB Jardim Botânico, Brasília - DF',
+      label: 'Jardim Botânico'
+    },
+    '25-NOVO GAMA': {
+      lat: -16.0592,
+      lng: -48.0371,
+      address: 'Novo Gama - GO',
+      label: 'Novo Gama'
+    },
+    '13-LUZIANIA 01': {
+      lat: -16.2559,
+      lng: -47.9398,
+      address: 'Parque Estrela Dalva II, Luziânia - GO',
+      label: 'Luziânia 13'
+    },
+    '16-SANTO ANTONIO': {
+      lat: -15.9404,
+      lng: -48.2562,
+      address: 'Santo Antônio do Descoberto - GO',
+      label: 'Santo Antônio'
+    },
+    '32-CEILANDIA CENTRO': {
+      lat: -15.8235,
+      lng: -48.1032,
+      address: 'QNM 11, Ceilândia Centro, Brasília - DF',
+      label: 'Ceilândia Centro'
+    },
+    '01-BR 070': {
+      lat: -15.8115,
+      lng: -48.1189,
+      address: 'Rodovia BR 070, Km 08, Ceilândia - DF',
+      label: 'BR 070'
+    }
+  };
+
+  interface FenceAlert {
+    id: string;
+    type: 'exit_cd' | 'enter_store' | 'route_deviation';
+    placa: string;
+    driverName: string;
+    message: string;
+    timestamp: string;
+    loadId?: string;
+    storeName?: string;
+    deviationKm?: number;
+  }
+
+  const [fenceAlerts, setFenceAlerts] = useState<FenceAlert[]>([]);
+  const storeCirclesRef = useRef<(L.Circle | L.Marker)[]>([]);
+
+  // Route Deviation states and refs
+  const [routeDeviationEnabled, setRouteDeviationEnabled] = useState<boolean>(true);
+  const [deviationThreshold, setDeviationThreshold] = useState<number>(1500); // meters (1.5 km)
+  const [forcedDeviatedPlacas, setForcedDeviatedPlacas] = useState<Record<string, boolean>>({});
+  
+  const previousInsideCDRef = useRef<Record<string, boolean>>({});
+  const previousStatusRef = useRef<Record<string, CargoStatus | undefined>>({});
+  const previousInsideStoreRef = useRef<Record<string, Record<string, boolean>>>({});
+  const previousDeviatedRef = useRef<Record<string, boolean>>({});
+  const isFirstLoadRef = useRef(true);
+
+  const addFenceAlert = (newAlert: FenceAlert) => {
+    setFenceAlerts(prev => {
+      const isDup = prev.some(x => x.placa === newAlert.placa && x.type === newAlert.type && Math.abs(Date.now() - parseFloat(x.id.split('-').pop() || '0')) < 6000);
+      if (isDup) return prev;
+      return [newAlert, ...prev].slice(0, 5);
+    });
+    // Auto dismiss after 8 seconds
+    setTimeout(() => {
+      setFenceAlerts(prev => prev.filter(a => a.id !== newAlert.id));
+    }, 8000);
+  };
+
+  // Helper: Get origin coordinates for a truck based on its associated cargo load
+  const getOriginCoordinates = (truck: TruckData): [number, number] => {
+    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+    if (matchedLoad) {
+      if (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) {
+        return cdSantaMariaCoordinates;
+      }
+    }
+    return cdSiaCoordinates;
+  };
+
+  // Helper: Get destination coordinates for a truck
+  const getDestinationCoordinates = (truck: TruckData): [number, number] => {
+    const destCoords = findStoreCoordinates(truck.destinationName || '');
+    return destCoords || cdSantaMariaCoordinates; // fallback to Santa Maria
+  };
+
+  // Helper: Generate expected route waypoints between origin and destination
+  const getExpectedRoutePoints = (origin: [number, number], dest: [number, number]): [number, number][] => {
+    // Generate 4 structured waypoints to model real transit highways (e.g., EPTG, Estrutural, BR-040)
+    const lat1 = origin[0] + (dest[0] - origin[0]) * 0.35 + (dest[0] > origin[0] ? -0.003 : 0.003);
+    const lng1 = origin[1] + (dest[1] - origin[1]) * 0.35 + (dest[1] > origin[1] ? 0.004 : -0.004);
+    
+    const lat2 = origin[0] + (dest[0] - origin[0]) * 0.70 + (dest[0] > origin[0] ? 0.002 : -0.002);
+    const lng2 = origin[1] + (dest[1] - origin[1]) * 0.70 + (dest[1] > origin[1] ? -0.003 : 0.003);
+    
+    return [origin, [lat1, lng1], [lat2, lng2], dest];
+  };
+
+  // Helper: Interpolate truck position along expected route based on progress percent
+  const getTruckPositionOnRoute = (origin: [number, number], dest: [number, number], progress: number): [number, number] => {
+    const ratio = progress / 100;
+    const waypoints = getExpectedRoutePoints(origin, dest);
+    const numSegments = waypoints.length - 1;
+    const segmentIndex = Math.min(Math.floor(ratio * numSegments), numSegments - 1);
+    const segmentRatio = (ratio * numSegments) - segmentIndex;
+    
+    const start = waypoints[segmentIndex];
+    const end = waypoints[segmentIndex + 1];
+    
+    const lat = start[0] + (end[0] - start[0]) * segmentRatio;
+    const lng = start[1] + (end[1] - start[1]) * segmentRatio;
+    return [lat, lng];
+  };
+
+  // Helper: Calculate short distance from coordinate point to a route segment line ab
+  const distanceToSegment = (p: L.LatLng, a: L.LatLng, b: L.LatLng): number => {
+    const l2 = Math.pow(a.lat - b.lat, 2) + Math.pow(a.lng - b.lng, 2);
+    if (l2 === 0) return p.distanceTo(a);
+    let t = ((p.lat - a.lat) * (b.lat - a.lat) + (p.lng - a.lng) * (b.lng - a.lng)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const projection = L.latLng(
+      a.lat + t * (b.lat - a.lat),
+      a.lng + t * (b.lng - a.lng)
+    );
+    return p.distanceTo(projection);
+  };
+
+  // Helper: Get closest point projection on segment
+  const getClosestPointOnSegment = (p: L.LatLng, a: L.LatLng, b: L.LatLng): L.LatLng => {
+    const l2 = Math.pow(a.lat - b.lat, 2) + Math.pow(a.lng - b.lng, 2);
+    if (l2 === 0) return a;
+    let t = ((p.lat - a.lat) * (b.lat - a.lat) + (p.lng - a.lng) * (b.lng - a.lng)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return L.latLng(
+      a.lat + t * (b.lat - a.lat),
+      a.lng + t * (b.lng - a.lng)
+    );
+  };
+
+  // Helper: Get minimum distance from point to all expected route segments
+  const getMinDistanceToRoute = (truckCoords: [number, number], routePoints: [number, number][]): number => {
+    if (routePoints.length === 0) return 0;
+    let minDistance = Infinity;
+
+    const p = L.latLng(truckCoords[0], truckCoords[1]);
+    for (let i = 0; i < routePoints.length - 1; i++) {
+      const a = L.latLng(routePoints[i][0], routePoints[i][1]);
+      const b = L.latLng(routePoints[i + 1][0], routePoints[i + 1][1]);
+      
+      const dist = distanceToSegment(p, a, b);
+      if (dist < minDistance) {
+        minDistance = dist;
+      }
+    }
+    return minDistance === Infinity ? 0 : minDistance;
+  };
+
+  // Helper: Calculate how far a truck is from its planned route path
+  const getTruckDeviation = (truck: TruckData): number => {
+    const originCoords = getOriginCoordinates(truck);
+    const destCoords = getDestinationCoordinates(truck);
+    const waypoints = getExpectedRoutePoints(originCoords, destCoords);
+    const truckCoords: [number, number] = [parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude)];
+    return getMinDistanceToRoute(truckCoords, waypoints);
+  };
 
   // Visual/Interactive GIS States
   const [mapStyle, setMapStyle] = useState<'osm' | 'dark' | 'satellite'>('osm');
@@ -205,18 +400,37 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         ? existingTruck.progressPercent
         : (matchedLoad?.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
 
+      const destinationName = matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão CD SIA');
+      const originCoords = matchedLoad?.origin && (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+      const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
+      const isDeviated = forcedDeviatedPlacas[t.ras_vei_placa];
+
+      let initialLat = t.ras_eve_latitude;
+      let initialLng = t.ras_eve_longitude;
+
+      if (matchedLoad?.status === CargoStatus.RELEASED) {
+        const normalPos = getTruckPositionOnRoute(originCoords, destCoords, baselineProgress);
+        if (isDeviated) {
+          initialLat = String(normalPos[0] + 0.038);
+          initialLng = String(normalPos[1] - 0.038);
+        } else {
+          initialLat = String(normalPos[0]);
+          initialLng = String(normalPos[1]);
+        }
+      }
+
       return {
         ras_vei_placa: t.ras_vei_placa,
-        ras_eve_latitude: t.ras_eve_latitude,
-        ras_eve_longitude: t.ras_eve_longitude,
+        ras_eve_latitude: initialLat,
+        ras_eve_longitude: initialLng,
         ras_eve_velocidade: matchedLoad?.status === CargoStatus.RELEASED 
-          ? (existingTruck?.ras_eve_velocidade || String(Math.floor(Math.random() * 41) + 40)) 
+          ? (existingTruck?.ras_eve_velocidade || String(Math.floor(Math.random() * 21) + 50)) 
           : t.ras_eve_velocidade,
         ras_eve_ignicao: matchedLoad?.status === CargoStatus.RELEASED 
           ? "1" 
           : t.ras_eve_ignicao,
         driverName: matchedLoad?.driverName || (t.ras_vei_placa === 'KTU-4C64' ? 'Valdir Brandão' : 'Raimundo Silveira'),
-        destinationName: matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão CD SIA'),
+        destinationName: destinationName,
         cargoType: matchedLoad?.cargoType || "Mista",
         sealNumber: matchedLoad?.sealNumber || "",
         realLoadId: matchedLoad?.id,
@@ -231,20 +445,39 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     );
 
     const customMapped: TruckData[] = customLoads.map((load, idx) => {
-      const destCoords = findStoreCoordinates(load.destination || '');
-      const finalLat = destCoords ? destCoords[0] : -15.8115 - (idx * 0.05);
-      const finalLng = destCoords ? destCoords[1] : -48.1189 + (idx * 0.03);
+      const destinationName = load.destination || '';
+      const originCoords = load.origin && (load.origin.includes('Santa Maria') || load.origin.includes('CD-01') || load.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+      const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
+      const isDeviated = load.plate ? forcedDeviatedPlacas[load.plate.toUpperCase()] : false;
 
       const existingTruck = trucks.find(x => platesMatch(x.ras_vei_placa, load.plate));
       const baselineProgress = existingTruck?.progressPercent !== undefined
         ? existingTruck.progressPercent
         : (load.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
 
+      let initialLat = String(destCoords[0]);
+      let initialLng = String(destCoords[1]);
+
+      if (load.status === CargoStatus.RELEASED) {
+        const normalPos = getTruckPositionOnRoute(originCoords, destCoords, baselineProgress);
+        if (isDeviated) {
+          initialLat = String(normalPos[0] + 0.038);
+          initialLng = String(normalPos[1] - 0.038);
+        } else {
+          initialLat = String(normalPos[0]);
+          normalPos[1] = normalPos[1];
+          initialLng = String(normalPos[1]);
+        }
+      } else {
+        initialLat = existingTruck?.ras_eve_latitude || String(originCoords[0]);
+        initialLng = existingTruck?.ras_eve_longitude || String(originCoords[1]);
+      }
+
       return {
         ras_vei_placa: load.plate ? load.plate.toUpperCase() : "PLA-0000",
-        ras_eve_latitude: existingTruck?.ras_eve_latitude || String(finalLat),
-        ras_eve_longitude: existingTruck?.ras_eve_longitude || String(finalLng),
-        ras_eve_velocidade: existingTruck?.ras_eve_velocidade || (load.status === CargoStatus.RELEASED ? String(Math.floor(Math.random() * 41) + 40) : "0"),
+        ras_eve_latitude: initialLat,
+        ras_eve_longitude: initialLng,
+        ras_eve_velocidade: existingTruck?.ras_eve_velocidade || (load.status === CargoStatus.RELEASED ? String(Math.floor(Math.random() * 21) + 50) : "0"),
         ras_eve_ignicao: existingTruck?.ras_eve_ignicao || (load.status === CargoStatus.RELEASED ? "1" : "0"),
         driverName: load.driverName,
         destinationName: load.destination,
@@ -284,6 +517,103 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     });
     setTraces(seeded);
   }, [trucks.length]);
+
+  // Initialize refs on first load to prevent notification spam on mount
+  useEffect(() => {
+    if (trucks.length > 0 && isFirstLoadRef.current) {
+      trucks.forEach(truck => {
+        const placa = truck.ras_vei_placa;
+        const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
+        const distance = getTruckDistance(truck);
+        previousInsideCDRef.current[placa] = distance <= geofenceRadius;
+        previousStatusRef.current[placa] = matchedLoad?.status || truck.status;
+        
+        const deviation = getTruckDeviation(truck);
+        previousDeviatedRef.current[placa] = deviation > deviationThreshold && matchedLoad?.status === CargoStatus.RELEASED;
+
+        previousInsideStoreRef.current[placa] = {};
+        Object.entries(ROUTE_STORE_COORDINATES).forEach(([storeKey, store]) => {
+          const storeDist = L.latLng(parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude))
+            .distanceTo(L.latLng(store.lat, store.lng));
+          previousInsideStoreRef.current[placa][storeKey] = storeDist <= 500;
+        });
+      });
+      isFirstLoadRef.current = false;
+    }
+  }, [trucks, loads, geofenceRadius, deviationThreshold]);
+
+  // Transition listener for Geofence Exits and Entrance alerts
+  useEffect(() => {
+    if (trucks.length === 0 || isFirstLoadRef.current) return;
+
+    trucks.forEach(truck => {
+      const placa = truck.ras_vei_placa;
+      const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
+      const distance = getTruckDistance(truck);
+      const isInsideCD = distance <= geofenceRadius;
+      
+      const prevInsideCD = previousInsideCDRef.current[placa];
+      const prevStatus = previousStatusRef.current[placa];
+      const currentStatus = matchedLoad?.status || truck.status;
+
+      // 1. CD Geofence Exit Alert
+      if (currentStatus === CargoStatus.RELEASED) {
+        // Trigger alert if:
+        // - They were inside and are now outside
+        // - OR status changed to RELEASED and they are already outside
+        const hasExited = (prevInsideCD === true && !isInsideCD) || 
+                          (prevStatus !== CargoStatus.RELEASED && !isInsideCD && prevStatus !== undefined);
+        
+        if (hasExited) {
+          const time = new Date().toLocaleTimeString();
+          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
+          addFenceAlert({
+            id: `exit-${placa}-${Date.now()}`,
+            type: 'exit_cd',
+            placa,
+            driverName: driver,
+            message: `Veículo ${placa} (${driver}) mudou o status para EM TRÂNSITO e SAIU da Cerca Virtual do CD!`,
+            timestamp: time,
+            loadId: matchedLoad?.id || truck.realLoadId
+          });
+        }
+      }
+
+      // 2. Store Geofence Entrance Alert (500 meters of any store)
+      Object.entries(ROUTE_STORE_COORDINATES).forEach(([storeKey, store]) => {
+        const storeDist = L.latLng(parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude))
+          .distanceTo(L.latLng(store.lat, store.lng));
+        const isInsideStore = storeDist <= 500;
+
+        if (!previousInsideStoreRef.current[placa]) {
+          previousInsideStoreRef.current[placa] = {};
+        }
+        const prevInsideStore = previousInsideStoreRef.current[placa][storeKey];
+        const hasEnteredStore = (prevInsideStore === false && isInsideStore);
+
+        if (hasEnteredStore) {
+          const time = new Date().toLocaleTimeString();
+          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
+          addFenceAlert({
+            id: `enter-${placa}-${storeKey}-${Date.now()}`,
+            type: 'enter_store',
+            placa,
+            driverName: driver,
+            message: `Veículo ${placa} (${driver}) ENTROU na cerca de 500m do destino: ${store.label}!`,
+            timestamp: time,
+            storeName: store.label,
+            loadId: matchedLoad?.id || truck.realLoadId
+          });
+        }
+
+        previousInsideStoreRef.current[placa][storeKey] = isInsideStore;
+      });
+
+      // Update refs for next interval evaluation
+      previousInsideCDRef.current[placa] = isInsideCD;
+      previousStatusRef.current[placa] = currentStatus;
+    });
+  }, [trucks, loads, geofenceRadius]);
 
   // Leaflet Map Initial setup
   useEffect(() => {
@@ -369,6 +699,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       geofenceCenterMarkerRef.current = null;
     }
 
+    // Clear previous store circles & markers
+    storeCirclesRef.current.forEach(item => item.remove());
+    storeCirclesRef.current = [];
+
     if (geofenceEnabled) {
       const circle = L.circle(geofenceCenter, {
         color: '#334155',
@@ -404,17 +738,84 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         popupAnchor: [0, -10]
       });
 
+      const isSiaCenter = L.latLng(geofenceCenter[0], geofenceCenter[1]).distanceTo(L.latLng(cdSiaCoordinates[0], cdSiaCoordinates[1])) < 500;
+      const isSantaMariaCenter = L.latLng(geofenceCenter[0], geofenceCenter[1]).distanceTo(L.latLng(cdSantaMariaCoordinates[0], cdSantaMariaCoordinates[1])) < 500;
+
+      let centerLabel = "Cerca Customizada";
+      let centerSub = "Ponto Central Definido";
+      let centerAddress = `${geofenceCenter[0].toFixed(4)}, ${geofenceCenter[1].toFixed(4)}`;
+
+      if (isSiaCenter) {
+        centerLabel = "CD SIA";
+        centerSub = "Brasília CD Central";
+        centerAddress = "SIA Trecho 4, DF";
+      } else if (isSantaMariaCenter) {
+        centerLabel = "CD SANTA MARIA";
+        centerSub = "Brasília CD Principal / Sul";
+        centerAddress = "Área de Carga, Santa Maria, DF";
+      }
+
       const centerMarker = L.marker(geofenceCenter, { icon: hubIcon })
         .addTo(map)
         .bindPopup(`
           <div class="p-2 font-sans text-left">
-            <span class="text-[8px] font-black text-primary-gold bg-slate-900 px-2 py-0.5 rounded uppercase tracking-widest block mb-1 text-center font-mono">CD SIA</span>
-            <span class="text-[10px] font-black text-slate-700">Brasília CD Central</span>
-            <p class="text-[9px] font-mono text-slate-400 mt-1">SIA Trecho 4, DF</p>
+            <span class="text-[8px] font-black text-primary-gold bg-slate-900 px-2 py-0.5 rounded uppercase tracking-widest block mb-1 text-center font-mono">${centerLabel}</span>
+            <span class="text-[10px] font-black text-slate-700">${centerSub}</span>
+            <p class="text-[9px] font-mono text-slate-400 mt-1">${centerAddress}</p>
           </div>
         `);
       geofenceCenterMarkerRef.current = centerMarker;
+
+      // Draw Store 500m Geofences
+      Object.entries(ROUTE_STORE_COORDINATES).forEach(([key, store]) => {
+        const storeCircle = L.circle([store.lat, store.lng], {
+          color: '#d97706', // amber-600
+          fillColor: '#fef3c7', // amber-50
+          fillOpacity: 0.15,
+          radius: 500, // 500 meters
+          weight: 1.5,
+          dashArray: '3, 4'
+        }).addTo(map);
+
+        storeCircle.bindPopup(`
+          <div class="p-1 px-2 font-sans text-left">
+            <span class="text-[8px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-mono block mb-1 text-center font-bold">Cerca de Loja (500m)</span>
+            <strong class="text-xs uppercase text-slate-800">${store.label}</strong>
+            <p class="text-[8px] text-slate-500 mt-1">${store.address}</p>
+          </div>
+        `);
+
+        // Store dot marker
+        const storeDotHtml = `
+          <div class="relative w-4 h-4 rounded-full bg-amber-500 border-2 border-white shadow-md cursor-pointer flex items-center justify-center hover:scale-125 transition-transform">
+            <span class="w-1.5 h-1.5 bg-amber-950 rounded-full"></span>
+          </div>
+        `;
+        const storeDotIcon = L.divIcon({
+          html: storeDotHtml,
+          className: 'custom-store-dot-icon',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        });
+
+        const storeMarker = L.marker([store.lat, store.lng], { icon: storeDotIcon })
+          .addTo(map)
+          .bindPopup(`
+            <div class="p-1 px-2 font-sans text-left">
+              <span class="text-[8px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-mono block mb-1 text-center font-bold">Cerca de Loja (500m)</span>
+              <strong class="text-xs uppercase text-slate-800">${store.label}</strong>
+              <p class="text-[8px] text-slate-500 mt-1">${store.address}</p>
+            </div>
+          `);
+
+        storeCirclesRef.current.push(storeCircle, storeMarker);
+      });
     }
+
+    return () => {
+      storeCirclesRef.current.forEach(item => item.remove());
+      storeCirclesRef.current = [];
+    };
   }, [geofenceEnabled, geofenceCenter, geofenceRadius]);
 
   // Marker click delegator (binds 'Ver também' inside Leaflet popup inside React)
@@ -724,18 +1125,40 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           const currentLat = parseFloat(truck.ras_eve_latitude);
           const currentLng = parseFloat(truck.ras_eve_longitude);
           
-          let dLat = (Math.random() - 0.44) * 0.0035; 
-          let dLng = (Math.random() - 0.5) * 0.0035;  
+          const nextProgress = Math.min((truck.progressPercent || 0) + Math.random() * 1.5 + 0.5, 100);
           
-          const newLat = (currentLat + dLat).toFixed(6);
-          const newLng = (currentLng + dLng).toFixed(6);
+          let computedLat = currentLat;
+          let computedLng = currentLng;
+
+          const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+          if (matchedLoad?.status === CargoStatus.RELEASED) {
+            const destinationName = matchedLoad.destination;
+            const originCoords = matchedLoad.origin && (matchedLoad.origin.includes('Santa Maria') || matchedLoad.origin.includes('CD-01') || matchedLoad.origin.includes('CD-02')) ? cdSantaMariaCoordinates : cdSiaCoordinates;
+            const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
+            const routePos = getTruckPositionOnRoute(originCoords, destCoords, nextProgress);
+            
+            const isDeviated = forcedDeviatedPlacas[truck.ras_vei_placa];
+            if (isDeviated) {
+              computedLat = routePos[0] + 0.038;
+              computedLng = routePos[1] - 0.038;
+            } else {
+              computedLat = routePos[0];
+              computedLng = routePos[1];
+            }
+          } else {
+            let dLat = (Math.random() - 0.44) * 0.0035; 
+            let dLng = (Math.random() - 0.5) * 0.0035;  
+            computedLat = currentLat + dLat;
+            computedLng = currentLng + dLng;
+          }
 
           const currentSpeed = Number(truck.ras_eve_velocidade);
           let newSpeed = currentSpeed + (Math.random() > 0.5 ? 4 : -4);
           if (newSpeed > 82) newSpeed = 75;
           if (newSpeed < 30) newSpeed = 40;
 
-          const nextProgress = Math.min((truck.progressPercent || 0) + Math.random() * 2, 100);
+          const newLat = computedLat.toFixed(6);
+          const newLng = computedLng.toFixed(6);
 
           // Append to dynamic historical coordinates traces
           setTraces(tPrev => {
@@ -1453,8 +1876,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800 disabled:opacity-40" 
                 />
                 <div className="flex justify-between text-[7px] text-slate-400 font-black uppercase">
-                  <span>Mín: 2 km</span>
-                  <span>CD SIA</span>
+                  <span>Mín: 1 km</span>
+                  <span>CD Santa Maria</span>
                   <span>Máx: 35 km</span>
                 </div>
               </div>
@@ -1464,21 +1887,32 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 <div className="flex items-center justify-between text-[9.5px] font-black text-slate-800 uppercase">
                   <span>Centro da Cerca</span>
                   <span className="text-[8px] text-slate-500 font-mono">
-                    CD SIA (-15.795, -47.962)
+                    {Math.abs(geofenceCenter[0] - cdSantaMariaCoordinates[0]) < 0.01 ? 'CD Santa Maria' : Math.abs(geofenceCenter[0] - cdSiaCoordinates[0]) < 0.01 ? 'CD SIA' : 'Customizado'} ({geofenceCenter[0].toFixed(3)}, {geofenceCenter[1].toFixed(3)})
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setIsSettingCenter(!isSettingCenter)}
-                    className={`p-2 font-black rounded-lg text-[8.5px] uppercase tracking-wider border text-center transition-all cursor-pointer ${
+                    className={`p-1.5 font-black rounded-lg text-[8px] uppercase tracking-wider border text-center transition-all cursor-pointer ${
                       isSettingCenter 
                         ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                     }`}
                   >
-                    {isSettingCenter ? 'Definindo...' : 'Definir no mapa'}
+                    {isSettingCenter ? 'Foco...' : 'Definir'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeofenceCenter([-16.048231, -47.971867]);
+                      setIsSettingCenter(false);
+                    }}
+                    className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-755 font-black rounded-lg text-[8px] uppercase tracking-wider text-center transition-all cursor-pointer"
+                  >
+                    S. Maria (CD)
                   </button>
 
                   <button
@@ -1487,9 +1921,9 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                       setGeofenceCenter([-15.7953, -47.9622]);
                       setIsSettingCenter(false);
                     }}
-                    className="p-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-750 font-black rounded-lg text-[8.5px] uppercase tracking-wider text-center transition-all cursor-pointer"
+                    className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-755 font-black rounded-lg text-[8px] uppercase tracking-wider text-center transition-all cursor-pointer"
                   >
-                    Resetar SIA
+                    SIA
                   </button>
                 </div>
 
@@ -1540,7 +1974,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                             {truck.driverName}
                           </span>
                           <span className="block font-mono text-[7.5px] text-rose-600 font-bold">
-                            {(distance / 1000).toFixed(1)} km do CD SIA
+                            {(distance / 1000).toFixed(1)} km do centro
                           </span>
                         </div>
                         <span className="text-[7.5px] bg-white border border-rose-200 text-rose-700 font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block">
@@ -1961,7 +2395,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   activeTracePlaca === selectedPlaca ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200/80 hover:bg-slate-50'
                 }`}
               >
-                <svg className={`w-5 h-5 ${activeTracePlaca === selectedPlaca ? 'text-white' : 'text-slate-500'}`} fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg className={`w-5 h-5 ${activeTracePlaca === selectedPlaca ? 'text-white' : 'text-slate-500'}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-15.86c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93V3.07z"/>
                 </svg>
                 <span className={`text-[8.5px] font-black leading-tight uppercase mt-1 ${activeTracePlaca === selectedPlaca ? 'text-white' : 'text-slate-700'}`}>
@@ -2265,6 +2699,44 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               </div>
             </div>
           )}
+
+          {/* DYNAMIC STACKED POPUP ALERTS FOR EXITS AND ENTRANCES */}
+          <div className="absolute top-[80px] right-4 z-[1000] flex flex-col gap-2 max-w-xs w-full pointer-events-none select-none">
+            <AnimatePresence>
+              {fenceAlerts.map(alert => (
+                <motion.div
+                  key={alert.id}
+                  initial={{ opacity: 0, scale: 0.8, y: -20, x: 50 }}
+                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, x: 100 }}
+                  transition={{ type: 'spring', damping: 15 }}
+                  className="pointer-events-auto bg-slate-900/95 backdrop-blur border border-primary-gold p-3 rounded-xl shadow-2xl flex flex-col gap-1.5 text-left text-white"
+                >
+                  <div className="flex justify-between items-center bg-slate-950/60 p-1 px-2 rounded-md">
+                    <span className="text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                      {alert.type === 'exit_cd' ? '🚨 Saída de CD' : '🎯 Chegada na Cerca da Loja'}
+                    </span>
+                    <button
+                      onClick={() => setFenceAlerts(prev => prev.filter(x => x.id !== alert.id))}
+                      className="text-slate-400 hover:text-white font-mono text-[7px] bg-slate-800 px-1 py-0.2 rounded hover:bg-slate-700 cursor-pointer"
+                    >
+                      X
+                    </button>
+                  </div>
+                  
+                  <p className="text-[10px] font-bold text-slate-100 uppercase leading-snug">
+                    {alert.message}
+                  </p>
+
+                  <div className="flex justify-between text-[7.5px] text-slate-400 font-mono border-t border-slate-800/80 pt-1.5">
+                    <span>Placa: {alert.placa}</span>
+                    <span>{alert.timestamp}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
 
           {/* DYNAMIC GEOLOCATION FEEDBACK DIALOG */}
           {isSettingCenter && (

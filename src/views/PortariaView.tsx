@@ -18,6 +18,7 @@ import {
   Info 
 } from 'lucide-react';
 import { CargoLoad, CargoStatus, User, EventLog, getPhotosArray } from '../types';
+import { compressImage } from '../utils/imageCompressor';
 
 interface PortariaViewProps {
   loads: CargoLoad[];
@@ -205,10 +206,12 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
 
       filesToProcess.forEach(file => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
           setTargetPhotoState(prev => {
             if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
+            return [...prev, compressed];
           });
         };
         reader.readAsDataURL(file);
