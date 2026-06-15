@@ -332,6 +332,30 @@ export const AuditView: React.FC<AuditViewProps> = ({
           originEmail: originEmail
         });
 
+        // Realiza o disparo à API HTTP POST para envio de e-mails via SendGrid
+        try {
+          const response = await fetch('/api/send-alert-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              plate: selectedLoad.plate,
+              driverName: selectedLoad.driverName || selectedLoad.driver,
+              occurrenceType: finalOccType,
+              occurrenceDescription: occDescription || 'Sem observações adicionais',
+              targetEmails: alertEmails,
+              originEmail: originEmail
+            })
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            console.warn('API de e-mail retornou status de falha:', result);
+          } else {
+            console.log('Alerta SendGrid disparado com sucesso:', result);
+          }
+        } catch (apiErr) {
+          console.error('Falha de rede/API ao disparar SendGrid:', apiErr);
+        }
+
         // Tenta tocar uma notificação discreta (chime de envio de alerta)
         try {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
