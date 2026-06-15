@@ -511,9 +511,13 @@ const App: React.FC = () => {
     }
 
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+      const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const liveLogs: EventLog[] = [];
       snapshot.forEach((docSnap) => {
-        liveLogs.push(docSnap.data() as EventLog);
+        const data = docSnap.data() as EventLog;
+        if (new Date(data.timestamp).getTime() >= resetTime) {
+          liveLogs.push(data);
+        }
       });
       liveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(liveLogs);

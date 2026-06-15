@@ -194,9 +194,13 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const msgs: FeedbackMessage[] = [];
       snapshot.forEach((doc) => {
-        msgs.push(doc.data() as FeedbackMessage);
+        const data = doc.data() as FeedbackMessage;
+        if (new Date(data.timestamp).getTime() >= resetTime) {
+          msgs.push(data);
+        }
       });
       setMessages(msgs);
 
