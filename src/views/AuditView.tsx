@@ -394,6 +394,29 @@ export const AuditView: React.FC<AuditViewProps> = ({
     }
   };
 
+  // Keyboard shortcut listener for global quick save (Ctrl + S)
+  useEffect(() => {
+    const handleShortcutSave = () => {
+      if (!selectedLoad) return;
+      
+      const isDisabled = (occType !== OccurrenceType.NONE && (
+        !sealInput || 
+        sealInput !== selectedLoad.sealNumber
+      )) ||
+      ([OccurrenceType.SEAL_DISCREPANCY, OccurrenceType.CARGO_EXCHANGE, OccurrenceType.SEAL_TAMPERED].includes(occType) && !occDescription.trim()) ||
+      (occType === OccurrenceType.OTHER && !customOccType.trim());
+
+      if (!isDisabled) {
+        handleSaveOccurrence();
+      }
+    };
+
+    window.addEventListener('shortcut-save', handleShortcutSave);
+    return () => {
+      window.removeEventListener('shortcut-save', handleShortcutSave);
+    };
+  }, [selectedLoad, occType, sealInput, occDescription, customOccType, handleSaveOccurrence]);
+
   const handleSelectLoad = (id: string) => {
     const load = loads.find(l => l.id === id);
     setSelectedLoadId(id);

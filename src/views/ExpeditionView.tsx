@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { CargoLoad, CargoType, CargoStatus, EventLog, getPhotosArray } from '../types';
-import { compressImage } from '../utils/imageCompressor';
+import { CargoLoad, CargoType, CargoStatus, EventLog } from '../types';
 import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { 
   Truck, 
@@ -18,8 +17,6 @@ import {
   Clock, 
   ArrowRight, 
   Navigation,
-  Camera,
-  Trash2,
   Search,
   Pencil
 } from 'lucide-react';
@@ -478,14 +475,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [parDescription, setParDescription] = useState('');
   const [error, setError] = useState('');
 
-  const [photoPlate, setPhotoPlate] = useState<string[]>([]);
-  const [photoSeal, setPhotoSeal] = useState<string[]>([]);
-  const [photoManifest, setPhotoManifest] = useState<string[]>([]);
-
-  const photoPlateInputRef = React.useRef<HTMLInputElement>(null);
-  const photoSealInputRef = React.useRef<HTMLInputElement>(null);
-  const photoManifestInputRef = React.useRef<HTMLInputElement>(null);
-
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarTab, setSidebarTab] = useState<'resumo' | 'atividades'>('resumo');
@@ -516,9 +505,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setParType(load.parType || '');
     setParInvoiceNumber(load.parInvoiceNumber || '');
     setParDescription(load.parDescription || '');
-    setPhotoPlate(getPhotosArray(load.photoPlate));
-    setPhotoSeal(getPhotosArray(load.photoSeal));
-    setPhotoManifest(getPhotosArray(load.photoManifest));
     setSharedCargoDescriptions(load.sharedCargoDescriptions || {});
 
     // Now, let's load the palletDetailsByDest:
@@ -556,89 +542,39 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setParType('');
     setParInvoiceNumber('');
     setParDescription('');
-    setPhotoPlate([]);
-    setPhotoSeal([]);
-    setPhotoManifest([]);
     setError('');
   };
 
-  const handlePhotoPlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const remainingSlots = 10 - photoPlate.length;
-      const filesToProcess = Array.from(files).slice(0, remainingSlots) as File[];
-      
-      filesToProcess.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const rawBase64 = reader.result as string;
-          const compressed = await compressImage(rawBase64);
-          setPhotoPlate(prev => {
-            if (prev.length >= 10) return prev;
-            return [...prev, compressed];
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-      if (photoPlateInputRef.current) photoPlateInputRef.current.value = '';
-    }
-  };
+  // Keyboard shortcut listeners for global workflow speedups (Ctrl + N and Ctrl + S)
+  useEffect(() => {
+    const handleShortcutNewLoad = () => {
+      // Clear/Reset entire form state
+      handleCancelEdit();
+      // Focus on the Vehicle Plate input field to start typing immediately
+      setTimeout(() => {
+        const plateInput = document.getElementById('expedition-plate-input');
+        if (plateInput) {
+          (plateInput as HTMLInputElement).focus();
+        }
+      }, 80);
+    };
 
-  const handleRemovePhotoPlate = (idx: number) => {
-    setPhotoPlate(prev => prev.filter((_, i) => i !== idx));
-  };
+    const handleShortcutSave = () => {
+      // Native form submission handling (guarantees HTML5 fields validator prompts are triggered)
+      const formEl = document.getElementById('expedition-manifest-form') as HTMLFormElement;
+      if (formEl) {
+        formEl.requestSubmit();
+      }
+    };
 
-  const handlePhotoSealChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const remainingSlots = 10 - photoSeal.length;
-      const filesToProcess = Array.from(files).slice(0, remainingSlots) as File[];
-      
-      filesToProcess.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const rawBase64 = reader.result as string;
-          const compressed = await compressImage(rawBase64);
-          setPhotoSeal(prev => {
-            if (prev.length >= 10) return prev;
-            return [...prev, compressed];
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-      if (photoSealInputRef.current) photoSealInputRef.current.value = '';
-    }
-  };
+    window.addEventListener('shortcut-new-load', handleShortcutNewLoad);
+    window.addEventListener('shortcut-save', handleShortcutSave);
 
-  const handleRemovePhotoSeal = (idx: number) => {
-    setPhotoSeal(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handlePhotoManifestChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const remainingSlots = 10 - photoManifest.length;
-      const filesToProcess = Array.from(files).slice(0, remainingSlots) as File[];
-      
-      filesToProcess.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const rawBase64 = reader.result as string;
-          const compressed = await compressImage(rawBase64);
-          setPhotoManifest(prev => {
-            if (prev.length >= 10) return prev;
-            return [...prev, compressed];
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-      if (photoManifestInputRef.current) photoManifestInputRef.current.value = '';
-    }
-  };
-
-  const handleRemovePhotoManifest = (idx: number) => {
-    setPhotoManifest(prev => prev.filter((_, i) => i !== idx));
-  };
+    return () => {
+      window.removeEventListener('shortcut-new-load', handleShortcutNewLoad);
+      window.removeEventListener('shortcut-save', handleShortcutSave);
+    };
+  }, []);
 
   const validatePlate = (p: string) => {
     const mercosulRegex = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
@@ -741,9 +677,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         parType: isHighRisk ? parType : undefined,
         parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
         parDescription: isHighRisk ? parDescription : undefined,
-        photoPlate: photoPlate.length > 0 ? photoPlate : undefined,
-        photoSeal: photoSeal.length > 0 ? photoSeal : undefined,
-        photoManifest: photoManifest.length > 0 ? photoManifest : undefined,
+        photoPlate: originalLoad.photoPlate,
+        photoSeal: originalLoad.photoSeal,
+        photoManifest: originalLoad.photoManifest,
       };
 
       if (onUpdateLoad) {
@@ -766,9 +702,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         parType: isHighRisk ? parType : undefined,
         parInvoiceNumber: isHighRisk ? parInvoiceNumber : undefined,
         parDescription: isHighRisk ? parDescription : undefined,
-        photoPlate: photoPlate.length > 0 ? photoPlate : undefined,
-        photoSeal: photoSeal.length > 0 ? photoSeal : undefined,
-        photoManifest: photoManifest.length > 0 ? photoManifest : undefined,
       });
       handleCancelEdit();
     }
@@ -819,7 +752,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="p-8 space-y-8">
+          <form id="expedition-manifest-form" onSubmit={handleSubmit} className="p-8 space-y-8">
             {error && (
               <div className="bg-red-900/20 border border-red-500/50 text-red-400 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <AlertCircle className="w-4 h-4" />
@@ -832,6 +765,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 <div className="relative">
                   <Truck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
+                    id="expedition-plate-input"
                     type="text"
                     value={plate}
                     onChange={(e) => {
@@ -1452,172 +1386,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Foto Anexo Section */}
-            <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl space-y-4 shadow-2xs">
-              <div>
-                <h3 className="text-xs font-black uppercase text-primary-navy tracking-wider">Evidências Fotográficas do Veículo e Viagem</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Anexe ou tire fotos em tempo real da Placa, Lacre e Romaneio para conferência da Central</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* 1. Placa Photo */}
-                <div className="flex flex-col space-y-1.5 font-sans">
-                  <div className="flex items-center justify-between ml-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">1. Foto da Placa</label>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">{photoPlate.length}/10</span>
-                  </div>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    ref={photoPlateInputRef}
-                    onChange={handlePhotoPlateChange}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    {photoPlate.map((p, idx) => (
-                      <div key={idx} className="relative h-28 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
-                        <img
-                          src={p}
-                          alt={`Placa ${idx + 1}`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          referrerPolicy="no-referrer"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhotoPlate(idx)}
-                          className="absolute top-1.5 right-1.5 bg-red-650 hover:bg-red-500 text-white p-1.5 rounded-lg shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
-                          title="Remover Foto"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                    {photoPlate.length < 10 && (
-                      <button
-                        type="button"
-                        onClick={() => photoPlateInputRef.current?.click()}
-                        className="h-28 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-2 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all text-center group cursor-pointer col-span-1"
-                      >
-                        <div className="p-1.5 bg-slate-50 group-hover:bg-primary-gold/15 rounded-lg transition-all">
-                          <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold transition-colors" />
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-black text-primary-navy block uppercase tracking-wider">Anexar Foto</span>
-                          <span className="text-[7px] text-slate-400 font-bold block uppercase tracking-tight">Placa Veículo</span>
-                        </div>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2. Lacre Photo */}
-                <div className="flex flex-col space-y-1.5 font-sans">
-                  <div className="flex items-center justify-between ml-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">2. Foto do Lacre</label>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">{photoSeal.length}/10</span>
-                  </div>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    ref={photoSealInputRef}
-                    onChange={handlePhotoSealChange}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    {photoSeal.map((p, idx) => (
-                      <div key={idx} className="relative h-28 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
-                        <img
-                          src={p}
-                          alt={`Lacre ${idx + 1}`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          referrerPolicy="no-referrer"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhotoSeal(idx)}
-                          className="absolute top-1.5 right-1.5 bg-red-650 hover:bg-red-500 text-white p-1.5 rounded-lg shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
-                          title="Remover Foto"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                    {photoSeal.length < 10 && (
-                      <button
-                        type="button"
-                        onClick={() => photoSealInputRef.current?.click()}
-                        className="h-28 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-2 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all text-center group cursor-pointer col-span-1"
-                      >
-                        <div className="p-1.5 bg-slate-50 group-hover:bg-primary-gold/15 rounded-lg transition-all">
-                          <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold transition-colors" />
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-black text-primary-navy block uppercase tracking-wider">Anexar Foto</span>
-                          <span className="text-[7px] text-slate-400 font-bold block uppercase tracking-tight">Lacre Viagem</span>
-                        </div>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 3. Romaneio Photo */}
-                <div className="flex flex-col space-y-1.5 font-sans">
-                  <div className="flex items-center justify-between ml-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">3. Foto do Romaneio</label>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">{photoManifest.length}/10</span>
-                  </div>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    ref={photoManifestInputRef}
-                    onChange={handlePhotoManifestChange}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    {photoManifest.map((p, idx) => (
-                      <div key={idx} className="relative h-28 bg-zinc-900 border border-slate-200 rounded-2xl overflow-hidden shadow-sm group">
-                        <img
-                          src={p}
-                          alt={`Romaneio ${idx + 1}`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          referrerPolicy="no-referrer"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhotoManifest(idx)}
-                          className="absolute top-1.5 right-1.5 bg-red-650 hover:bg-red-500 text-white p-1.5 rounded-lg shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer border-0"
-                          title="Remover Foto"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                    {photoManifest.length < 10 && (
-                      <button
-                        type="button"
-                        onClick={() => photoManifestInputRef.current?.click()}
-                        className="h-28 bg-white border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-50/50 p-2 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all text-center group cursor-pointer col-span-1"
-                      >
-                        <div className="p-1.5 bg-slate-50 group-hover:bg-primary-gold/15 rounded-lg transition-all">
-                          <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold transition-colors" />
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-black text-primary-navy block uppercase tracking-wider">Anexar Foto</span>
-                          <span className="text-[7px] text-slate-400 font-bold block uppercase tracking-tight">Romaneio / Manifesto</span>
-                        </div>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
 
             <button

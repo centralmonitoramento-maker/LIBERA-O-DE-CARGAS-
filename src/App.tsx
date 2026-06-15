@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
+import { Keyboard, HelpCircle, X, Sparkles } from 'lucide-react';
 import { ExpeditionView } from './views/ExpeditionView';
 import { CentralView } from './views/CentralView';
 import { AuditView } from './views/AuditView';
@@ -42,6 +43,10 @@ const generateId = (): string => {
 
 // Main Application Component for CargaRadar System - v1.0.1
 const App: React.FC = () => {
+  // Keyboard Shortcut States for accelerated operator workflows
+  const [shortcutFeedback, setShortcutFeedback] = useState<string | null>(null);
+  const [showShortcutHelp, setShowShortcutHelp] = useState<boolean>(false);
+
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const persistedUser = localStorage.getItem('cargoradar_user');
@@ -208,6 +213,74 @@ const App: React.FC = () => {
       console.error('Erro ao salvar aba ativa localmente:', e);
     }
   };
+
+  // Main global keyboard shortcut engine
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for modifier keys (Ctrl or Cmd)
+      const hasModifier = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      // Help Shortcut: Ctrl + H or Ctrl + /
+      if (hasModifier && (key === 'h' || e.key === '/')) {
+        e.preventDefault();
+        setShowShortcutHelp(prev => !prev);
+        setShortcutFeedback(showShortcutHelp ? "Guia Ocultado" : "Guia de Atalhos Aberto");
+        return;
+      }
+
+      // 1. Ctrl + N -> New Load (Switch tab to expedition, trigger reset, focus plate input)
+      if (hasModifier && key === 'n') {
+        e.preventDefault();
+        if (activeTab !== 'expedition') {
+          handleTabChange('expedition');
+        }
+        // Force cancellation and focus
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('shortcut-new-load'));
+        }, activeTab !== 'expedition' ? 120 : 0);
+
+        setShortcutFeedback("Nova Carga: Form redefinido e focado!");
+        return;
+      }
+
+      // 2. Ctrl + S -> Save (Trigger save in current screen)
+      if (hasModifier && key === 's') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('shortcut-save'));
+        setShortcutFeedback("Comando de salvar enviado!");
+        return;
+      }
+
+      // 3. Tab switching with Alt + Number (Alt + 1, Alt + 2, etc.)
+      if (e.altKey && !isNaN(Number(e.key))) {
+        const num = Number(e.key);
+        const tabs: TabType[] = ['expedition', 'central', 'audit', 'analysis', 'portaria', 'tracking'];
+        if (num >= 1 && num <= tabs.length) {
+          e.preventDefault();
+          const targetTab = tabs[num - 1];
+          handleTabChange(targetTab);
+          setShortcutFeedback(`Aba alterada para: ${targetTab.toUpperCase()}`);
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeTab, showShortcutHelp]);
+
+  // Handle shortcut feedback auto-clear
+  useEffect(() => {
+    if (shortcutFeedback) {
+      const timer = setTimeout(() => {
+        setShortcutFeedback(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [shortcutFeedback]);
 
   const notifiedLoadIds = React.useRef<Set<string>>(new Set());
   const isFirstLoad = React.useRef<boolean>(true);
@@ -939,6 +1012,126 @@ const App: React.FC = () => {
       <div className="animate-in fade-in duration-500">
         {renderContent()}
       </div>
+
+      {/* Global Shortcut HUD Overlay */}
+      {shortcutFeedback && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[99] bg-slate-900/95 border border-primary-gold text-primary-gold text-xs font-black uppercase tracking-widest px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-300 backdrop-blur-md">
+          <Sparkles className="w-4 h-4 text-primary-gold animate-spin" />
+          <span>{shortcutFeedback}</span>
+        </div>
+      )}
+
+      {/* Floating Shortcut Action Trigger (Positioned alongside FeedbackChat) */}
+      {isAuthenticated && (
+        <button
+          onClick={() => setShowShortcutHelp(true)}
+          title="Atalhos do Teclado (Ctrl + H)"
+          className="fixed bottom-6 right-24 z-40 bg-slate-900/90 hover:bg-slate-800 text-primary-gold hover:text-white p-3 rounded-full border border-slate-700/80 shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center gap-2 group backdrop-blur-md"
+        >
+          <Keyboard className="w-5 h-5 text-primary-gold animate-pulse group-hover:scale-110 transition-transform" />
+          <span className="text-[10px] font-black uppercase tracking-wider max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out whitespace-nowrap">
+            Atalhos (Ctrl + H)
+          </span>
+        </button>
+      )}
+
+      {/* Keyboard Shortcuts Help Modal */}
+      {showShortcutHelp && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-200 text-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-slate-800 rounded-xl text-primary-gold">
+                  <Keyboard className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-100 tracking-wider">Atalhos Globais do Teclado</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Otimização de processos para operadores e expedidores</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowShortcutHelp(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-100 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 gap-3">
+                <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                  <div>
+                    <dt className="font-extrabold text-slate-300 uppercase text-[10px]">Nova Carga / Limpar Form</dt>
+                    <dd className="text-[9px] text-slate-400 mt-0.5">Muda para a aba de Expedição, cancela edição ativa e foca no campo da Placa.</dd>
+                  </div>
+                  <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold shadow">
+                    Ctrl + N
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                  <div>
+                    <dt className="font-extrabold text-slate-300 uppercase text-[10px]">Salvar / Transmitir</dt>
+                    <dd className="text-[9px] text-slate-400 mt-0.5">Se na Expedição: envia a liberação. Se em Auditoria: salva o relatório.</dd>
+                  </div>
+                  <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold shadow">
+                    Ctrl + S
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                  <div>
+                    <dt className="font-extrabold text-slate-300 uppercase text-[10px]">Exibir / Ocultar Atalhos</dt>
+                    <dd className="text-[9px] text-slate-400 mt-0.5">Abre ou fecha este painel explicativo para consulta rápida.</dd>
+                  </div>
+                  <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold shadow">
+                    Ctrl + H
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <h4 className="text-[10px] font-black text-primary-gold uppercase tracking-wider mb-2">Mudar de Aba Instantaneamente</h4>
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-300">
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>1. Expedição</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+1</span>
+                  </div>
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>2. Central</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+2</span>
+                  </div>
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>3. Auditoria</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+3</span>
+                  </div>
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>4. Monitor</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+4</span>
+                  </div>
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>5. Portaria</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+5</span>
+                  </div>
+                  <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
+                    <span>6. Tracking</span>
+                    <span className="bg-slate-850 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+6</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setShowShortcutHelp(false)}
+                className="px-5 py-2.5 bg-primary-gold hover:bg-primary-gold/90 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
