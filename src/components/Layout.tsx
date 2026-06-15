@@ -21,13 +21,15 @@ import {
   User as UserIcon,
   Calendar,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Settings,
+  Menu
 } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -63,6 +65,19 @@ export const Layout: React.FC<LayoutProps> = ({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedCargoFromSearch, setSelectedCargoFromSearch] = React.useState<CargoLoad | null>(null);
   const [zoomPhoto, setZoomPhoto] = React.useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+
+  const [stretchMonitor, setStretchMonitor] = React.useState(() => {
+    return localStorage.getItem('cargoradar_stretch_monitor') === 'true';
+  });
+
+  const [fontSize, setFontSize] = React.useState(() => {
+    return localStorage.getItem('cargoradar_font_size') || 'normal';
+  });
+
+  const [accentColor, setAccentColor] = React.useState(() => {
+    return localStorage.getItem('cargoradar_accent_color') || 'gold';
+  });
 
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
@@ -75,6 +90,37 @@ export const Layout: React.FC<LayoutProps> = ({
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  React.useEffect(() => {
+    const handleStretch = () => {
+      setStretchMonitor(localStorage.getItem('cargoradar_stretch_monitor') === 'true');
+    };
+    const handleFontSize = () => {
+      const sizeStr = localStorage.getItem('cargoradar_font_size') || 'normal';
+      setFontSize(sizeStr);
+      if (sizeStr === 'large') {
+        document.body.classList.add('text-lg-operational');
+      } else {
+        document.body.classList.remove('text-lg-operational');
+      }
+    };
+    const handleAccent = () => {
+      setAccentColor(localStorage.getItem('cargoradar_accent_color') || 'gold');
+    };
+
+    window.addEventListener('stretch-changed', handleStretch);
+    window.addEventListener('fontsize-changed', handleFontSize);
+    window.addEventListener('accent-changed', handleAccent);
+
+    // Initial setups
+    handleFontSize();
+
+    return () => {
+      window.removeEventListener('stretch-changed', handleStretch);
+      window.removeEventListener('fontsize-changed', handleFontSize);
+      window.removeEventListener('accent-changed', handleAccent);
+    };
+  }, []);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -124,6 +170,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
     { id: 'portaria' as TabType, label: 'PORTARIA', icon: ClipboardCheck },
+    { id: 'settings' as TabType, label: 'CONFIGURAÇÕES', icon: Settings },
   ];
 
   // Logic: Admins see everything. Normal users only see their registered area.
@@ -131,6 +178,7 @@ export const Layout: React.FC<LayoutProps> = ({
   // 'tracking' is a global feature accessible by all roles.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
+    if (tab.id === 'settings') return true;
     if (user.systemRole === 'administrator') return true;
     if (tab.id === 'tracking') return true;
     if (user.role === 'expedition') {
@@ -144,141 +192,153 @@ export const Layout: React.FC<LayoutProps> = ({
   }, [loads]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col lg:flex-row font-sans relative overflow-x-hidden text-slate-800 dark:text-slate-100">
       {/* Watermark Logo */}
-      <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 flex items-center justify-center overflow-hidden">
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.015] z-0 flex items-center justify-center overflow-hidden">
         <img src="/logo.png" alt="" className="w-full max-w-4xl transform scale-150 grayscale select-none" />
       </div>
 
-      {/* Header */}
-      <header className="bg-primary-navy text-white shadow-2xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-20 items-center">
-            <div className="flex items-center gap-4 group cursor-pointer" onClick={() => onTabChange(user?.role as TabType || 'expedition')}>
-              <div className="relative w-14 h-14 bg-white keep-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300 overflow-hidden border-2 border-primary-gold">
-                <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
-                }} />
-                <Truck className="fallback-icon hidden w-8 h-8 text-primary-navy" />
+      {/* PERSISTENT LEFT SIDEBAR FOR DESKTOP */}
+      {isAuthenticated && (
+        <aside className="hidden lg:flex flex-col w-72 bg-[#0c1f38] text-white sticky top-0 h-screen border-r border-[#193254] flex-shrink-0 z-30 shadow-2xl">
+          {/* Top Branding Header */}
+          <div className="flex items-center gap-3 px-6 py-6 border-b border-[#193254] bg-[#071526]/50">
+            <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg border border-primary-gold overflow-hidden flex-shrink-0">
+              <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
+            </div>
+            <div>
+              <h1 className="text-sm font-black tracking-tighter leading-none text-white uppercase">CARGARADAR</h1>
+              <p className="text-[8px] font-black text-primary-gold tracking-[0.2em] uppercase mt-1">Prevenção de Perdas</p>
+            </div>
+          </div>
+
+          {/* Navigation Sections List */}
+          <div className="flex-grow py-6 px-4 space-y-1 overflow-y-auto">
+            <p className="text-[9px] font-black tracking-widest text-[#567bb0] uppercase mb-3 px-3">
+              Módulos do Sistema
+            </p>
+            <nav className="space-y-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isAuditWithBlocked = tab.id === 'audit' && blockedCount > 0;
+                const isActive = activeTab === tab.id;
+                
+                // Determine active style class based on accent preferences
+                let activeBtnClass = 'bg-primary-gold text-white border-primary-gold';
+                if (accentColor === 'emerald') activeBtnClass = 'bg-emerald-600 text-white border-emerald-500';
+                if (accentColor === 'blue') activeBtnClass = 'bg-[#1e40af] text-white border-blue-500';
+                if (accentColor === 'rose') activeBtnClass = 'bg-rose-600 text-white border-rose-500';
+
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => onTabChange(tab.id)}
+                    className={`flex items-center justify-between w-full px-4 py-3 rounded-2xl text-[10.5px] font-extrabold tracking-wider transition-all duration-200 group border cursor-pointer ${
+                      isActive
+                        ? `${activeBtnClass} shadow-xl translate-x-1`
+                        : 'border-transparent text-slate-350 hover:text-white hover:bg-white/5 hover:border-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${
+                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-primary-gold'
+                      }`} />
+                      <span className="uppercase text-left">{tab.label}</span>
+                    </div>
+                    {isAuditWithBlocked && (
+                      <span className="bg-red-650 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse border border-red-500/30">
+                        {blockedCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Bottom Profile and support link inside sidebar */}
+          <div className="p-4 border-t border-[#193254] space-y-3 bg-[#071526]/40">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-gold to-red-650 border border-white/10 flex items-center justify-center text-xs font-black text-white uppercase shadow-md flex-shrink-0">
+                {user?.username?.substring(0, 2) || 'OP'}
               </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-black tracking-tighter leading-none text-white">CARGARADAR</h1>
-                <p className="text-[10px] font-bold text-primary-gold tracking-[0.2em] uppercase">Prevenção de Perdas</p>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-white uppercase truncate tracking-tight">{user?.fullName || user?.username}</p>
+                <p className="text-[8px] font-bold text-primary-gold uppercase tracking-widest leading-none mt-0.5">{user?.systemRole}</p>
               </div>
             </div>
+            
+            <button
+              onClick={() => onLogout()}
+              className="flex items-center justify-center gap-2 w-full bg-red-600/10 hover:bg-red-600 text-red-400 hover:text-white py-2.5 rounded-xl text-[10px] font-black transition-all border border-red-500/20 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>DESCONECTAR SESSÃO</span>
+            </button>
+          </div>
+        </aside>
+      )}
 
-            {/* Global Search Input */}
-            {isAuthenticated && (
-              <div ref={searchContainerRef} className="relative flex-grow max-w-[140px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-xs xl:max-w-md mx-2 sm:mx-4 z-50">
-                <div className="relative flex items-center bg-white/10 hover:bg-white/15 focus-within:bg-white text-white focus-within:text-slate-800 rounded-2xl border border-white/10 focus-within:border-primary-gold transition-all duration-300 px-3 py-2 shadow-inner">
-                  <Search className="w-4 h-4 text-slate-300 flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Buscar placa ou motorista..."
-                    className="ml-2 w-full bg-transparent focus:outline-none text-xs font-semibold placeholder:text-slate-400 focus-within:placeholder:text-slate-500 border-none p-0 focus:ring-0 focus:border-transparent focus:text-slate-800"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="p-0.5 hover:bg-slate-250/50 rounded-full transition-colors cursor-pointer">
-                      <X className="w-3.5 h-3.5 text-slate-400 focus-within:text-slate-600" />
-                    </button>
-                  )}
+      {/* MOBILE SLIDING SIDE NAVIGATION DRAWER */}
+      {isAuthenticated && mobileMenuOpen && (
+        <div className="fixed inset-0 z-[110] flex lg:hidden">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity duration-300"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          {/* Sliding drawer list */}
+          <div className="relative flex flex-col w-72 max-w-xs bg-[#0c1f38] text-white h-full shadow-2xl p-5 space-y-6 animate-in slide-in-from-left duration-300">
+            <div className="flex items-center justify-between border-b border-[#193254] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-primary-gold overflow-hidden">
+                  <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" />
                 </div>
-
-                {/* Dropdown Results */}
-                {searchQuery.trim().length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white text-slate-800 rounded-3xl shadow-2xl border border-slate-150 z-[100] max-h-96 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        Resultados encontrados ({searchResults.length})
-                      </span>
-                      {searchResults.length > 0 && (
-                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                          Pressione Esc para fechar
-                        </span>
-                      )}
-                    </div>
-                    
-                    {searchResults.length === 0 ? (
-                      <div className="p-8 text-center text-slate-400">
-                        <Search className="w-8 h-8 mx-auto mb-2 opacity-30 text-slate-500 animate-pulse" />
-                        <p className="text-[11px] font-bold uppercase tracking-wider">Nenhum registro encontrado</p>
-                        <p className="text-[9px] opacity-75 mt-1">Busque pela placa exata ou pelo nome do motorista</p>
-                      </div>
-                    ) : (
-                      <div className="p-2 space-y-1">
-                        {searchResults.map((load) => (
-                          <button
-                            key={load.id}
-                            onClick={() => {
-                              setSelectedCargoFromSearch(load);
-                              setSearchQuery(''); 
-                            }}
-                            className="w-full text-left p-3 rounded-2xl hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 border border-transparent hover:border-slate-100"
-                          >
-                            <div className="flex-grow min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-black text-[10px] text-primary-navy bg-slate-100 px-2 py-0.5 rounded border border-slate-255">
-                                  {load.plate}
-                                </span>
-                                <span className="text-[11px] font-black text-slate-700 truncate block">
-                                  {load.driverName}
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-medium text-slate-400 truncate mt-1">
-                                {load.origin} ➔ {load.destination}
-                              </p>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                load.status === CargoStatus.RELEASED ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                load.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 border-red-100 animate-pulse' : 'bg-amber-50 text-amber-700 border-amber-100'
-                              }`}>
-                                {load.status === CargoStatus.RELEASED ? 'Em Trânsito' :
-                                 load.status === CargoStatus.BLOCKED ? 'Divergência' : 'Portaria'}
-                              </span>
-                              <span className="text-[8px] text-slate-400 font-bold">
-                                {new Date(load.createdAt).toLocaleDateString('pt-BR')}
-                              </span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div>
+                  <h1 className="text-sm font-black leading-none text-white">CARGARADAR</h1>
+                  <p className="text-[7.5px] font-bold text-primary-gold uppercase mt-0.5 tracking-wider font-mono">PREVENÇÃO DE PERDAS</p>
+                </div>
               </div>
-            )}
+              <button 
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-1.5 text-slate-305 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            {isAuthenticated && (
-              <nav className="hidden lg:flex items-center gap-1 bg-white/10 p-1 rounded-2xl border border-white/10">
+            <div className="flex-grow space-y-1 overflow-y-auto">
+              <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase mb-3 px-3">MÓDULOS DE VERIFICAÇÃO</p>
+              <nav className="space-y-1">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isAuditWithBlocked = tab.id === 'audit' && blockedCount > 0;
+                  const isActive = activeTab === tab.id;
+
+                  let activeBtnClass = 'bg-primary-gold text-white border-primary-gold';
+                  if (accentColor === 'emerald') activeBtnClass = 'bg-emerald-600 text-white border-emerald-500';
+                  if (accentColor === 'blue') activeBtnClass = 'bg-[#1e40af] text-white border-blue-500';
+                  if (accentColor === 'rose') activeBtnClass = 'bg-rose-600 text-white border-rose-500';
+
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => onTabChange(tab.id)}
-                      className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black tracking-wider transition-all duration-300 relative ${
-                        activeTab === tab.id
-                          ? 'bg-primary-gold text-white shadow-lg scale-105'
-                          : 'text-slate-300 hover:text-white hover:bg-white/10'
+                      onClick={() => {
+                        onTabChange(tab.id);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center justify-between w-full px-4 py-3.5 rounded-xl text-[10.5px] font-extrabold tracking-wider transition-all duration-200 border ${
+                        isActive
+                          ? activeBtnClass
+                          : 'border-transparent text-slate-300 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <span className="relative">
-                        <Icon className="w-4 h-4" />
-                        {isAuditWithBlocked && (
-                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                          </span>
-                        )}
-                      </span>
-                      {tab.label}
+                      <div className="flex items-center gap-3">
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        <span className="uppercase">{tab.label}</span>
+                      </div>
                       {isAuditWithBlocked && (
-                        <span className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full ml-1 animate-pulse">
+                        <span className="bg-red-650 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
                           {blockedCount}
                         </span>
                       )}
@@ -286,150 +346,237 @@ export const Layout: React.FC<LayoutProps> = ({
                   );
                 })}
               </nav>
-            )}
+            </div>
 
-            <div className="flex items-center gap-4">
-              {isAuthenticated && blockedCount > 0 && (
-                <button
-                  onClick={() => {
-                    const hasAuditAccess = user?.systemRole === 'administrator' || user?.role === 'audit';
-                    if (hasAuditAccess) {
-                      onTabChange('audit');
-                    }
-                  }}
-                  className="relative p-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all border border-red-500 shadow-md flex items-center justify-center animate-pulse"
-                  title={`${blockedCount} carga(s) bloqueada(s). Clique para ver na Auditoria.`}
-                >
-                  <Bell className="w-5 h-5 animate-bounce" />
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-4 w-4 bg-red-800 text-[10px] font-black leading-none text-white items-center justify-center">
-                      {blockedCount}
-                    </span>
-                  </span>
-                </button>
-              )}
-
-              {isAuthenticated && (
-                <div className="hidden md:flex flex-col items-end mr-2">
-                  <span className="text-[10px] font-black text-white uppercase tracking-tight">{user?.fullName || user?.username}</span>
-                  <span className="text-[8px] font-bold text-primary-gold uppercase tracking-widest">{user?.systemRole}</span>
+            {/* User profile & connect bottom */}
+            <div className="pt-4 border-t border-[#193254] space-y-3 bg-black/20 p-4 rounded-2xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-gold to-red-600 flex items-center justify-center text-xs font-black text-white uppercase shadow-md">
+                  {user?.username?.substring(0, 2) || 'OP'}
                 </div>
-              )}
-              {isAuthenticated && notifPermission !== 'unsupported' && (
-                <button
-                  onClick={requestNotifPermission}
-                  className={`p-2.5 rounded-xl transition-all border flex items-center justify-center cursor-pointer relative ${
-                    notifPermission === 'granted'
-                      ? 'bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border-emerald-500/20'
-                      : notifPermission === 'denied'
-                      ? 'bg-red-650/10 hover:bg-red-650/20 text-red-450 border-red-500/20'
-                      : 'bg-amber-600/10 hover:bg-amber-600/20 text-amber-500 border-amber-500/20 animate-pulse'
-                  }`}
-                  title={
-                    notifPermission === 'granted'
-                      ? 'Notificações de Alerta de Divergência Ativas'
-                      : notifPermission === 'denied'
-                      ? 'Notificações Bloqueadas pelo Navegador. Clique para saber como ativar.'
-                      : 'Ativar Notificações no Navegador'
-                  }
-                >
-                  {notifPermission === 'granted' ? (
-                    <>
-                      <Bell className="w-4 h-4 text-emerald-400" />
-                      <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-duration-1000"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                    </>
-                  ) : notifPermission === 'denied' ? (
-                    <BellOff className="w-4 h-4 text-red-450" />
-                  ) : (
-                    <Bell className="w-4 h-4 text-amber-500" />
-                  )}
-                </button>
-              )}
-
-              <button
-                onClick={toggleTheme}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white rounded-xl transition-all border border-white/10 flex items-center justify-center cursor-pointer"
-                title={theme === 'light' ? 'Ativar Modo Escuro' : 'Ativar Modo Claro'}
-              >
-                {theme === 'light' ? (
-                  <Moon className="w-4 h-4" />
-                ) : (
-                  <Sun className="w-4 h-4 text-primary-gold" />
-                )}
-              </button>
-
-              {isAuthenticated && (
-                <button
-                  onClick={() => onLogout()}
-                  className="flex items-center gap-2 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black transition-all border border-red-500/20"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">SAIR</span>
-                </button>
-              )}
-              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
-                <div className="w-full h-full bg-gradient-to-br from-primary-gold to-primary-red opacity-80"></div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-white truncate">{user?.fullName || user?.username}</p>
+                  <p className="text-[8px] text-primary-gold uppercase leading-none mt-0.5">{user?.systemRole}</p>
+                </div>
               </div>
+              <button
+                onClick={() => {
+                  onLogout();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center justify-center gap-2 w-full bg-red-650/20 text-red-400 py-2.5 rounded-xl text-[9.5px] font-black tracking-wider cursor-pointer border border-red-500/10"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>DESCONECTAR SESSÃO</span>
+              </button>
             </div>
           </div>
-        </div>
-      </header>
-
-      {/* Mobile Nav */}
-      {isAuthenticated && (
-        <div className="lg:hidden bg-primary-navy border-t border-white/10 px-4 py-2 flex justify-around sticky top-20 z-40 shadow-lg">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isAuditWithBlocked = tab.id === 'audit' && blockedCount > 0;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => onTabChange(tab.id)}
-                className={`p-3 rounded-xl transition-all relative ${
-                  activeTab === tab.id ? 'bg-primary-gold text-white shadow-inner' : 'text-slate-400'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                {isAuditWithBlocked && (
-                  <span className="absolute top-2 right-2 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                  </span>
-                )}
-              </button>
-            );
-          })}
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="animate-in fade-in duration-700">
-          {children}
-        </div>
-      </main>
+      {/* RIGHT SIDE WORKSPACE WORKFLOW PANEL */}
+      <div className="flex-grow flex flex-col min-h-screen min-w-0 bg-slate-50 dark:bg-[#071324] transition-colors duration-250">
+        
+        {/* TOP SLIM HEADER UTILITY BAR */}
+        <header className="bg-primary-navy dark:bg-[#071526] text-white shadow-md sticky top-0 z-40 transition-colors duration-250 border-b border-white/5">
+          <div className="w-full px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between h-16 items-center">
+              
+              {/* Left Indicator - Hamburger for Mobile and Tab Name for Desktop */}
+              <div className="flex items-center gap-3">
+                {isAuthenticated && (
+                  <button 
+                    onClick={() => setMobileMenuOpen(true)}
+                    className="p-2 bg-white/10 text-slate-100 hover:text-white rounded-xl transition-all cursor-pointer flex items-center justify-center border border-white/10 lg:hidden"
+                    title="Abrir Menu Lateral"
+                  >
+                    <Menu className="w-4 h-4" />
+                  </button>
+                )}
+                
+                {/* Branding or Section Indicator */}
+                <div className="flex items-center gap-2">
+                  <div className="lg:hidden relative w-9 h-9 bg-white keep-white rounded-xl flex items-center justify-center shadow-md overflow-hidden">
+                    <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h2 className="text-xs sm:text-xs font-black uppercase text-white tracking-widest hidden lg:block select-none mt-0.5">
+                      {activeTab === 'expedition' && '📝 EXPEDIÇÃO DE CARGAS'}
+                      {activeTab === 'central' && '🖥️ CENTRAL DE LOGÍSTICA'}
+                      {activeTab === 'tracking' && '🗺️ RASTREAMENTO MAPA'}
+                      {activeTab === 'audit' && '🛡️ AUDITORIA & SEGURANÇA'}
+                      {activeTab === 'analysis' && '📊 ANÁLISE OPERACIONAL'}
+                      {activeTab === 'portaria' && '📋 PORTARIA DE SINAL'}
+                      {activeTab === 'settings' && '⚙️ AJUSTES DO MONITOR'}
+                    </h2>
+                    <h2 className="text-xs font-black uppercase text-white tracking-widest lg:hidden select-none">
+                      CARGARADAR
+                    </h2>
+                  </div>
+                </div>
+              </div>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-slate-900 rounded flex items-center justify-center">
-              <Truck className="w-3 h-3 text-white" />
+              {/* Global Search Input */}
+              {isAuthenticated && (
+                <div ref={searchContainerRef} className="relative flex-grow max-w-[120px] xs:max-w-[160px] sm:max-w-[200px] md:max-w-xs xl:max-w-md mx-2 sm:mx-4 z-50">
+                  <div className="relative flex items-center bg-white/10 hover:bg-white/15 focus-within:bg-white text-white focus-within:text-slate-800 rounded-2xl border border-white/10 focus-within:border-primary-gold transition-all duration-300 px-3 py-1.5 shadow-inner">
+                    <Search className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Buscar placa..."
+                      className="ml-2 w-full bg-transparent focus:outline-none text-[11px] font-semibold placeholder:text-slate-400 focus-within:placeholder:text-slate-500 border-none p-0 focus:ring-0 focus:border-transparent focus:text-slate-800"
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} className="p-0.5 hover:bg-slate-200/50 rounded-full transition-colors cursor-pointer">
+                        <X className="w-3 h-3 text-slate-400 focus-within:text-slate-600" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {searchQuery.trim().length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-150 z-[100] max-h-96 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center text-[10px]">
+                        <span className="font-black text-slate-400 uppercase tracking-widest">
+                          Resultados ({searchResults.length})
+                        </span>
+                        <span className="font-bold text-slate-400 tracking-widest">ESC para fechar</span>
+                      </div>
+                      
+                      {searchResults.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 text-[11px]">
+                          <Search className="w-6 h-6 mx-auto mb-1.5 opacity-35 text-slate-500" />
+                          <p className="font-bold uppercase">Nenhum registro encontrado</p>
+                        </div>
+                      ) : (
+                        <div className="p-1.5 space-y-0.5">
+                          {searchResults.map((load) => (
+                            <button
+                              key={load.id}
+                              onClick={() => {
+                                setSelectedCargoFromSearch(load);
+                                setSearchQuery(''); 
+                              }}
+                              className="w-full text-left p-2.5 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 border border-transparent"
+                            >
+                              <div className="flex-grow min-w-0 text-xs">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-black text-[9px] text-primary-navy bg-slate-100 px-1.5 py-0.5 rounded border">
+                                    {load.plate}
+                                  </span>
+                                  <span className="font-black text-slate-700 truncate">{load.driverName}</span>
+                                </div>
+                              </div>
+                              <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded ${
+                                load.status === CargoStatus.RELEASED ? 'bg-emerald-50 text-emerald-700' :
+                                load.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 animate-pulse' : 'bg-amber-50 text-amber-700'
+                              }`}>
+                                {load.status === CargoStatus.RELEASED ? 'Em Trânsito' :
+                                 load.status === CargoStatus.BLOCKED ? 'Divergência' : 'Portaria'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Utility Badges & settings toggles */}
+              <div className="flex items-center gap-2 sm:gap-3.5">
+                
+                {/* Blocked Badge alerting indicator */}
+                {isAuthenticated && blockedCount > 0 && (
+                  <button
+                    onClick={() => {
+                      const hasAuditAccess = user?.systemRole === 'administrator' || user?.role === 'audit';
+                      if (hasAuditAccess) {
+                        onTabChange('audit');
+                      }
+                    }}
+                    className="relative p-2 bg-red-650 hover:bg-red-700 text-white rounded-xl transition-all border border-red-500 animate-pulse flex items-center justify-center shadow-md cursor-pointer"
+                    title={`${blockedCount} bloqueio(s). Clique para ver na Auditoria.`}
+                  >
+                    <Bell className="w-4 h-4" />
+                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-905 text-[8.5px] font-black leading-none text-white items-center justify-center">
+                        {blockedCount}
+                      </span>
+                    </span>
+                  </button>
+                )}
+
+                {/* Notifications setup permission state */}
+                {isAuthenticated && notifPermission !== 'unsupported' && (
+                  <button
+                    onClick={requestNotifPermission}
+                    className={`p-2 rounded-xl transition-all border flex items-center justify-center cursor-pointer relative ${
+                      notifPermission === 'granted'
+                        ? 'bg-emerald-600/10 hover:bg-emerald-600/15 text-emerald-450 border-emerald-500/20'
+                        : 'bg-amber-600/10 hover:bg-amber-600/15 text-amber-450 border-amber-500/20'
+                    }`}
+                    title={notifPermission === 'granted' ? 'Alertas Nativos Ativos' : 'Ativar Alertas Nativos'}
+                  >
+                    <Bell className={`w-4 h-4 ${notifPermission === 'granted' ? 'text-emerald-450' : 'text-amber-450'}`} />
+                  </button>
+                )}
+
+                {/* Quick Theme Toggle Icon */}
+                <button
+                  onClick={toggleTheme}
+                  className="p-2 bg-white/5 hover:bg-white/10 text-slate-350 hover:text-white rounded-xl border border-white/5 transition-all flex items-center justify-center cursor-pointer"
+                  title={theme === 'light' ? 'Modo Escuro' : 'Modo Claro'}
+                >
+                  {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-primary-gold" />}
+                </button>
+
+                {/* Avatar Icon */}
+                <div 
+                  onClick={() => onTabChange('settings')}
+                  className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-gold to-red-500 border border-white/10 flex items-center justify-center overflow-hidden cursor-pointer shadow-inner hover:scale-105 active:scale-95 transition-transform"
+                  title="Ajustes de Exibição"
+                >
+                  <span className="text-[10px] font-black text-white">{user?.username?.substring(0, 2).toUpperCase() || 'OP'}</span>
+                </div>
+              </div>
+
             </div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              © 2026 CargaRadar Logistics Security
-            </span>
           </div>
-          <div className="flex gap-6">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Protocol: v2.5.0-STABLE</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Status: System Operational</span>
+        </header>
+
+        {/* MAIN BODY CONTENTS */}
+        <main className={`flex-grow transition-all duration-250 pb-16 ${
+          stretchMonitor 
+            ? 'w-full px-4 sm:px-6 lg:px-8 py-8' 
+            : 'max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8'
+        }`}>
+          <div className="animate-in fade-in duration-500 relative z-10">
+            {children}
           </div>
-        </div>
-      </footer>
+        </main>
+
+        {/* FOOTER */}
+        <footer className="bg-white dark:bg-[#071526] border-t border-slate-200 dark:border-slate-800 py-8 transition-colors duration-250 relative z-10">
+          <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px]">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-slate-900 rounded flex items-center justify-center">
+                <Truck className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="font-black text-slate-400 uppercase tracking-widest">
+                © 2026 CargaRadar Logistics Security
+              </span>
+            </div>
+            <div className="flex gap-6 font-bold text-slate-400 uppercase">
+              <span>Protocol: v2.5.0-STABLE</span>
+              <span>Status: Operational</span>
+            </div>
+          </div>
+        </footer>
+
+      </div>
 
       {/* GLOBAL SEARCH DETAILS MODAL */}
       {selectedCargoFromSearch && (
