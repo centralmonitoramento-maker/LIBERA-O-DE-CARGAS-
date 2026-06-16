@@ -155,7 +155,7 @@ service cloud.firestore {
          (isPortaria() && incoming().diff(existing()).affectedKeys().hasAny(['gateVerified', 'gateVerifiedAt', 'gateVerifiedBy', 'gatePhotoPlate', 'gatePhotoSeal', 'gatePhotoManifest', 'gateObservation', 'gateStatus', 'status', 'plate', 'driverName', 'sealNumber', 'destination', 'palletCount']))
       );
 
-      allow delete: if !isSignedIn() || isAdmin();
+      allow delete: if !isSignedIn() || isAdmin() || isPortaria();
     }
 
     // Event Logs Collection Rules

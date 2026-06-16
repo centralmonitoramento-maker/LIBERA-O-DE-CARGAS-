@@ -752,7 +752,28 @@ const App: React.FC = () => {
       addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
     } catch (err) {
       console.warn('Conexão instável. Carga atualizada localmente.', err);
-      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} atualizada offline por ${username}`, username, updatedLoad.id);
+      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} updated offline por ${username}`, username, updatedLoad.id);
+    }
+  };
+
+  const handleDeleteLoad = async (loadId: string) => {
+    const load = loads.find(l => l.id === loadId);
+    if (!load) return;
+    const username = loggedInUser?.username || 'Sistema';
+
+    // Otimista: remove localmente
+    setLoads((prev) => {
+      const updated = prev.filter(l => l.id !== loadId);
+      saveLoadsToLocalStorage(updated);
+      return updated;
+    });
+
+    try {
+      await deleteDoc(doc(db, 'loads', loadId));
+      addLog('Exclusão de Carga', `Carga ${load.plate} excluída por ${username}`, username, loadId);
+    } catch (err) {
+      console.warn('Conexão instável. Carga excluída localmente.', err);
+      addLog('Exclusão de Carga (Local)', `Carga ${load.plate} excluída offline por ${username}`, username, loadId);
     }
   };
 
@@ -990,6 +1011,7 @@ const App: React.FC = () => {
           <PortariaView 
             loads={loads}
             onUpdateLoad={handleUpdateLoad}
+            onDeleteLoad={handleDeleteLoad}
             logs={logs}
             loggedInUser={loggedInUser}
           />

@@ -23,6 +23,7 @@ import { compressImage } from '../utils/imageCompressor';
 interface PortariaViewProps {
   loads: CargoLoad[];
   onUpdateLoad: (load: CargoLoad) => Promise<void>;
+  onDeleteLoad?: (id: string) => Promise<void>;
   logs?: EventLog[];
   loggedInUser: User | null;
 }
@@ -30,11 +31,13 @@ interface PortariaViewProps {
 export const PortariaView: React.FC<PortariaViewProps> = ({ 
   loads = [], 
   onUpdateLoad, 
-  logs, 
+  onDeleteLoad,
+  logs,
   loggedInUser 
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Validation Form states
   const [gatePhotoPlate, setGatePhotoPlate] = useState<string[]>([]);
@@ -145,7 +148,31 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     setEditPalletCount(load.palletCount || 0);
     setIsEditingMainData(false);
     setNotification(null);
+    setShowDeleteConfirm(false);
     setIsModalOpen(true); // Abre modal sobreposto
+  };
+
+  const handleDeleteConfirmClick = async () => {
+    if (!selectedLoad || !onDeleteLoad) return;
+    try {
+      await onDeleteLoad(selectedLoad.id);
+      setNotification({
+        type: 'success',
+        message: `Carga de placa ${selectedLoad.plate} excluída com sucesso!`
+      });
+      setShowDeleteConfirm(false);
+      
+      setTimeout(() => {
+        setIsModalOpen(false);
+        setSelectedLoadId(null);
+        setNotification(null);
+      }, 1500);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: 'Erro ao excluir a carga do sistema.'
+      });
+    }
   };
 
   // Synchronize checklist items with gateStatus
@@ -668,28 +695,86 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditingMainData(!isEditingMainData);
-                      setEditPlate(selectedLoad.plate);
-                      setEditDriverName(selectedLoad.driverName);
-                      setEditSealNumber(selectedLoad.sealNumber || '');
-                      setEditDestination(selectedLoad.destination);
-                      setEditPalletCount(selectedLoad.palletCount || 0);
-                    }}
-                    className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider border rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-                      isEditingMainData 
-                        ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-700' 
-                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    {isEditingMainData ? 'Visualizar Lançamento' : 'Alterar Dados da Carga'}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingMainData(!isEditingMainData);
+                        setShowDeleteConfirm(false);
+                        setEditPlate(selectedLoad.plate);
+                        setEditDriverName(selectedLoad.driverName);
+                        setEditSealNumber(selectedLoad.sealNumber || '');
+                        setEditDestination(selectedLoad.destination);
+                        setEditPalletCount(selectedLoad.palletCount || 0);
+                      }}
+                      className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider border rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                        isEditingMainData 
+                          ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-700' 
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      {isEditingMainData ? 'Visualizar Lançamento' : 'Alterar Dados da Carga'}
+                    </button>
+
+                    {onDeleteLoad && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteConfirm(!showDeleteConfirm);
+                          setIsEditingMainData(false);
+                        }}
+                        className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider border rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                          showDeleteConfirm
+                            ? 'bg-rose-700 text-white border-rose-700 hover:bg-rose-850'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-xs'
+                        }`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {showDeleteConfirm ? 'Voltar para Lançamento' : 'Excluir Carga Lancada'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {!isEditingMainData ? (
+                {showDeleteConfirm ? (
+                  <div className="bg-rose-50/70 border-2 border-rose-200 rounded-2xl p-6 md:p-8 space-y-5 text-left animate-in zoom-in-95 duration-200">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-rose-100 rounded-xl text-rose-600 shrink-0">
+                        <AlertCircle className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-sans font-black text-xs text-rose-850 uppercase tracking-wider">
+                          Confirmar Exclusão de Carga
+                        </h4>
+                        <p className="text-xs text-rose-700 font-bold leading-normal">
+                          Você tem certeza de que deseja excluir permanentemente a carga com a placa <span className="bg-rose-100 px-1.5 py-0.5 rounded font-mono font-black">{selectedLoad.plate}</span>?
+                        </p>
+                        <p className="text-xs text-rose-650 leading-relaxed">
+                          Esta ação é irreversível e removerá este veículo de todas as listagens (Portaria e Central). Utilize esta ferramenta exclusivamente para remover lançamentos feitos equivocadamente ou em duplicidade, evitando o excesso de informações na portaria.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-rose-200/50 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-white border border-slate-205 text-slate-600 hover:bg-slate-50 cursor-pointer transition-all"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteConfirmClick}
+                        className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-rose-655 text-white border-0 hover:bg-rose-755 flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-95"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-200" />
+                        Sim, Excluir Carga
+                      </button>
+                    </div>
+                  </div>
+                ) : !isEditingMainData ? (
                   /* SIMPLIFIED PORTARIA CHECK-IN */
                   <div className="space-y-6 animate-in fade-in duration-200">
                     
