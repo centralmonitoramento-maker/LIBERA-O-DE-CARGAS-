@@ -36,6 +36,7 @@ export interface CargoLoad {
   id: string;
   plate: string;
   driverName: string;
+  driverPhone?: string;
   cargoType: CargoType;
   origin: string;
   destination: string;

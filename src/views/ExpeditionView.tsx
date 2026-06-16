@@ -18,7 +18,8 @@ import {
   ArrowRight, 
   Navigation,
   Search,
-  Pencil
+  Pencil,
+  Phone
 } from 'lucide-react';
 
 const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
@@ -348,6 +349,17 @@ const VEHICLE_PLATES = Array.from(new Set([
   ...getUniquePlatesNormalized()
 ]));
 
+const formatPhoneNumber = (value: string) => {
+  if (!value) return value;
+  const phoneNumber = value.replace(/[^\d]/g, '');
+  const phoneNumberLength = phoneNumber.length;
+  if (phoneNumberLength < 3) return phoneNumber;
+  if (phoneNumberLength < 7) {
+    return `(${phoneNumber.slice(0, 2)}) ${phoneNumber.slice(2)}`;
+  }
+  return `(${phoneNumber.slice(0, 2)}) ${phoneNumber.slice(2, 7)}-${phoneNumber.slice(7, 11)}`;
+};
+
 interface ExpeditionViewProps {
   onSubmit: (load: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => void;
   onUpdateLoad?: (updatedLoad: CargoLoad) => Promise<void>;
@@ -358,6 +370,7 @@ interface ExpeditionViewProps {
 export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpdateLoad, loads = [], logs }) => {
   const [plate, setPlate] = useState('');
   const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
   const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
@@ -496,6 +509,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setEditingLoadId(load.id);
     setPlate(load.plate);
     setDriverName(load.driverName);
+    setDriverPhone(load.driverPhone || '');
     setCargoType(load.cargoType);
     setOrigin(load.origin);
     setDestination(load.destination);
@@ -532,6 +546,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setEditingLoadId(null);
     setPlate('');
     setDriverName('');
+    setDriverPhone('');
     setOrigin('');
     setDestination('');
     setAdditionalDestinations([]);
@@ -665,6 +680,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         ...originalLoad,
         plate: normalizedPlate,
         driverName,
+        driverPhone: driverPhone || undefined,
         cargoType,
         origin,
         destination,
@@ -690,6 +706,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
       onSubmit({
         plate: normalizedPlate,
         driverName,
+        driverPhone: driverPhone || undefined,
         cargoType,
         origin,
         destination,
@@ -845,6 +862,24 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                   placeholder="Nome completo"
                   required
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Telefone do Motorista</label>
+                <div className="relative">
+                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="tel"
+                    value={driverPhone}
+                    onChange={(e) => {
+                      const formatted = formatPhoneNumber(e.target.value);
+                      setDriverPhone(formatted);
+                    }}
+                    maxLength={15}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all"
+                    placeholder="(00) 90000-0000"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1500,6 +1535,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                             </div>
                             <div className="text-xs font-bold text-slate-700">
                               Motorista: <span className="font-semibold text-slate-500">{load.driverName}</span>
+                              {load.driverPhone && (
+                                <span className="text-slate-400 font-medium block mt-0.5">Tel: {load.driverPhone}</span>
+                              )}
                             </div>
                           </div>
 

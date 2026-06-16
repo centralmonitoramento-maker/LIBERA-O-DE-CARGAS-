@@ -29,7 +29,8 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell,
+  PieChart, Pie
 } from 'recharts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -527,6 +528,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showOccurrencesModal, setShowOccurrencesModal] = useState<boolean>(false);
+  const [showDivergentReleaseConfirm, setShowDivergentReleaseConfirm] = useState<boolean>(false);
 
   const [selectedRegionName, setSelectedRegionName] = useState<string | null>(null);
   const [selectedRegionStoreSearch, setSelectedRegionStoreSearch] = useState<string>('');
@@ -936,6 +938,21 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
   const selectedLoad = loads.find(l => l.id === selectedLoadId);
 
+  const awaitingCount = useMemo(() => loads.filter(l => l.status === CargoStatus.AWAITING).length, [loads]);
+  
+  const pieData = useMemo(() => {
+    const data = [
+      { name: 'Divergência', value: centralStats.blockedCount, color: '#f43f5e' },
+      { name: 'Liberado', value: centralStats.releasedCount, color: '#10b981' },
+      { name: 'Aguardando', value: awaitingCount, color: '#f59e0b' }
+    ].filter(item => item.value > 0);
+    
+    if (data.length === 0) {
+      return [{ name: 'Sem cargas', value: 1, color: '#cbd5e1' }];
+    }
+    return data;
+  }, [centralStats.blockedCount, centralStats.releasedCount, awaitingCount]);
+
   const handleExportManifest = () => {
     if (!selectedLoad) return;
     const doc = new jsPDF();
@@ -1150,6 +1167,50 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     : false;
 
   const isFourStepValidated = isSealMatched && isPalletsMatched && isPlateMatched && isDriverMatched;
+
+  const handleDivergentRelease = () => {
+    if (!selectedLoad) return;
+    const timestamp = new Date().toISOString();
+    
+    let currentAuditor = 'Sistema';
+    try {
+      const persisted = localStorage.getItem('cargoradar_user');
+      if (persisted) {
+        const u = JSON.parse(persisted);
+        currentAuditor = u.username || u.fullName || 'Sistema';
+      }
+    } catch (e) {
+      console.warn('Erro ao ler usuário logado para auditoria:', e);
+    }
+
+    const updatedLoad: CargoLoad = {
+      ...selectedLoad,
+      status: CargoStatus.RELEASED,
+      gateStatus: 'Divergente' as const,
+      auditedAt: timestamp,
+      occurrenceHistory: [
+        ...(selectedLoad.occurrenceHistory || []),
+        {
+          type: OccurrenceType.QUANTITY_DISCREPANCY,
+          description: `Liberação forçada com divergência autorizada pela Central de Monitoramento por ${currentAuditor}. Detalhes informados no gate: Placa [${plateConfirm}], Lacre [${sealConfirm}], Motorista [${driverConfirm}], Paletes [${palletsConfirm}].`,
+          auditor: currentAuditor,
+          timestamp
+        }
+      ]
+    };
+
+    if (onUpdateLoad) {
+      onUpdateLoad(updatedLoad);
+    } else {
+      onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+    }
+
+    setSealConfirm('');
+    setPalletsConfirm('');
+    setPlateConfirm('');
+    setDriverConfirm('');
+    setShowDivergentReleaseConfirm(false);
+  };
 
   useEffect(() => {
     if (selectedLoad) {
@@ -1772,7 +1833,76 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
       </div>
 
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        {/* Card 1: Divergências Ativas (Cargas Bloqueadas) */}
+        <div className={`p-6 rounded-3xl border shadow-sm flex items-center justify-between min-h-[140px] transition-all duration-300 ${
+          centralStats.blockedCount > 0
+            ? 'bg-rose-50 border-rose-300 shadow-lg shadow-rose-100/50'
+            : 'bg-white border-slate-200'
+        }`}>
+          <div className="space-y-2.5 flex-1">
+            <span className={`text-[10px] font-black uppercase tracking-widest ${
+              centralStats.blockedCount > 0 ? 'text-red-600' : 'text-slate-400'
+            }`}>
+              Divergências Ativas
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-3.5xl font-black font-mono ${
+                centralStats.blockedCount > 0 ? 'text-rose-600' : 'text-slate-800'
+              }`}>
+                {centralStats.blockedCount}
+              </span>
+              <span className={`text-[10px] font-black uppercase ${
+                centralStats.blockedCount > 0 ? 'text-rose-500' : 'text-slate-500'
+              }`}>
+                bloqueadas
+              </span>
+            </div>
+            
+            {/* Legend showing status counts */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>Div: {centralStats.blockedCount}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>Lib: {centralStats.releasedCount}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>Agu: {awaitingCount}
+              </span>
+            </div>
+          </div>
+
+          {/* Mini doughnut chart with an absolute centered icon */}
+          <div className="w-[88px] h-[88px] shrink-0 relative flex items-center justify-center ml-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={28}
+                  outerRadius={38}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            
+            {/* Absolute centered icon in the hole of the doughnut */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              {centralStats.blockedCount > 0 ? (
+                <ShieldAlert className="w-4 h-4 text-rose-500 animate-pulse" />
+              ) : (
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+              )}
+            </div>
+          </div>
+        </div>
         {/* Card 1: Tempo Médio de Liberação */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-start justify-between min-h-[140px]">
           <div className="space-y-3 flex-1">
@@ -2115,7 +2245,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     
                     <div className="flex justify-between items-end">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate w-40">{load.driverName}</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate w-40">
+                          {load.driverName} {load.driverPhone ? `• ${load.driverPhone}` : ''}
+                        </p>
                         <p className="text-[9px] font-black text-primary-navy uppercase tracking-tighter">{load.origin} ➔ {load.destination}</p>
                         <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
                           load.gateStatus === 'Aprovado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' :
@@ -3073,15 +3205,25 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Ações de Controle Central</h3>
                 
                 {/* Validador de Quatro Etapas */}
-                {selectedLoad.status === CargoStatus.AWAITING && (
-                  <div className="mb-6 bg-amber-50/50 border border-amber-200 rounded-3xl p-6 space-y-4">
-                    <div className="flex items-center gap-2 text-amber-800">
-                      <ShieldCheck className="w-5 h-5 text-amber-500" />
+                {(selectedLoad.status === CargoStatus.AWAITING || selectedLoad.status === CargoStatus.BLOCKED) && (
+                  <div className={`mb-6 border rounded-3xl p-6 space-y-4 ${
+                    selectedLoad.status === CargoStatus.BLOCKED 
+                      ? 'bg-rose-50/40 border-rose-250' 
+                      : 'bg-amber-50/50 border-amber-200'
+                  }`}>
+                    <div className={`flex items-center gap-2 ${
+                      selectedLoad.status === CargoStatus.BLOCKED ? 'text-red-800' : 'text-amber-800'
+                    }`}>
+                      <ShieldCheck className={`w-5 h-5 ${
+                        selectedLoad.status === CargoStatus.BLOCKED ? 'text-rose-500' : 'text-amber-500'
+                      }`} />
                       <div>
                         <h4 className="text-xs font-black uppercase tracking-wider">
                           {selectedLoad.cargoType === CargoType.COMPARTILHADA 
                             ? `Validador do Destino Atual: ${currentDest}` 
-                            : 'Validador Digital em Quatro Etapas'}
+                            : selectedLoad.status === CargoStatus.BLOCKED
+                              ? 'Validador para Liberação com Divergência'
+                              : 'Validador Digital em Quatro Etapas'}
                         </h4>
                         {selectedLoad.cargoType === CargoType.COMPARTILHADA && (
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Destino {currentDestIndex + 1} de {targets.length}</span>
@@ -3272,55 +3414,71 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </div>
                 )}
 
+                {selectedLoad.status === CargoStatus.BLOCKED && isFourStepValidated && (
+                  <div className="mb-6 bg-rose-50 border border-rose-200 rounded-3xl p-6 flex items-start gap-3 text-rose-800 animate-pulse">
+                    <CheckCircle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider">Conferência Pronta (Com Divergência)</h4>
+                      <p className="text-[11px] font-medium text-slate-650 mt-0.5">
+                        A placa, o lacre, o motorista e os paletes foram digitados com sucesso. Confirme abaixo para realizar a <strong>Liberação de Gate com Divergência Ativa</strong>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => {
-                      // Shared cargo leg or final leg handling
-                      if (selectedLoad.cargoType === CargoType.COMPARTILHADA) {
-                        if (currentDestIndex < targets.length - 1) {
-                          // If they clicked the button and we have the new seal, advance!
-                          if (!newSealForNextTrip.trim()) return;
-                          const updatedLoad = {
-                            ...selectedLoad,
-                            currentDestinationIndex: currentDestIndex + 1,
-                            checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest],
-                            sealsByDest: {
-                              ...(selectedLoad.sealsByDest || {}),
-                              [targets[currentDestIndex + 1]]: newSealForNextTrip.toUpperCase()
+                      if (selectedLoad.status === CargoStatus.BLOCKED) {
+                        setShowDivergentReleaseConfirm(true);
+                      } else {
+                        // Shared cargo leg or final leg handling
+                        if (selectedLoad.cargoType === CargoType.COMPARTILHADA) {
+                          if (currentDestIndex < targets.length - 1) {
+                            // If they clicked the button and we have the new seal, advance!
+                            if (!newSealForNextTrip.trim()) return;
+                            const updatedLoad = {
+                              ...selectedLoad,
+                              currentDestinationIndex: currentDestIndex + 1,
+                              checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest],
+                              sealsByDest: {
+                                ...(selectedLoad.sealsByDest || {}),
+                                [targets[currentDestIndex + 1]]: newSealForNextTrip.toUpperCase()
+                              }
+                            };
+                            if (onUpdateLoad) {
+                              onUpdateLoad(updatedLoad);
                             }
-                          };
-                          if (onUpdateLoad) {
-                            onUpdateLoad(updatedLoad);
+                            setSealConfirm('');
+                            setPalletsConfirm('');
+                            setPlateConfirm('');
+                            setDriverConfirm('');
+                            setNewSealForNextTrip('');
+                          } else {
+                            // Last destination, complete the route!
+                            const updatedLoad = {
+                              ...selectedLoad,
+                              status: CargoStatus.RELEASED,
+                              checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest]
+                            };
+                            if (onUpdateLoad) {
+                              onUpdateLoad(updatedLoad);
+                            } else {
+                              onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+                            }
                           }
-                          setSealConfirm('');
-                          setPalletsConfirm('');
-                          setPlateConfirm('');
-                          setDriverConfirm('');
-                          setNewSealForNextTrip('');
                         } else {
-                          // Last destination, complete the route!
+                          // Standard load
                           const updatedLoad = {
                             ...selectedLoad,
-                            status: CargoStatus.RELEASED,
-                            checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest]
+                            gateStatus: 'Aguardando' as const,
+                            auditedAt: new Date().toISOString()
                           };
                           if (onUpdateLoad) {
                             onUpdateLoad(updatedLoad);
                           } else {
                             onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
                           }
-                        }
-                      } else {
-                        // Standard load
-                        const updatedLoad = {
-                          ...selectedLoad,
-                          gateStatus: 'Aguardando' as const,
-                          auditedAt: new Date().toISOString()
-                        };
-                        if (onUpdateLoad) {
-                          onUpdateLoad(updatedLoad);
-                        } else {
-                          onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
                         }
                       }
                     }}
@@ -3334,15 +3492,19 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       !isFourStepValidated || 
                       (selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && !newSealForNextTrip.trim())
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                        : selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1
-                          ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        : selectedLoad.status === CargoStatus.BLOCKED
+                          ? 'bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 animate-pulse'
+                          : selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1
+                            ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                     }`}
                   >
                     <CheckCircle className="w-5 h-5" />
-                    {selectedLoad.cargoType === CargoType.COMPARTILHADA 
-                      ? (currentDestIndex < targets.length - 1 ? `Liberar para ${targets[currentDestIndex + 1]}` : 'CONFERIR & FINALIZAR ROTA')
-                      : 'LIBERAR PARA GATE'}
+                    {selectedLoad.status === CargoStatus.BLOCKED 
+                      ? 'LIBERAR COM DIVERGÊNCIA'
+                      : selectedLoad.cargoType === CargoType.COMPARTILHADA 
+                        ? (currentDestIndex < targets.length - 1 ? `Liberar para ${targets[currentDestIndex + 1]}` : 'CONFERIR & FINALIZAR ROTA')
+                        : 'LIBERAR PARA GATE'}
                   </button>
                   <button
                     onClick={() => onUpdateStatus(selectedLoad.id, CargoStatus.BLOCKED)}
@@ -3417,6 +3579,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nome do Motorista</p>
                 <span className="text-sm font-bold text-slate-700 block truncate">{selectedLoad.driverName}</span>
+                {selectedLoad.driverPhone && (
+                  <span className="text-xs font-semibold text-slate-500 block mt-0.5">{selectedLoad.driverPhone}</span>
+                )}
               </div>
 
               <div>
@@ -3593,6 +3758,81 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
             <XCircle className="w-5 h-5" />
           </button>
           <img src={previewImage} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-2xl" />
+        </div>
+      </div>
+    )}
+
+    {/* Divergent Release Confirmation Modal */}
+    {showDivergentReleaseConfirm && selectedLoad && (
+      <div 
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300"
+        onClick={() => setShowDivergentReleaseConfirm(false)}
+      >
+        <div 
+          className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-red-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-red-50 p-6 border-b border-red-100 flex gap-4 items-start">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-black text-red-500 tracking-widest block text-left">Confirmação Crítica</span>
+              <h3 className="font-sans text-lg font-black text-slate-800 tracking-tight text-left">Liberar de Gate com Divergência</h3>
+              <p className="text-xs text-slate-500 font-medium text-left">Esta carga possui um alerta de divergência ativo na Central.</p>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 space-y-4 text-slate-705 text-left">
+            <p className="text-xs font-medium leading-relaxed">
+              Você está autorizando a liberação do veículo mesmo sob status de divergência. Todos os dados digitados foram conferidos e validados pelo monitoramento:
+            </p>
+
+            {/* Checked Data details */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-[9px] text-slate-400 font-bold block uppercase">Placa</span>
+                <span className="font-mono font-black text-slate-800">{plateConfirm}</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-400 font-bold block uppercase">Lacre Validado</span>
+                <span className="font-mono font-black text-slate-800">{sealConfirm}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-[9px] text-slate-400 font-bold block uppercase">Motorista</span>
+                <span className="font-black text-slate-800">{driverConfirm}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-[9px] text-slate-400 font-bold block uppercase">Quantidade de Paletes</span>
+                <span className="font-black text-slate-800">{palletsConfirm} unidades</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-50/50 rounded-xl border border-red-100/50 flex gap-2 text-[11px] text-red-850">
+              <ShieldCheck className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="font-semibold leading-relaxed">
+                Esta ação será auditada e gravada nos históricos de ocorrência com a observação de ciência e liberação forçada com divergências.
+              </p>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="bg-slate-50 p-5 border-t border-slate-100 flex justify-end gap-3 rounded-b-3xl">
+            <button
+              onClick={() => setShowDivergentReleaseConfirm(false)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl py-3 px-5 text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleDivergentRelease}
+              className="bg-red-600 hover:bg-red-500 text-white rounded-xl py-3 px-5 text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer border-0 shadow-sm"
+            >
+              Confirmar Liberação
+            </button>
+          </div>
         </div>
       </div>
     )}

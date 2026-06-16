@@ -556,6 +556,9 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                       </span>
                       <span className="block text-[10px] text-slate-400 font-extrabold uppercase mt-2.5">Motorista</span>
                       <span className="text-sm font-bold text-slate-800 truncate block max-w-[190px]">{load.driverName}</span>
+                      {load.driverPhone && (
+                        <span className="block text-[11px] font-semibold text-slate-500 mt-1">{load.driverPhone}</span>
+                      )}
                     </div>
                     
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -676,6 +679,9 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                     <div>
                       <span className="block text-[8px] text-slate-400 font-black">Motorista</span>
                       <span className="text-primary-navy font-black">{selectedLoad.driverName}</span>
+                      {selectedLoad.driverPhone && (
+                        <span className="block text-[10px] font-semibold text-slate-500">{selectedLoad.driverPhone}</span>
+                      )}
                     </div>
                     <div>
                       <span className="block text-[8px] text-slate-400 font-black">Lacre Cadastrado</span>

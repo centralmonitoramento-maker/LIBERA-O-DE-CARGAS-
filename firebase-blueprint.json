@@ -8,6 +8,7 @@
         "id": { "type": "string" },
         "plate": { "type": "string" },
         "driverName": { "type": "string" },
+        "driverPhone": { "type": "string" },
         "cargoType": { "type": "string" },
         "origin": { "type": "string" },
         "destination": { "type": "string" },
