@@ -2445,6 +2445,23 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                           {load.driverName} {load.driverPhone ? `• ${load.driverPhone}` : ''}
                         </p>
                         <p className="text-[9px] font-black text-primary-navy uppercase tracking-tighter">{load.origin} ➔ {load.destination}</p>
+                        {load.cargoClassificationByDest && Object.keys(load.cargoClassificationByDest).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {Object.entries(load.cargoClassificationByDest).map(([dest, info]) => {
+                              let badgeColor = 'bg-slate-50 text-slate-600 border-slate-200';
+                              if (info === 'FLV') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/50';
+                              else if (info === 'CONGELADA') badgeColor = 'bg-sky-50 text-sky-700 border-sky-200/50';
+                              else if (info === 'PERECÍVEIS') badgeColor = 'bg-rose-50 text-rose-700 border-rose-200/50';
+                              else if (info === 'SECA') badgeColor = 'bg-slate-105 text-slate-700 border-slate-200';
+
+                              return (
+                                <span key={dest} className={`text-[8px] font-black uppercase px-1 rounded border flex items-center gap-0.5 ${badgeColor}`}>
+                                  <span className="opacity-60">{dest}:</span> {info}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         <span className={`inline-block mt-1 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
                           load.gateStatus === 'Aprovado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' :
                           load.gateStatus === 'Divergente' ? 'bg-rose-50 text-rose-700 border-rose-200/50 animate-pulse' :

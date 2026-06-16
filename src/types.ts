@@ -74,6 +74,7 @@ export interface CargoLoad {
   sealsByDest?: Record<string, string>;
   checkedDestinations?: string[];
   sharedCargoDescriptions?: Record<string, string>;
+  cargoClassificationByDest?: Record<string, string>;
   // Portaria Validation
   gateVerified?: boolean;
   gateVerifiedAt?: string;

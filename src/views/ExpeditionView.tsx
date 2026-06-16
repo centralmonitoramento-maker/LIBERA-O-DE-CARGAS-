@@ -19,7 +19,10 @@ import {
   Navigation,
   Search,
   Pencil,
-  Phone
+  Phone,
+  Leaf,
+  Snowflake,
+  Activity
 } from 'lucide-react';
 
 const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
@@ -382,6 +385,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [seals, setSeals] = useState<string[]>(['']);
   const [palletDetailsByDest, setPalletDetailsByDest] = useState<Record<string, Record<string, number>>>({});
   const [sharedCargoDescriptions, setSharedCargoDescriptions] = useState<Record<string, string>>({});
+  const [cargoClassificationByDest, setCargoClassificationByDest] = useState<Record<string, string>>({});
 
   // Synchronize plate structure
   useEffect(() => {
@@ -403,6 +407,37 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     const combined = seals.map(s => s.trim().toUpperCase()).filter(Boolean).join(', ');
     setSealNumber(combined);
   }, [seals]);
+
+  // Synchronize and pre-fill cargo classification per destination
+  useEffect(() => {
+    const defaultType = 
+      cargoType === CargoType.FLV ? 'FLV' :
+      cargoType === CargoType.PERECIVEIS ? 'PERECÍVEIS' :
+      cargoType === CargoType.SECA ? 'SECA' : 'SECA';
+      
+    const updated = { ...cargoClassificationByDest };
+    let changed = false;
+    
+    const destinations = [destination, ...additionalDestinations].filter(Boolean);
+    destinations.forEach(dest => {
+      if (!updated[dest]) {
+        updated[dest] = defaultType;
+        changed = true;
+      }
+    });
+
+    // Remove old destinations that are no longer present
+    Object.keys(updated).forEach(dest => {
+      if (!destinations.includes(dest)) {
+        delete updated[dest];
+        changed = true;
+      }
+    });
+    
+    if (changed) {
+      setCargoClassificationByDest(updated);
+    }
+  }, [destination, additionalDestinations, cargoType]);
 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
@@ -558,6 +593,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setParInvoiceNumber(load.parInvoiceNumber || '');
     setParDescription(load.parDescription || '');
     setSharedCargoDescriptions(load.sharedCargoDescriptions || {});
+    setCargoClassificationByDest(load.cargoClassificationByDest || {});
 
     // Now, let's load the palletDetailsByDest:
     const newPalletDetailsByDest: Record<string, Record<string, number>> = {};
@@ -594,6 +630,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setSeals(['']);
     setPalletDetailsByDest({});
     setSharedCargoDescriptions({});
+    setCargoClassificationByDest({});
     setIsHighRisk(false);
     setParType('');
     setParInvoiceNumber('');
@@ -750,6 +787,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
         sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
+        cargoClassificationByDest,
         sealNumber: combinedSeal,
         palletCount,
         palletDetails: payloadPalletDetails,
@@ -776,6 +814,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
         sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
+        cargoClassificationByDest,
         sealNumber: combinedSeal,
         palletCount,
         palletDetails: payloadPalletDetails,
@@ -1298,6 +1337,95 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 </div>
               )}
 
+              {destinationsList.length > 0 && (
+                <div className="md:col-span-2 space-y-4 bg-slate-50/50 border border-slate-200 rounded-3xl p-6 shadow-xs animate-in slide-in-from-top-4 duration-350">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-primary-navy tracking-wider flex items-center gap-1.5">
+                      <Compass className="w-4 h-4 text-primary-gold" />
+                      Classificação da Carga por Destino
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Determine se a carga de cada destino é FLV, Congelada, Seca ou Perecíveis</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {destinationsList.map((dest) => {
+                      const currentClassification = cargoClassificationByDest[dest] || 'SECA';
+                      return (
+                        <div key={dest} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3.5">
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-2">
+                            <span className="text-[11px] font-black uppercase text-slate-500 tracking-wider">
+                              Destino: <span className="text-primary-navy font-black text-xs">{dest}</span>
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCargoClassificationByDest(prev => ({ ...prev, [dest]: 'FLV' }));
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                currentClassification === 'FLV'
+                                  ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs scale-102 ring-1 ring-emerald-500/20'
+                                  : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                              }`}
+                            >
+                              <Leaf className="w-3.5 h-3.5 shrink-0" />
+                              FLV
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCargoClassificationByDest(prev => ({ ...prev, [dest]: 'CONGELADA' }));
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                currentClassification === 'CONGELADA'
+                                  ? 'bg-sky-50 border-sky-450 text-sky-700 shadow-xs scale-102 ring-1 ring-sky-450/20'
+                                  : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                              }`}
+                            >
+                              <Snowflake className="w-3.5 h-3.5 shrink-0" />
+                              Congelada
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCargoClassificationByDest(prev => ({ ...prev, [dest]: 'SECA' }));
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                currentClassification === 'SECA'
+                                  ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-xs scale-102 ring-1 ring-slate-400/20'
+                                  : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                              }`}
+                            >
+                              <Package className="w-3.5 h-3.5 shrink-0" />
+                              Seca
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCargoClassificationByDest(prev => ({ ...prev, [dest]: 'PERECÍVEIS' }));
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                currentClassification === 'PERECÍVEIS'
+                                  ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs scale-102 ring-1 ring-rose-300/20'
+                                  : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                              }`}
+                            >
+                              <Activity className="w-3.5 h-3.5 shrink-0" />
+                              Perecíveis
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-6">
                 <div>
                   <h3 className="text-xs font-black uppercase text-primary-navy tracking-wider">Lançamento & Classificação de Paletes</h3>
@@ -1686,6 +1814,24 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                             <span className="block text-slate-700 font-semibold">L- {load.sealNumber || 'N/A'} ({load.palletCount} P)</span>
                           </div>
                         </div>
+
+                        {load.cargoClassificationByDest && Object.keys(load.cargoClassificationByDest).length > 0 && (
+                          <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1.5">
+                            {Object.entries(load.cargoClassificationByDest).map(([dest, info]) => {
+                              let badgeColor = 'bg-slate-50 text-slate-600 border-slate-200';
+                              if (info === 'FLV') badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-150';
+                              else if (info === 'CONGELADA') badgeColor = 'bg-sky-50 text-sky-700 border-sky-150';
+                              else if (info === 'PERECÍVEIS') badgeColor = 'bg-rose-50 text-rose-700 border-rose-150';
+                              else if (info === 'SECA') badgeColor = 'bg-slate-100 text-slate-700 border-slate-205';
+
+                              return (
+                                <span key={dest} className={`text-[8px] font-extrabold uppercase px-2 py-0.5 rounded border flex items-center gap-1 ${badgeColor}`}>
+                                  <span className="opacity-60">{dest}:</span> {info}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         {load.createdAt && (
                           <div className="text-[9px] text-slate-400 flex items-center gap-1.5 pt-2 border-t border-dashed border-slate-100 uppercase tracking-widest font-extrabold">
