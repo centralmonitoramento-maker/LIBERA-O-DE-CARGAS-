@@ -265,6 +265,8 @@ const getRegionForStore = (storeKey: string): 'DF' | 'GO' | 'BA' | 'TO' => {
   if (upper.includes('-GO') || 
       upper.includes('GOIANIA') || 
       upper.includes('GOIÂNIA') ||
+      upper.includes('BALNEARIO') || 
+      upper.includes('BALNEÁRIO') || 
       upper.includes('LUZIANIA') || 
       upper.includes('LUZIÂNIA') || 
       upper.includes('NOVO GAMA') || 
@@ -707,6 +709,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
       const isGo = dest.includes('-GO') || 
                    dest.includes('GOIANIA') || 
                    dest.includes('GOIÂNIA') ||
+                   dest.includes('BALNEARIO') || 
+                   dest.includes('BALNEÁRIO') || 
                    dest.includes('LUZIANIA') || 
                    dest.includes('LUZIÂNIA') || 
                    dest.includes('NOVO GAMA') || 
@@ -841,6 +845,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
       let isGo = dest.includes('-GO') || 
                  dest.includes('GOIANIA') || 
                  dest.includes('GOIÂNIA') ||
+                 dest.includes('BALNEARIO') || 
+                 dest.includes('BALNEÁRIO') || 
                  dest.includes('LUZIANIA') || 
                  dest.includes('LUZIÂNIA') || 
                  dest.includes('NOVO GAMA') || 

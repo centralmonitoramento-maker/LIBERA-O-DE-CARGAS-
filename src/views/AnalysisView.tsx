@@ -420,6 +420,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ loads }) => {
       const isGo = dest.includes('-GO') || 
                    dest.includes('GOIANIA') || 
                    dest.includes('GOIÂNIA') ||
+                   dest.includes('BALNEARIO') || 
+                   dest.includes('BALNEÁRIO') || 
                    dest.includes('LUZIANIA') || 
                    dest.includes('LUZIÂNIA') || 
                    dest.includes('NOVO GAMA') || 

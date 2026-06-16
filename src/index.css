@@ -32,12 +32,15 @@
 }
 
 .dark {
-  --bg-app: #0b1120; /* Deep blue/slate workspace background */
-  --bg-card: #151f32; /* Deep slate card background */
-  --text-main: #f8fafc; /* High contrast text */
-  --text-muted: #cbd5e1; /* Mid-tone adaptive text */
-  --text-muted-more: #94a3b8; /* Less contrast adaptive text */
+  --bg-app: #080f1e; /* Deep high-contrast midnight blue background */
+  --bg-card: #111a2e; /* Highly detailed midnight tile background */
+  --text-main: #ffffff; /* absolute brilliant white text */
+  --text-muted: #f1f5f9; /* high contrast light gray text */
+  --text-muted-more: #cbd5e1; /* highly readable silver gray secondary metadata */
   --border-color: #1e293b; /* Dark slate divider/border */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 @variant dark (&:where(.dark, .dark *));
@@ -81,14 +84,20 @@
   color: var(--text-main);
 }
 
+.dark .text-slate-705,
 .dark .text-slate-700,
+.dark .text-slate-650,
 .dark .text-slate-600,
 .dark .text-slate-600\/80 {
   color: var(--text-muted);
 }
 
+.dark .text-slate-550,
 .dark .text-slate-500,
-.dark .text-slate-400 {
+.dark .text-slate-450,
+.dark .text-slate-400,
+.dark .text-slate-350,
+.dark .text-slate-300 {
   color: var(--text-muted-more);
 }
 

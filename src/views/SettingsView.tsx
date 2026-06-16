@@ -76,6 +76,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
   const [ticketSeverity, setTicketSeverity] = useState('low');
   const [ticketSuccess, setTicketSuccess] = useState(false);
 
+  // Sync theme changes with other views/components
+  useEffect(() => {
+    const handleThemeChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail === 'light' || customEvent.detail === 'dark') {
+        setTheme(customEvent.detail);
+      }
+    };
+    window.addEventListener('theme-changed', handleThemeChanged);
+    return () => {
+      window.removeEventListener('theme-changed', handleThemeChanged);
+    };
+  }, []);
+
   // Sync fullscreen state with actual browser fullscreen
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -118,6 +132,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
       root.classList.remove('dark');
     }
     localStorage.setItem('theme', newTheme);
+    window.dispatchEvent(new CustomEvent('theme-changed', { detail: newTheme }));
   };
 
   const handleAccentChange = (color: string) => {

@@ -111,10 +111,17 @@ export const Layout: React.FC<LayoutProps> = ({
     const handleAccent = () => {
       setAccentColor(localStorage.getItem('cargoradar_accent_color') || 'gold');
     };
+    const handleThemeChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail === 'light' || customEvent.detail === 'dark') {
+        setTheme(customEvent.detail);
+      }
+    };
 
     window.addEventListener('stretch-changed', handleStretch);
     window.addEventListener('fontsize-changed', handleFontSize);
     window.addEventListener('accent-changed', handleAccent);
+    window.addEventListener('theme-changed', handleThemeChanged);
 
     // Initial setups
     handleFontSize();
@@ -123,6 +130,7 @@ export const Layout: React.FC<LayoutProps> = ({
       window.removeEventListener('stretch-changed', handleStretch);
       window.removeEventListener('fontsize-changed', handleFontSize);
       window.removeEventListener('accent-changed', handleAccent);
+      window.removeEventListener('theme-changed', handleThemeChanged);
     };
   }, []);
 
@@ -148,7 +156,9 @@ export const Layout: React.FC<LayoutProps> = ({
   }, [searchQuery, loads]);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    window.dispatchEvent(new CustomEvent('theme-changed', { detail: newTheme }));
   };
 
   const requestNotifPermission = async () => {
