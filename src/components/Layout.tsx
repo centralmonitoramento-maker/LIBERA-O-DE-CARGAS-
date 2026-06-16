@@ -39,6 +39,8 @@ interface LayoutProps {
   isAuthenticated: boolean;
   user: User | null;
   loads?: CargoLoad[];
+  isOffline?: boolean;
+  lastSyncTime?: string | null;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -48,7 +50,9 @@ export const Layout: React.FC<LayoutProps> = ({
   onLogout,
   isAuthenticated,
   user,
-  loads = []
+  loads = [],
+  isOffline = false,
+  lastSyncTime = null
 }) => {
   const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
@@ -522,6 +526,31 @@ export const Layout: React.FC<LayoutProps> = ({
                   >
                     <Bell className={`w-4 h-4 ${notifPermission === 'granted' ? 'text-emerald-450' : 'text-amber-450'}`} />
                   </button>
+                )}
+
+                {/* System Connection Badge Indicator */}
+                {isAuthenticated && (
+                  <>
+                    {isOffline ? (
+                      <div 
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 border border-amber-500/30 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider animate-pulse cursor-help"
+                        title={`Modo Local (Offline). Última sincronização bem-sucedida: ${lastSyncTime || 'Nenhuma recente nesta sessão'}`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                        <span className="hidden sm:inline">MODO LOCAL</span>
+                        <span className="sm:hidden">LOCAL</span>
+                      </div>
+                    ) : (
+                      <div 
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 border border-emerald-500/30 text-emerald-500 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-help"
+                        title={`Sistema conectado ao banco de dados em tempo real. Última sincronização: ${lastSyncTime || 'Agora mesmo'}`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span className="hidden sm:inline">CONECTADO</span>
+                        <span className="sm:hidden font-black">ONLINE</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Quick Theme Toggle Icon */}

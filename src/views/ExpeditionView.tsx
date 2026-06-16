@@ -369,6 +369,8 @@ interface ExpeditionViewProps {
 
 export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpdateLoad, loads = [], logs }) => {
   const [plate, setPlate] = useState('');
+  const [plateCavalo, setPlateCavalo] = useState('');
+  const [plateBau, setPlateBau] = useState('');
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [cargoType, setCargoType] = useState<CargoType>(CargoType.SECA);
@@ -377,23 +379,45 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
   const [newDestination, setNewDestination] = useState('');
   const [sealNumber, setSealNumber] = useState('');
+  const [seals, setSeals] = useState<string[]>(['']);
   const [palletDetailsByDest, setPalletDetailsByDest] = useState<Record<string, Record<string, number>>>({});
   const [sharedCargoDescriptions, setSharedCargoDescriptions] = useState<Record<string, string>>({});
+
+  // Synchronize plate structure
+  useEffect(() => {
+    const cav = plateCavalo.trim().toUpperCase();
+    const bau = plateBau.trim().toUpperCase();
+    if (cav && bau) {
+      setPlate(`${cav} / ${bau}`);
+    } else if (cav) {
+      setPlate(cav);
+    } else if (bau) {
+      setPlate(bau);
+    } else {
+      setPlate('');
+    }
+  }, [plateCavalo, plateBau]);
+
+  // Synchronize seal numbers structure
+  useEffect(() => {
+    const combined = seals.map(s => s.trim().toUpperCase()).filter(Boolean).join(', ');
+    setSealNumber(combined);
+  }, [seals]);
 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
   const suggestions = useMemo(() => {
-    const query = plate.toUpperCase().trim();
+    const query = plateCavalo.toUpperCase().trim();
     if (!query) {
       return VEHICLE_PLATES;
     }
     return VEHICLE_PLATES.filter(p => p.includes(query));
-  }, [plate]);
+  }, [plateCavalo]);
 
   useEffect(() => {
     setActiveSuggestionIndex(-1);
-  }, [plate]);
+  }, [plateCavalo]);
 
   const [showOriginSuggestions, setShowOriginSuggestions] = useState(false);
   const [activeOriginIndex, setActiveOriginIndex] = useState(-1);
@@ -508,6 +532,14 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const handleEditLoad = (load: CargoLoad) => {
     setEditingLoadId(load.id);
     setPlate(load.plate);
+    if (load.plate.includes(' / ')) {
+      const [cav, bau] = load.plate.split(' / ');
+      setPlateCavalo(cav.trim());
+      setPlateBau((bau || '').trim());
+    } else {
+      setPlateCavalo(load.plate);
+      setPlateBau('');
+    }
     setDriverName(load.driverName);
     setDriverPhone(load.driverPhone || '');
     setCargoType(load.cargoType);
@@ -515,6 +547,12 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setDestination(load.destination);
     setAdditionalDestinations(load.additionalDestinations || []);
     setSealNumber(load.sealNumber || '');
+    if (load.sealNumber) {
+      const parts = load.sealNumber.split(',').map(s => s.trim());
+      setSeals(parts);
+    } else {
+      setSeals(['']);
+    }
     setIsHighRisk(!!load.isHighRisk);
     setParType(load.parType || '');
     setParInvoiceNumber(load.parInvoiceNumber || '');
@@ -545,12 +583,15 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const handleCancelEdit = () => {
     setEditingLoadId(null);
     setPlate('');
+    setPlateCavalo('');
+    setPlateBau('');
     setDriverName('');
     setDriverPhone('');
     setOrigin('');
     setDestination('');
     setAdditionalDestinations([]);
     setSealNumber('');
+    setSeals(['']);
     setPalletDetailsByDest({});
     setSharedCargoDescriptions({});
     setIsHighRisk(false);
@@ -640,11 +681,34 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     e.preventDefault();
     setError('');
 
-    const normalizedPlate = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!validatePlate(normalizedPlate)) {
-      setError('Placa inválida. Use o formato Mercosul (AAA1A11) ou Antigo (AAA1111).');
+    const normalizedCavalo = plateCavalo.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const normalizedBau = plateBau.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (!normalizedCavalo) {
+      setError('Por favor, informe a placa do Cavalo.');
       return;
     }
+
+    if (!validatePlate(normalizedCavalo)) {
+      setError('Placa do Cavalo inválida. Use o formato Mercosul (AAA1A11) ou Antigo (AAA1111).');
+      return;
+    }
+
+    if (normalizedBau && !validatePlate(normalizedBau)) {
+      setError('Placa do Baú inválida. Use o formato Mercosul (AAA1A11) ou Antigo (AAA1111).');
+      return;
+    }
+
+    const normalizedPlate = normalizedBau 
+      ? `${normalizedCavalo} / ${normalizedBau}` 
+      : normalizedCavalo;
+
+    const activeSeals = seals.map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (activeSeals.length === 0) {
+      setError('Por favor, adicione pelo menos um número de lacre para a liberação da carga.');
+      return;
+    }
+    const combinedSeal = activeSeals.join(', ');
 
     if (palletCount <= 0) {
       setError('Por favor, adicione e classifique pelo menos um palete para a liberação da carga.');
@@ -686,7 +750,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
         sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
-        sealNumber: sealNumber.toUpperCase(),
+        sealNumber: combinedSeal,
         palletCount,
         palletDetails: payloadPalletDetails,
         isHighRisk,
@@ -712,7 +776,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
         sharedCargoDescriptions: cargoType === CargoType.COMPARTILHADA ? sharedCargoDescriptions : undefined,
-        sealNumber: sealNumber.toUpperCase(),
+        sealNumber: combinedSeal,
         palletCount,
         palletDetails: payloadPalletDetails,
         isHighRisk,
@@ -778,15 +842,15 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2 relative" id="plate-autocomplete-container">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Placa do Veículo</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Placa do Cavalo</label>
                 <div className="relative">
                   <Truck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     id="expedition-plate-input"
                     type="text"
-                    value={plate}
+                    value={plateCavalo}
                     onChange={(e) => {
-                      setPlate(e.target.value.toUpperCase());
+                      setPlateCavalo(e.target.value.toUpperCase());
                       setShowSuggestions(true);
                     }}
                     onFocus={() => setShowSuggestions(true)}
@@ -808,7 +872,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                       } else if (e.key === 'Enter') {
                         if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
                           e.preventDefault();
-                          setPlate(suggestions[activeSuggestionIndex]);
+                          setPlateCavalo(suggestions[activeSuggestionIndex]);
                           setShowSuggestions(false);
                         }
                       } else if (e.key === 'Escape') {
@@ -828,7 +892,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                         type="button"
                         onMouseDown={(e) => {
                           e.preventDefault(); // prevents blur before click registers
-                          setPlate(p);
+                          setPlateCavalo(p);
                           setShowSuggestions(false);
                         }}
                         onMouseEnter={() => setActiveSuggestionIndex(index)}
@@ -850,6 +914,20 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Placa do Baú</label>
+                <div className="relative">
+                  <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={plateBau}
+                    onChange={(e) => setPlateBau(e.target.value.toUpperCase())}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase font-mono"
+                    placeholder="AAA1A11 (Opcional)"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -895,18 +973,56 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Número do Lacre</label>
-                <div className="relative">
-                  <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    value={sealNumber}
-                    onChange={(e) => setSealNumber(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-mono font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
-                    placeholder="L-000000"
-                    required
-                  />
+              {/* Dynamic Multiple Seals Section */}
+              <div className="space-y-3 md:col-span-2 bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Números dos Lacres</label>
+                    <p className="text-[9px] text-slate-400 font-bold ml-1 uppercase mt-0.5">Adicione outros lacres caso seja necessário</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSeals([...seals, ''])}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                    Incluir Lacre
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {seals.map((seal, index) => (
+                    <div key={index} className="flex gap-2 items-center animate-in slide-in-from-top-2 duration-150">
+                      <div className="relative flex-grow">
+                        <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={seal}
+                          onChange={(e) => {
+                            const updated = [...seals];
+                            updated[index] = e.target.value.toUpperCase();
+                            setSeals(updated);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-12 pr-4 py-2.5 text-sm font-mono font-black text-primary-navy focus:ring-2 focus:ring-primary-gold outline-none transition-all uppercase"
+                          placeholder={`L-000000 (Lacre ${index + 1})`}
+                          required={index === 0}
+                        />
+                      </div>
+                      {seals.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = seals.filter((_, i) => i !== index);
+                            setSeals(updated);
+                          }}
+                          className="p-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-100 rounded-xl transition-all cursor-pointer shrink-0"
+                          title="Remover este lacre"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
 

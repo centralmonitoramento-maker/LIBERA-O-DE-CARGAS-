@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
-import { Keyboard, HelpCircle, X, Sparkles } from 'lucide-react';
+import { Keyboard, HelpCircle, X, Sparkles, CloudOff } from 'lucide-react';
 import { ExpeditionView } from './views/ExpeditionView';
 import { CentralView } from './views/CentralView';
 import { AuditView } from './views/AuditView';
@@ -44,6 +44,22 @@ const generateId = (): string => {
 
 // Main Application Component for CargaRadar System - v1.0.1
 const App: React.FC = () => {
+  // Offline and synchronization status of the cached system
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return !window.navigator.onLine;
+    }
+    return false;
+  });
+
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('cargoradar_last_sync') || null;
+    } catch {
+      return null;
+    }
+  });
+
   // Keyboard Shortcut States for accelerated operator workflows
   const [shortcutFeedback, setShortcutFeedback] = useState<string | null>(null);
   const [showShortcutHelp, setShowShortcutHelp] = useState<boolean>(false);
@@ -295,6 +311,27 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Listen to window connection event changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOnline = () => {
+      setIsOffline(false);
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Restores active Firebase Auth session automatically on reload/boot if cached in localStorage
   useEffect(() => {
     if (isAuthenticated && loggedInUser && !auth.currentUser) {
@@ -407,6 +444,21 @@ const App: React.FC = () => {
         liveLoads.push(doc.data() as CargoLoad);
       });
 
+      // Update offline / cache connectivity status
+      const isFromCache = snapshot.metadata.fromCache;
+      if (!isFromCache && navigator.onLine) {
+        setIsOffline(false);
+        const nowStr = new Date().toLocaleString('pt-BR');
+        setLastSyncTime(nowStr);
+        try {
+          localStorage.setItem('cargoradar_last_sync', nowStr);
+        } catch (e) {
+          console.warn('Erro ao salvar timestamp da sincronização:', e);
+        }
+      } else if (!navigator.onLine) {
+        setIsOffline(true);
+      }
+
       // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
       snapshot.docChanges().forEach((change) => {
         const load = change.doc.data() as CargoLoad;
@@ -440,6 +492,7 @@ const App: React.FC = () => {
       saveLoadsToLocalStorage(liveLoads);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
+      setIsOffline(true);
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -1042,7 +1095,52 @@ const App: React.FC = () => {
       isAuthenticated={isAuthenticated}
       user={loggedInUser}
       loads={loads}
+      isOffline={isOffline}
+      lastSyncTime={lastSyncTime}
     >
+      {/* Persistent Offline Banner Toast */}
+      {isOffline && isAuthenticated && (
+        <div className="mb-6 bg-amber-500/10 dark:bg-amber-500/5 border-2 border-amber-500/30 dark:border-amber-500/20 rounded-3xl p-5 shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-top-6 duration-500 text-left">
+          {/* Ambient decorative glow */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 dark:bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 z-10 relative">
+            <div className="flex items-start md:items-center gap-4">
+              <div className="p-3 bg-amber-500/20 dark:bg-amber-500/10 text-amber-600 dark:text-amber-450 rounded-2xl shrink-0 shadow-lg border border-amber-500/20">
+                <CloudOff className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs sm:text-xs font-black uppercase text-amber-850 dark:text-amber-300 tracking-wider">
+                    Operando com Dados Locais (Offline)
+                  </h4>
+                  <span className="bg-amber-500/20 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[8.5px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 uppercase tracking-widest animate-pulse">
+                    Banco Local Ativo
+                  </span>
+                </div>
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400/90 leading-relaxed max-w-4xl">
+                  A conexão com o servidor está indisponível ou limitada no momento. O CargaRadar está armazenando todos os seus registros de veículos, checklists de portaria e ocorrências localmente de forma segura. A transmissão para a nuvem ocorrerá automaticamente assim que sua internet estabilizar.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 w-full md:w-auto border-t md:border-t-0 border-amber-500/20 pt-3 md:pt-0 shrink-0 justify-between md:justify-end">
+              <div className="flex flex-col items-start md:items-end">
+                <span className="text-[8.5px] font-black uppercase tracking-widest text-amber-500/80 dark:text-amber-505">
+                  Última sincronização bem-sucedida
+                </span>
+                <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-300 mt-0.5">
+                  {lastSyncTime ? lastSyncTime : 'Nenhuma recente nesta sessão'}
+                </span>
+              </div>
+              <div className="w-3.5 h-3.5 rounded-full bg-amber-500/40 dark:bg-amber-500/20 flex items-center justify-center border border-amber-500/35 flex-shrink-0">
+                <div className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 animate-ping" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="animate-in fade-in duration-500">
         {renderContent()}
       </div>
