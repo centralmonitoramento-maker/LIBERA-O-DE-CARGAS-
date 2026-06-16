@@ -83,6 +83,9 @@ export interface CargoLoad {
   gatePhotoManifest?: string | string[];
   gateStatus?: 'Aguardando' | 'Aprovado' | 'Divergente';
   gateObservation?: string;
+  gateCheckedIn?: boolean;
+  needsCentralCheckout?: boolean;
+  tripFinished?: boolean;
 }
 
 export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer';

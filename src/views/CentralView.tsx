@@ -953,6 +953,10 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     return data;
   }, [centralStats.blockedCount, centralStats.releasedCount, awaitingCount]);
 
+  const activeTripsPendingCheckout = useMemo(() => {
+    return loads.filter(l => l.gateCheckedIn && l.status === CargoStatus.RELEASED && !l.tripFinished);
+  }, [loads]);
+
   const handleExportManifest = () => {
     if (!selectedLoad) return;
     const doc = new jsPDF();
@@ -1186,6 +1190,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     const updatedLoad: CargoLoad = {
       ...selectedLoad,
       status: CargoStatus.RELEASED,
+      tripFinished: true,
       gateStatus: 'Divergente' as const,
       auditedAt: timestamp,
       occurrenceHistory: [
@@ -1438,6 +1443,197 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
   return (
     <div className="space-y-8">
+      {/* CARD DE DESTAQUE: Central de Priorização de Alertas */}
+      <div className={`rounded-3xl border p-6 md:p-8 transition-all duration-300 shadow-sm overflow-hidden ${
+        centralStats.blockedCount > 0
+          ? 'bg-gradient-to-r from-red-50 via-rose-50 to-white border-red-200 shadow-rose-100/50'
+          : 'bg-white border-slate-200'
+      }`}>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+          <div className="md:col-span-7 space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${centralStats.blockedCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-100 text-slate-500'}`}>
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${centralStats.blockedCount > 0 ? 'text-red-600 animate-pulse' : 'text-slate-400'}`}>
+                  Estágio Crítico • Monitoramento Central
+                </span>
+                <h2 className="text-base font-black text-slate-800 uppercase tracking-tight">Painel de Priorização de Alertas</h2>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              {centralStats.blockedCount > 0
+                ? 'ATENÇÃO REQUERIDA: Cargas com divergências detectadas! Priorize a conferência destas cargas com desvios na tabela abaixo para agir rapidamente.'
+                : 'SITUAÇÃO NORMALIZADA: Todas as mercadorias sob fluxo operacional padrão. Use o painel para auditar, conferir e finalizar as jornadas ativas.'
+              }
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 pt-2">
+              <div className="bg-white/80 backdrop-blur-xs p-4 rounded-2xl border border-slate-100 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-slate-405 tracking-wider">Bloqueadas</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className={`text-2xl font-black font-mono leading-none ${centralStats.blockedCount > 0 ? 'text-red-600' : 'text-slate-800'}`}>{centralStats.blockedCount}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">UN</span>
+                </div>
+              </div>
+              <div className="bg-white/80 backdrop-blur-xs p-4 rounded-2xl border border-slate-100 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Em Rota</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-2xl font-black font-mono leading-none text-emerald-600">{centralStats.releasedCount}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">UN</span>
+                </div>
+              </div>
+              <div className="bg-white/80 backdrop-blur-xs p-4 rounded-2xl border border-slate-100 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Aguardando</span>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-2xl font-black font-mono leading-none text-amber-500">{awaitingCount}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">UN</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setFilterStatus(CargoStatus.BLOCKED)}
+                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  filterStatus === CargoStatus.BLOCKED
+                    ? 'bg-red-600 border-red-600 text-white shadow-lg'
+                    : 'bg-red-50/50 border-red-105 text-red-700 hover:bg-rose-100'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${filterStatus === CargoStatus.BLOCKED ? 'bg-white' : 'bg-red-600'} animate-ping`} />
+                <span>Exibir Apenas Divergências</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterStatus('ALL')}
+                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border ${
+                  filterStatus === 'ALL'
+                    ? 'bg-slate-800 border-slate-800 text-white shadow-lg'
+                    : 'bg-slate-100 border-slate-200 text-slate-650 hover:bg-slate-200'
+                }`}
+              >
+                <span>Mostrar Todas as Cargas</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Gráfico de Rosca Dinâmico */}
+          <div className="md:col-span-5 flex flex-col items-center justify-center space-y-3.5 border-t md:border-t-0 md:border-l border-slate-100 pt-6 md:pt-0 md:pl-6">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição Dinâmica de Status</span>
+            
+            <div className="w-full h-40 relative flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
+                      { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
+                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' }
+                    ].filter(i => i.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={44}
+                    outerRadius={60}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {[
+                      { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
+                      { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
+                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' }
+                    ].filter(i => i.value > 0).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl shadow-xl">
+                            {data.name}: {data.value} carga(s)
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              
+              {/* Central counter summary overlay */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xl font-black text-slate-800 leading-none">{loads.length}</span>
+                <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest mt-0.5">Cargas</span>
+              </div>
+            </div>
+
+            {/* Rosca Customized Custom Legends */}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[9px] font-black uppercase tracking-wider text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <span>Divergência ({centralStats.blockedCount})</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span>Em Rota ({centralStats.releasedCount})</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span>Aguardando ({awaitingCount})</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ALERTA DE VIAGEM INICIADA PELA PORTARIA */}
+      {activeTripsPendingCheckout.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top duration-500">
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 pointer-events-none bg-[radial-gradient(circle_at_70%_50%,_white_0%,_transparent_70%)]"></div>
+          
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10 text-left">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-white/10 rounded-2xl text-amber-300 shrink-0 animate-bounce">
+                <Truck className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="bg-amber-300 text-slate-900 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">
+                    VIAGEM EM ANDAMENTO
+                  </span>
+                  <span className="text-white/80 text-[9px] font-black uppercase tracking-wider font-mono">
+                    {activeTripsPendingCheckout.length} veículo(s) sob trânsito ativo
+                  </span>
+                </div>
+                <h3 className="text-base font-black uppercase tracking-tight">Check-in de Portaria Registrado! Começar Acompanhamento</h3>
+                <p className="text-xs text-blue-100 font-medium max-w-2xl">
+                  A portaria validou o veículo e iniciou a viagem de monitoramento. Prepare os dados para realizar o checkout e finalizar a rota quando o veículo chegar.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              {activeTripsPendingCheckout.map(load => (
+                <button
+                  key={load.id}
+                  onClick={() => setSelectedLoadId(load.id)}
+                  className="bg-white hover:bg-slate-50 text-slate-850 text-[10px] font-black px-4.5 py-3 rounded-2xl uppercase tracking-wider transition-all duration-200 shadow-md hover:scale-[1.03] cursor-pointer flex items-center gap-2 border-0"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
+                  <span>Acompanhar {load.plate} ({load.driverName.split(' ')[0]})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Componente de Dashboard Inteligente - Volume de Cargas por Região (DF, GO, BA) */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 md:p-8 animate-in fade-in duration-500">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-zinc-100">
@@ -3205,7 +3401,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Ações de Controle Central</h3>
                 
                 {/* Validador de Quatro Etapas */}
-                {(selectedLoad.status === CargoStatus.AWAITING || selectedLoad.status === CargoStatus.BLOCKED) && (
+                {(selectedLoad.status === CargoStatus.AWAITING || selectedLoad.status === CargoStatus.BLOCKED || (selectedLoad.status === CargoStatus.RELEASED && !selectedLoad.tripFinished)) && (
                   <div className={`mb-6 border rounded-3xl p-6 space-y-4 ${
                     selectedLoad.status === CargoStatus.BLOCKED 
                       ? 'bg-rose-50/40 border-rose-250' 
@@ -3390,7 +3586,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </div>
                 )}
 
-                {selectedLoad.status === CargoStatus.RELEASED && (
+                {selectedLoad.tripFinished && (
                   <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-3xl p-6 flex items-start gap-3 text-emerald-800">
                     <CheckCircle className="w-6 h-6 text-emerald-500 flex-shrink-0 mt-0.5" />
                     <div>
@@ -3459,6 +3655,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             const updatedLoad = {
                               ...selectedLoad,
                               status: CargoStatus.RELEASED,
+                              tripFinished: true,
                               checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest]
                             };
                             if (onUpdateLoad) {
@@ -3471,7 +3668,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                           // Standard load
                           const updatedLoad = {
                             ...selectedLoad,
-                            gateStatus: 'Aguardando' as const,
+                            status: CargoStatus.RELEASED,
+                            tripFinished: true,
+                            gateStatus: 'Aprovado' as const,
                             auditedAt: new Date().toISOString()
                           };
                           if (onUpdateLoad) {
@@ -3483,12 +3682,12 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       }
                     }}
                     disabled={
-                      selectedLoad.status === CargoStatus.RELEASED || 
+                      selectedLoad.tripFinished || 
                       !isFourStepValidated || 
                       (selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && !newSealForNextTrip.trim())
                     }
                     className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer ${
-                      selectedLoad.status === CargoStatus.RELEASED || 
+                      selectedLoad.tripFinished || 
                       !isFourStepValidated || 
                       (selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && !newSealForNextTrip.trim())
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
@@ -3503,14 +3702,14 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     {selectedLoad.status === CargoStatus.BLOCKED 
                       ? 'LIBERAR COM DIVERGÊNCIA'
                       : selectedLoad.cargoType === CargoType.COMPARTILHADA 
-                        ? (currentDestIndex < targets.length - 1 ? `Liberar para ${targets[currentDestIndex + 1]}` : 'CONFERIR & FINALIZAR ROTA')
-                        : 'LIBERAR PARA GATE'}
+                        ? (currentDestIndex < targets.length - 1 ? `Liberar para ${targets[currentDestIndex + 1]}` : 'REALIZAR CHECKOUT & FINALIZAR')
+                        : 'REALIZAR CHECKOUT & FINALIZAR VIAGEM'}
                   </button>
                   <button
                     onClick={() => onUpdateStatus(selectedLoad.id, CargoStatus.BLOCKED)}
-                    disabled={selectedLoad.status === CargoStatus.RELEASED}
+                    disabled={selectedLoad.tripFinished}
                     className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer ${
-                      selectedLoad.status === CargoStatus.RELEASED
+                      selectedLoad.tripFinished
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : selectedLoad.status === CargoStatus.BLOCKED
                           ? 'bg-orange-100 border border-orange-300 text-orange-800'

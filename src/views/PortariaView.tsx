@@ -234,36 +234,6 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
   const handleSavePortariaValidation = async () => {
     if (!selectedLoad) return;
 
-    if (gatePhotoPlate.length === 0 || gatePhotoSeal.length === 0 || gatePhotoManifest.length === 0) {
-      setNotification({
-        type: 'error',
-        message: 'Para validar a portaria é obrigatório capturar as fotos comprobatórias (no mínimo uma de Placa, Lacre e Romaneio).'
-      });
-      return;
-    }
-
-    const finalGateStatus = gateStatus === 'Aguardando' 
-      ? (chkPlate && chkSeal && chkRomaneio ? 'Aprovado' : 'Divergente') 
-      : gateStatus;
-
-    if (finalGateStatus === 'Aprovado') {
-      if (!chkPlate || !chkSeal || !chkRomaneio) {
-        setNotification({
-          type: 'error',
-          message: 'Para aprovar a portaria e liberar a carga, todas as opções do checklist físico devem estar confirmadas.'
-        });
-        return;
-      }
-    } else if (finalGateStatus === 'Divergente') {
-      if (chkPlate && chkSeal && chkRomaneio && !gateObservation.trim()) {
-        setNotification({
-          type: 'error',
-          message: 'Para registrar uma divergência, desmarque os itens divergentes no checklist ou descreva a divergência nas Observações Gerais.'
-        });
-        return;
-      }
-    }
-
     const valDate = new Date().toISOString();
     const valBy = loggedInUser?.fullName || loggedInUser?.username || 'Portaria G7';
 
@@ -276,19 +246,18 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       gatePhotoSeal: gatePhotoSeal.length > 0 ? gatePhotoSeal : undefined,
       gatePhotoManifest: gatePhotoManifest.length > 0 ? gatePhotoManifest : undefined,
       gateObservation: gateObservation.trim(),
-      gateStatus: finalGateStatus,
-      status: finalGateStatus === 'Aprovado' 
-        ? CargoStatus.RELEASED 
-        : CargoStatus.BLOCKED
+      gateStatus: 'Aprovado',
+      status: CargoStatus.RELEASED, // Set immediately to EM TRÂNSITO to start trip
+      gateCheckedIn: true,
+      needsCentralCheckout: true,
+      tripFinished: false
     };
 
     try {
       await onUpdateLoad(updated);
       setNotification({
         type: 'success',
-        message: finalGateStatus === 'Aprovado'
-          ? 'Confirmação registrada! Carga aprovada e alterada para em trânsito.'
-          : 'Divergência de portaria constatada e registrada! Carga bloqueada no sistema.'
+        message: 'Check-in de Portaria realizado com sucesso! Veículo em trânsito e viagem iniciada.'
       });
       
       // Auto close overlay modal window after brief success display
@@ -296,7 +265,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
         setIsModalOpen(false);
         setSelectedLoadId(null);
         setNotification(null);
-      }, 1500);
+      }, 1505);
     } catch (err: any) {
       setNotification({
         type: 'error',
@@ -721,263 +690,202 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                 </div>
 
                 {!isEditingMainData ? (
-                  /* PORTARIA FORM CHECKS AND CAPTURES */
+                  /* SIMPLIFIED PORTARIA CHECK-IN */
                   <div className="space-y-6 animate-in fade-in duration-200">
                     
-                    <div>
-                      <h4 className="font-black text-sm uppercase text-primary-navy tracking-tight">Etapa de Confirmação Geral</h4>
-                      <p className="text-slate-400 text-[10px] uppercase font-bold mt-0.5">As fotos comprobatórias da portaria para liberação de trânsito (Placa, Lacre e Romaneio) são requeridas.</p>
+                    <div className="bg-emerald-50/50 border border-emerald-200/50 rounded-2xl p-5 flex items-start gap-4">
+                      <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
+                        <Truck className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <div className="text-left space-y-1">
+                        <h4 className="font-sans font-black text-xs text-primary-navy uppercase tracking-wider">
+                          Modo de Check-in de Saída (Simplificado)
+                        </h4>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          A confirmação da portaria agora é simplificada. Realize o check-in de portaria para prosseguir e iniciar a rota do veículo. 
+                          A verificação e o **Checkout detalhado** de Placa, Lacre, Motorista e Paletes serão de responsabilidade exclusiva da **Central de Monitoramento** quando o veículo chegar à loja de destino.
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Image uploads block */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {/* Image uploads block (OPCIONAL) */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Registros Fotográficos (Opcionais)</span>
+                        <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold uppercase tracking-wider">Não Obrigatório</span>
+                      </div>
                       
-                      {/* Photo Placa */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">1. Foto da Placa *</label>
-                          <span className="text-[9px] font-bold text-slate-400">{gatePhotoPlate.length}/10</span>
-                        </div>
-                        <input 
-                          type="file" 
-                          multiple
-                          accept="image/*" 
-                          capture="environment"
-                          ref={refPlateInput} 
-                          onChange={(e) => handlePhotoUpload(e, 'plate')} 
-                          className="hidden" 
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          {gatePhotoPlate.map((p, idx) => (
-                            <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
-                              <img 
-                                src={p} 
-                                alt={`Placa Portaria ${idx + 1}`} 
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
-                                referrerPolicy="no-referrer"
-                              />
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        
+                        {/* Photo Placa */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">Foto da Placa</label>
+                            <span className="text-[9px] font-bold text-slate-400">{gatePhotoPlate.length}/10</span>
+                          </div>
+                          <input 
+                            type="file" 
+                            multiple
+                            accept="image/*" 
+                            capture="environment"
+                            ref={refPlateInput} 
+                            onChange={(e) => handlePhotoUpload(e, 'plate')} 
+                            className="hidden" 
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            {gatePhotoPlate.map((p, idx) => (
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                                <img 
+                                  src={p} 
+                                  alt={`Placa Portaria ${idx + 1}`} 
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveGatePhoto('plate', idx)}
+                                  className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {gatePhotoPlate.length < 10 && (
                               <button
                                 type="button"
-                                onClick={() => handleRemoveGatePhoto('plate', idx)}
-                                className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                onClick={() => refPlateInput.current?.click()}
+                                className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                          {gatePhotoPlate.length < 10 && (
-                            <button
-                              type="button"
-                              onClick={() => refPlateInput.current?.click()}
-                              className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
-                            >
-                              <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all anim-pulse">
-                                <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
-                              </div>
-                              <div className="px-1 leading-tight">
+                                <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all">
+                                  <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
+                                </div>
                                 <span className="block text-[8px] font-black text-primary-navy uppercase">Capturar Placa</span>
-                              </div>
-                            </button>
-                          )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Photo Lacre */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">2. Foto do Lacre *</label>
-                          <span className="text-[9px] font-bold text-slate-400">{gatePhotoSeal.length}/10</span>
-                        </div>
-                        <input 
-                          type="file" 
-                          multiple
-                          accept="image/*" 
-                          capture="environment"
-                          ref={refSealInput} 
-                          onChange={(e) => handlePhotoUpload(e, 'seal')} 
-                          className="hidden" 
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          {gatePhotoSeal.map((p, idx) => (
-                            <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
-                              <img 
-                                src={p} 
-                                alt={`Lacre Portaria ${idx + 1}`} 
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
-                                referrerPolicy="no-referrer"
-                              />
+                        {/* Photo Lacre */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">Foto do Lacre</label>
+                            <span className="text-[9px] font-bold text-slate-400">{gatePhotoSeal.length}/10</span>
+                          </div>
+                          <input 
+                            type="file" 
+                            multiple
+                            accept="image/*" 
+                            capture="environment"
+                            ref={refSealInput} 
+                            onChange={(e) => handlePhotoUpload(e, 'seal')} 
+                            className="hidden" 
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            {gatePhotoSeal.map((p, idx) => (
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                                <img 
+                                  src={p} 
+                                  alt={`Lacre Portaria ${idx + 1}`} 
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveGatePhoto('seal', idx)}
+                                  className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {gatePhotoSeal.length < 10 && (
                               <button
                                 type="button"
-                                onClick={() => handleRemoveGatePhoto('seal', idx)}
-                                className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                onClick={() => refSealInput.current?.click()}
+                                className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                          {gatePhotoSeal.length < 10 && (
-                            <button
-                              type="button"
-                              onClick={() => refSealInput.current?.click()}
-                              className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
-                            >
-                              <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all anim-pulse">
-                                <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
-                              </div>
-                              <div className="px-1 leading-tight">
+                                <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all">
+                                  <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
+                                </div>
                                 <span className="block text-[8px] font-black text-primary-navy uppercase">Capturar Lacre</span>
-                              </div>
-                            </button>
-                          )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Photo Romaneio / Manifesto */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">3. Foto Romaneio *</label>
-                          <span className="text-[9px] font-bold text-slate-400">{gatePhotoManifest.length}/10</span>
-                        </div>
-                        <input 
-                          type="file" 
-                          multiple
-                          accept="image/*" 
-                          capture="environment"
-                          ref={refManifestInput} 
-                          onChange={(e) => handlePhotoUpload(e, 'manifest')} 
-                          className="hidden" 
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          {gatePhotoManifest.map((p, idx) => (
-                            <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
-                              <img 
-                                src={p} 
-                                alt={`Romaneio Portaria ${idx + 1}`} 
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
-                                referrerPolicy="no-referrer"
-                              />
+                        {/* Photo Romaneio */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest block">Foto Romaneio</label>
+                            <span className="text-[9px] font-bold text-slate-400">{gatePhotoManifest.length}/10</span>
+                          </div>
+                          <input 
+                            type="file" 
+                            multiple
+                            accept="image/*" 
+                            capture="environment"
+                            ref={refManifestInput} 
+                            onChange={(e) => handlePhotoUpload(e, 'manifest')} 
+                            className="hidden" 
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            {gatePhotoManifest.map((p, idx) => (
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                                <img 
+                                  src={p} 
+                                  alt={`Romaneio Portaria ${idx + 1}`} 
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveGatePhoto('manifest', idx)}
+                                  className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {gatePhotoManifest.length < 10 && (
                               <button
                                 type="button"
-                                onClick={() => handleRemoveGatePhoto('manifest', idx)}
-                                className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
+                                onClick={() => refManifestInput.current?.click()}
+                                className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                          {gatePhotoManifest.length < 10 && (
-                            <button
-                              type="button"
-                              onClick={() => refManifestInput.current?.click()}
-                              className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-primary-gold hover:bg-slate-100/50 rounded-xl flex flex-col items-center justify-center gap-1 transition-all outline-none cursor-pointer group text-center col-span-1"
-                            >
-                              <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all anim-pulse">
-                                <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
-                              </div>
-                              <div className="px-1 leading-tight">
+                                <div className="p-1.5 bg-white group-hover:bg-primary-gold/15 rounded-lg shadow-sm transition-all">
+                                  <Camera className="w-4 h-4 text-slate-400 group-hover:text-primary-gold" />
+                                </div>
                                 <span className="block text-[8px] font-black text-primary-navy uppercase">Capturar Romaneio</span>
-                              </div>
-                            </button>
-                          )}
+                              </button>
+                            )}
+                          </div>
                         </div>
+
                       </div>
                     </div>
 
-                    {/* Checklist */}
-                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-5 space-y-3.5 text-left">
-                      <span className="block text-[9px] font-black text-primary-navy uppercase tracking-widest">
-                        Checklist de Validação Física
-                      </span>
-                      
-                      <div className="space-y-2.5">
-                        <label className="flex items-center gap-3.5 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/20 transition-colors select-none">
-                          <input 
-                            type="checkbox" 
-                            checked={chkPlate}
-                            onChange={(e) => handleToggleCheck('plate', e.target.checked)}
-                            className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
-                          />
-                          <div className="text-left">
-                            <span className="block text-xs font-black text-primary-navy uppercase">Placa física coincide?</span>
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">Confirme que a placa veicular confere com o lançamento: <strong className="text-primary-navy font-mono font-black">{selectedLoad.plate}</strong></span>
-                          </div>
-                        </label>
-
-                        <label className="flex items-center gap-3.5 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/20 transition-colors select-none">
-                          <input 
-                            type="checkbox" 
-                            checked={chkSeal}
-                            onChange={(e) => handleToggleCheck('seal', e.target.checked)}
-                            className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
-                          />
-                          <div className="text-left">
-                            <span className="block text-xs font-black text-primary-navy uppercase">Lacre confere fisicamente?</span>
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">Confirme que o número do lacre físico no baú confere: <strong className="text-primary-navy font-mono font-black">{selectedLoad.sealNumber || 'NÃO LANÇADO'}</strong></span>
-                          </div>
-                        </label>
-
-                        <label className="flex items-center gap-3.5 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/20 transition-colors select-none">
-                          <input 
-                            type="checkbox" 
-                            checked={chkRomaneio}
-                            onChange={(e) => handleToggleCheck('romaneio', e.target.checked)}
-                            className="w-4.5 h-4.5 accent-primary-gold rounded border-slate-300" 
-                          />
-                          <div className="text-left">
-                            <span className="block text-xs font-black text-primary-navy uppercase">Romaneio de paletes confere?</span>
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">A carga conta fisicamente com os <strong className="text-primary-navy font-black">{selectedLoad.palletCount} paletes</strong> descritos do manifesto.</span>
-                          </div>
-                        </label>
-                      </div>
+                    {/* Observações da Portaria */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest ml-1">Observações da Portaria (Opcional)</label>
+                      <textarea
+                        rows={2}
+                        value={gateObservation}
+                        onChange={(e) => setGateObservation(e.target.value)}
+                        placeholder="Anote detalhes se houver necessidade (ex: observação sobre o veículo ou motorista)..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs text-primary-navy font-bold focus:ring-2 focus:ring-primary-gold outline-none"
+                      />
                     </div>
 
-                    {/* Status & Observation selection fields */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                      <div className="space-y-1.5 md:col-span-1">
-                        <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest ml-1">Regulação no Acesso</label>
-                        <select
-                          value={gateStatus}
-                          onChange={(e) => handleGateStatusChange(e.target.value as any)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black text-primary-navy uppercase tracking-wider focus:ring-2 focus:ring-primary-gold outline-none cursor-pointer h-12"
-                        >
-                          <option value="Aguardando">AGUARDANDO AVALIAÇÃO</option>
-                          <option value="Aprovado">PORTARIA REGULAR (LIBERAR)</option>
-                          <option value="Divergente">CONSTATAR DIVERGÊNCIA</option>
-                        </select>
-                      </div>
+                    {/* Action button inside simplified check-in */}
+                    <button
+                      type="button"
+                      onClick={handleSavePortariaValidation}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4.5 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-emerald-800 border-0"
+                    >
+                      <ShieldCheck className="w-5 h-5 text-primary-gold" />
+                      EFETUAR CHECK-IN E INICIAR VIAGEM
+                    </button>
 
-                      <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-455 uppercase tracking-widest ml-1">Observações Gerais</label>
-                        <textarea
-                          rows={2}
-                          value={gateObservation}
-                          onChange={(e) => setGateObservation(e.target.value)}
-                          placeholder="Anote detalhes de avarias veiculares, violação de lacre ou observações importantes sobre o motorista..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs text-primary-navy font-bold focus:ring-2 focus:ring-primary-gold outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Action button inside popup */}
-                    {gateStatus === 'Divergente' ? (
-                      <button
-                        type="button"
-                        onClick={handleSavePortariaValidation}
-                        className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-rose-800 border-0"
-                      >
-                        <AlertCircle className="w-5 h-5 text-white animate-pulse" />
-                        CONSTATAR DIVERGÊNCIA E BLOQUEAR CARGA
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleSavePortariaValidation}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest cursor-pointer border-b-4 border-emerald-800 border-0"
-                      >
-                        <ShieldCheck className="w-5 h-5 text-primary-gold animate-bounce" />
-                        APROVAR E LIBERAR CARGA (EM TRÂNSITO)
-                      </button>
-                    )}
                   </div>
                 ) : (
                   /* FICHA DE EDICAO INSIDE POPUP OVERLAY WINDOW */
