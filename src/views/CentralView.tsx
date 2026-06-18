@@ -25,7 +25,8 @@ import {
   Columns,
   PanelRight,
   History,
-  ImageOff
+  ImageOff,
+  Calendar
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -465,6 +466,33 @@ interface CentralViewProps {
 export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus, onUpdateLoad }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<CargoStatus | 'ALL'>('ALL');
+  const [filterDate, setFilterDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+
+  const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getYesterdayStr = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const isNewLaunch = (createdAt: string) => {
+    if (!createdAt) return false;
+    try {
+      const diffMs = Date.now() - new Date(createdAt).getTime();
+      const diffMins = diffMs / (1000 * 60);
+      return diffMins >= 0 && diffMins <= 15; // Within 15 minutes of launch
+    } catch {
+      return false;
+    }
+  };
+
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [selectedLoadIds, setSelectedLoadIds] = useState<string[]>([]);
 
@@ -929,18 +957,24 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     };
   }, [loads]);
 
-  const filteredLoads = loads.filter(load => {
-    const matchesSearch = 
-      load.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      load.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      load.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      load.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      load.id.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = filterStatus === 'ALL' || load.status === filterStatus;
-    
-    return matchesSearch && matchesStatus;
-  });
+  const filteredLoads = useMemo(() => {
+    return loads
+      .filter(load => {
+        const matchesSearch = 
+          load.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          load.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          load.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          load.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          load.id.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesStatus = filterStatus === 'ALL' || load.status === filterStatus;
+        
+        const matchesDate = !filterDate ? true : load.createdAt.startsWith(filterDate);
+        
+        return matchesSearch && matchesStatus && matchesDate;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [loads, searchTerm, filterStatus, filterDate]);
 
   const selectedLoad = loads.find(l => l.id === selectedLoadId);
 
@@ -2330,6 +2364,55 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               ))}
             </div>
 
+            {/* Filtro de Data */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                <Calendar className="w-3.5 h-3.5 text-primary-navy" />
+                <span>Filtrar por data de lançamento</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 w-full">
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-1.5 rounded-xl border border-slate-200 outline-none transition-all cursor-pointer grow sm:grow-0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFilterDate(getTodayStr())}
+                  className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all border cursor-pointer ${
+                    filterDate === getTodayStr()
+                      ? 'bg-primary-navy border-primary-navy text-white shadow-md'
+                      : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-150 hover:text-slate-800'
+                  }`}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterDate(getYesterdayStr())}
+                  className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all border cursor-pointer ${
+                    filterDate === getYesterdayStr()
+                      ? 'bg-primary-navy border-primary-navy text-white shadow-md'
+                      : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-150 hover:text-slate-800'
+                  }`}
+                >
+                  Ontem
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all border cursor-pointer ${
+                    !filterDate
+                      ? 'bg-primary-navy border-primary-navy text-white shadow-md'
+                      : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-150 hover:text-slate-800'
+                  }`}
+                >
+                  Todas
+                </button>
+              </div>
+            </div>
+
             {/* Controls for Bulk Selection and Bulk Actions */}
             <div className="flex flex-col gap-2.5 border-t border-slate-100 pt-3">
               <div className="flex items-center justify-between">
@@ -2428,6 +2511,12 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                         <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{load.plate}</span>
+                        {isNewLaunch(load.createdAt) && (
+                          <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded-lg text-[7px] font-black uppercase tracking-widest animate-pulse flex items-center gap-1 shadow-xs border border-emerald-400 shrink-0">
+                            <span className="w-1 h-1 rounded-full bg-white animate-ping" />
+                            Novo Lançamento
+                          </span>
+                        )}
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider flex items-center gap-1 ${
                         load.status === CargoStatus.RELEASED 
