@@ -957,6 +957,20 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     };
   }, [loads]);
 
+  const toLocalYMD = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return '';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch {
+      return '';
+    }
+  };
+
   const filteredLoads = useMemo(() => {
     return loads
       .filter(load => {
@@ -969,7 +983,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         
         const matchesStatus = filterStatus === 'ALL' || load.status === filterStatus;
         
-        const matchesDate = !filterDate ? true : load.createdAt.startsWith(filterDate);
+        const matchesDate = !filterDate ? true : toLocalYMD(load.createdAt) === filterDate;
         
         return matchesSearch && matchesStatus && matchesDate;
       })

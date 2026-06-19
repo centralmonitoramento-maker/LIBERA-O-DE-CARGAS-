@@ -91,12 +91,28 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
   const filteredLoads = useMemo(() => {
     let result = [...loads];
 
+    const toLocalYMD = (dateString: string) => {
+      if (!dateString) return '';
+      try {
+        const dst = new Date(dateString);
+        if (isNaN(dst.getTime())) return '';
+        const year = dst.getFullYear();
+        const month = String(dst.getMonth() + 1).padStart(2, '0');
+        const day = String(dst.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      } catch {
+        return '';
+      }
+    };
+
     // 1. Filter by selected date range
-    const todayStr = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const localTodayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
     if (dateFilter === 'TODAY') {
       result = result.filter(load => 
-        load.createdAt.startsWith(todayStr) || 
-        (load.gateVerifiedAt && load.gateVerifiedAt.startsWith(todayStr))
+        toLocalYMD(load.createdAt) === localTodayStr || 
+        (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === localTodayStr)
       );
     } else if (dateFilter === 'LAST_7_DAYS') {
       const sevenDaysAgo = new Date();
@@ -104,8 +120,8 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       result = result.filter(load => new Date(load.createdAt) >= sevenDaysAgo);
     } else if (dateFilter === 'CUSTOM' && customDate) {
       result = result.filter(load => 
-        load.createdAt.startsWith(customDate) || 
-        (load.gateVerifiedAt && load.gateVerifiedAt.startsWith(customDate))
+        toLocalYMD(load.createdAt) === customDate || 
+        (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === customDate)
       );
     }
 
