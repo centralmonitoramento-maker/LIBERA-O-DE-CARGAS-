@@ -189,15 +189,15 @@ export const Layout: React.FC<LayoutProps> = ({
 
   // Logic: Admins see everything. Normal users only see their registered area.
   // Exception: Perfil expedidor ('expedition') has access to both 'expedition' and 'portaria'.
-  // 'tracking' is a global feature accessible by all roles.
+  // 'tracking' is a global feature accessible by all roles except expedition.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
     if (tab.id === 'settings') return true;
     if (user.systemRole === 'administrator') return true;
-    if (tab.id === 'tracking') return true;
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }
+    if (tab.id === 'tracking') return true;
     return tab.id === user.role;
   });
 
