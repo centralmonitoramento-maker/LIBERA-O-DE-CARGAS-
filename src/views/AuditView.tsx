@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import jsPDF from 'jspdf';
@@ -86,6 +86,34 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
+
+  // User Filtering States and Selector
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
+  const [userStatusFilter, setUserStatusFilter] = useState<string>('ALL');
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearchQuery.toLowerCase().trim();
+    return users.filter(user => {
+      // Role filter
+      if (userRoleFilter !== 'ALL' && user.role !== userRoleFilter) {
+        return false;
+      }
+      // Status filter
+      if (userStatusFilter !== 'ALL' && user.status !== userStatusFilter) {
+        return false;
+      }
+      // Search query filter (matches username, fullName, storeLocation, jobFunction)
+      if (q) {
+        const usernameMatch = (user.username || '').toLowerCase().includes(q);
+        const fullNameMatch = (user.fullName || '').toLowerCase().includes(q);
+        const storeMatch = (user.storeLocation || '').toLowerCase().includes(q);
+        const jobMatch = (user.jobFunction || '').toLowerCase().includes(q);
+        return usernameMatch || fullNameMatch || storeMatch || jobMatch;
+      }
+      return true;
+    });
+  }, [users, userSearchQuery, userRoleFilter, userStatusFilter]);
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
@@ -1621,9 +1649,57 @@ export const AuditView: React.FC<AuditViewProps> = ({
               </span>
             )}
           </div>
+
+          {/* User Filtering Inputs */}
+          <div className="bg-slate-50/50 p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3">
+            <div className="flex-1">
+              <input
+                id="user-search-input"
+                type="text"
+                placeholder="Pesquisar por nome, usuário, loja ou função..."
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary-navy"
+              />
+            </div>
+            <div className="w-full md:w-48">
+              <select
+                id="user-role-filter"
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy"
+              >
+                <option value="ALL">TODAS AS REGRAS</option>
+                <option value="expedition">EXPEDIÇÃO</option>
+                <option value="portaria">PORTARIA</option>
+                <option value="central">CENTRAL</option>
+                <option value="audit">AUDITORIA</option>
+                <option value="analysis">ANÁLISE</option>
+              </select>
+            </div>
+            <div className="w-full md:w-48">
+              <select
+                id="user-status-filter"
+                value={userStatusFilter}
+                onChange={(e) => setUserStatusFilter(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy"
+              >
+                <option value="ALL">TODOS OS STATUS</option>
+                <option value="active">ATIVOS</option>
+                <option value="pending">PENDENTES</option>
+                <option value="rejected">REJEITADOS</option>
+              </select>
+            </div>
+          </div>
+
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {users.map(user => (
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-12 bg-slate-50/30 rounded-2xl border border-dashed border-slate-200">
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Nenhum usuário encontrado com os filtros selecionados.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredUsers.map(user => (
                 <div key={user.id} className={`border rounded-2xl p-5 space-y-4 transition-all ${user.status === 'pending' ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200 hover:border-blue-200'}`}>
                   <div className="flex justify-between items-start">
                     <div>
@@ -1757,7 +1833,8 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   )}
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}

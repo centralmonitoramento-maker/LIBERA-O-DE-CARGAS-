@@ -865,7 +865,7 @@ const App: React.FC = () => {
     try {
       let systemRole: SystemRole = user.systemRole || 'viewer';
       if (approve) {
-        if (user.role === 'expedition') {
+        if (user.role === 'expedition' || user.role === 'portaria') {
           systemRole = 'dispatcher';
         } else if (user.role === 'audit') {
           systemRole = 'auditor';
