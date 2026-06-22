@@ -140,6 +140,8 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [loadAuditFilter, setLoadAuditFilter] = useState<'ALL' | 'PENDING' | 'AUDITED'>('ALL');
   const [loadStatusFilter, setLoadStatusFilter] = useState<string>('ALL');
   const [loadOccurrenceFilter, setLoadOccurrenceFilter] = useState<'ALL' | 'WITH_OCCURRENCE' | 'WITHOUT_OCCURRENCE'>('ALL');
+  const [loadStartDate, setLoadStartDate] = useState<string>('');
+  const [loadEndDate, setLoadEndDate] = useState<string>('');
 
   const filteredLoads = useMemo(() => {
     const q = loadSearchQuery.toLowerCase().trim();
@@ -179,9 +181,23 @@ export const AuditView: React.FC<AuditViewProps> = ({
         return false;
       }
 
+      // Date start filter limit check
+      if (loadStartDate) {
+        const loadDate = new Date(load.createdAt);
+        const startDate = new Date(loadStartDate + 'T00:00:00');
+        if (loadDate < startDate) return false;
+      }
+
+      // Date end filter limit check
+      if (loadEndDate) {
+        const loadDate = new Date(load.createdAt);
+        const endDate = new Date(loadEndDate + 'T23:59:59');
+        if (loadDate > endDate) return false;
+      }
+
       return true;
     });
-  }, [loads, loadSearchQuery, loadAuditFilter, loadStatusFilter, loadOccurrenceFilter]);
+  }, [loads, loadSearchQuery, loadAuditFilter, loadStatusFilter, loadOccurrenceFilter, loadStartDate, loadEndDate]);
 
   // Dashboard Calculations for Audit View
   const [showDashboard, setShowDashboard] = useState(true);
@@ -1481,8 +1497,32 @@ export const AuditView: React.FC<AuditViewProps> = ({
                 </div>
               </div>
 
+              {/* Filtro de Datas adicionado */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Data Início</label>
+                  <input
+                    type="date"
+                    id="load-start-date"
+                    value={loadStartDate}
+                    onChange={(e) => setLoadStartDate(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Data Fim</label>
+                  <input
+                    type="date"
+                    id="load-end-date"
+                    value={loadEndDate}
+                    onChange={(e) => setLoadEndDate(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy cursor-pointer"
+                  />
+                </div>
+              </div>
+
               {/* Botão de limpar filtros quando algum estiver ativo */}
-              {(loadSearchQuery || loadAuditFilter !== 'ALL' || loadStatusFilter !== 'ALL' || loadOccurrenceFilter !== 'ALL') && (
+              {(loadSearchQuery || loadAuditFilter !== 'ALL' || loadStatusFilter !== 'ALL' || loadOccurrenceFilter !== 'ALL' || loadStartDate || loadEndDate) && (
                 <div className="flex justify-between items-center bg-blue-50/50 px-2 py-1.5 rounded-lg border border-blue-100">
                   <span className="text-[9px] text-blue-800 font-bold">
                     Resultados: {filteredLoads.length} de {loads.length}
@@ -1493,6 +1533,8 @@ export const AuditView: React.FC<AuditViewProps> = ({
                       setLoadAuditFilter('ALL');
                       setLoadStatusFilter('ALL');
                       setLoadOccurrenceFilter('ALL');
+                      setLoadStartDate('');
+                      setLoadEndDate('');
                     }}
                     className="flex items-center gap-1.5 text-[8px] font-black text-rose-600 uppercase hover:text-rose-800 transition-colors border-0 bg-transparent cursor-pointer"
                   >
