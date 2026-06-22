@@ -26,8 +26,28 @@ import {
   Mail,
   Plus,
   Trash2,
-  Send
+  Send,
+  TrendingUp,
+  Clock,
+  Activity,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  PieChart, 
+  Pie, 
+  Cell 
+} from 'recharts';
 import { db } from '../firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
@@ -114,6 +134,170 @@ export const AuditView: React.FC<AuditViewProps> = ({
       return true;
     });
   }, [users, userSearchQuery, userRoleFilter, userStatusFilter]);
+
+  // Load Filtering States
+  const [loadSearchQuery, setLoadSearchQuery] = useState('');
+  const [loadAuditFilter, setLoadAuditFilter] = useState<'ALL' | 'PENDING' | 'AUDITED'>('ALL');
+  const [loadStatusFilter, setLoadStatusFilter] = useState<string>('ALL');
+  const [loadOccurrenceFilter, setLoadOccurrenceFilter] = useState<'ALL' | 'WITH_OCCURRENCE' | 'WITHOUT_OCCURRENCE'>('ALL');
+
+  const filteredLoads = useMemo(() => {
+    const q = loadSearchQuery.toLowerCase().trim();
+    return loads.filter(load => {
+      // Search Box: match plate, driverName, or sealNumber, origin, destination
+      if (q) {
+        const plateMatch = (load.plate || '').toLowerCase().includes(q);
+        const driverMatch = (load.driverName || '').toLowerCase().includes(q);
+        const sealMatch = (load.sealNumber || '').toLowerCase().includes(q);
+        const originMatch = (load.origin || '').toLowerCase().includes(q);
+        const destMatch = (load.destination || '').toLowerCase().includes(q);
+        
+        if (!plateMatch && !driverMatch && !sealMatch && !originMatch && !destMatch) {
+          return false;
+        }
+      }
+
+      // Audit status filter
+      if (loadAuditFilter === 'PENDING' && load.auditedAt) {
+        return false;
+      }
+      if (loadAuditFilter === 'AUDITED' && !load.auditedAt) {
+        return false;
+      }
+
+      // Cargo status filter
+      if (loadStatusFilter !== 'ALL' && load.status !== loadStatusFilter) {
+        return false;
+      }
+
+      // Occurrence filter
+      const hasOccurrence = (load.occurrenceType && load.occurrenceType !== OccurrenceType.NONE) || load.occurrencePhoto;
+      if (loadOccurrenceFilter === 'WITH_OCCURRENCE' && !hasOccurrence) {
+        return false;
+      }
+      if (loadOccurrenceFilter === 'WITHOUT_OCCURRENCE' && hasOccurrence) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [loads, loadSearchQuery, loadAuditFilter, loadStatusFilter, loadOccurrenceFilter]);
+
+  // Dashboard Calculations for Audit View
+  const [showDashboard, setShowDashboard] = useState(true);
+
+  const localYMDOfStr = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return '';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch {
+      return '';
+    }
+  };
+
+  // 1. Blocked loads in last 24 hours (with actual status BLOCKED or blocked-related occurrences)
+  const blockedLast24Hours = useMemo(() => {
+    const limit24h = Date.now() - 24 * 60 * 60 * 1000;
+    return loads.filter(load => {
+      const isBlocked = load.status === CargoStatus.BLOCKED;
+      const loadTime = new Date(load.createdAt).getTime();
+      return isBlocked && loadTime >= limit24h;
+    });
+  }, [loads]);
+
+  // 2. Average release time of loads
+  const averageReleaseTimeMinutes = useMemo(() => {
+    let totalsMs = 0;
+    let count = 0;
+    
+    loads.forEach(load => {
+      if (load.auditedAt) {
+        const start = new Date(load.createdAt).getTime();
+        const end = new Date(load.auditedAt).getTime();
+        const diff = end - start;
+        if (diff >= 0 && diff < 48 * 60 * 60 * 1000) { // filter extreme outlier durations > 48h for realistic average
+          totalsMs += diff;
+          count++;
+        }
+      }
+    });
+
+    if (count === 0) return 0;
+    return Math.round(totalsMs / (count * 60000)); // returns in minutes
+  }, [loads]);
+
+  // Format Average Release Time beautifully (e.g. 45 min, or 2h 15m)
+  const formattedAverageReleaseTime = useMemo(() => {
+    const t = averageReleaseTimeMinutes;
+    if (t === 0) return '---';
+    if (t < 60) {
+      return `${t} min`;
+    }
+    const hrs = Math.floor(t / 60);
+    const mins = t % 60;
+    return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+  }, [averageReleaseTimeMinutes]);
+
+  // 3. Trends of Average Release Time per day (Last 7 days)
+  const releaseTimeTrendData = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }).reverse();
+
+    return days.map(day => {
+      const dayLoads = loads.filter(l => l.auditedAt && localYMDOfStr(l.auditedAt) === day);
+      
+      let sumMin = 0;
+      let count = 0;
+
+      dayLoads.forEach(l => {
+        const diff = new Date(l.auditedAt!).getTime() - new Date(l.createdAt).getTime();
+        const min = diff / 60000;
+        if (min >= 0 && min < 48 * 60 * 60 * 1000) {
+          sumMin += min;
+          count++;
+        }
+      });
+
+      const avg = count > 0 ? Math.round(sumMin / count) : 0;
+      
+      const parts = day.split('-');
+      const dispLabel = `${parts[2]}/${parts[1]}`;
+
+      return {
+        date: dispLabel,
+        "Tempo (min)": avg,
+        "Cargas": count
+      };
+    });
+  }, [loads]);
+
+  // 4. Status distribution of loads loaded/edited in last 24h
+  const last24hDistributionData = useMemo(() => {
+    const limit24h = Date.now() - 24 * 60 * 60 * 1000;
+    const last24h = loads.filter(l => new Date(l.createdAt).getTime() >= limit24h);
+
+    const awaiting = last24h.filter(l => l.status === CargoStatus.AWAITING).length;
+    const released = last24h.filter(l => l.status === CargoStatus.RELEASED).length;
+    const blocked = last24h.filter(l => l.status === CargoStatus.BLOCKED).length;
+
+    return [
+      { name: 'Aguardando', value: awaiting, color: '#f59e0b' },
+      { name: 'Em Trânsito', value: released, color: '#10b981' },
+      { name: 'Bloqueadas', value: blocked, color: '#ef4444' }
+    ].filter(item => item.value > 0);
+  }, [loads]);
+
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
@@ -1008,8 +1192,194 @@ export const AuditView: React.FC<AuditViewProps> = ({
       </div>
 
       {activeSubTab === 'audit' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
-          {/* List of released loads for audit */}
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Collapsible Metrics Dashboard */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300">
+            {/* Header / Toggle */}
+            <div 
+              onClick={() => setShowDashboard(!showDashboard)}
+              className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/10 text-amber-500 rounded-xl">
+                  <Activity className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-800 uppercase tracking-tight">Painel de Diretrizes e Métricas Operacionais</h3>
+                  <p className="text-[10px] text-slate-440 font-bold uppercase tracking-wider">Acompanhamento em tempo real de auditorias - Prevenção de Perdas</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                className="p-1 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border-0 cursor-pointer"
+              >
+                <span>{showDashboard ? 'RECOLHER MÉTRICAS' : 'MOSTRAR MÉTRICAS'}</span>
+                {showDashboard ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </button>
+            </div>
+
+            {/* Dashboard Content */}
+            {showDashboard && (
+              <div className="p-6 space-y-6 animate-in slide-in-from-top-4 duration-300">
+                {/* Metric Summary Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Tempo Médio of release */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/[0.03] to-amber-500/[0.005] border border-amber-200/60 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Eficiência Operacional</span>
+                      <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight mt-1.5">Tempo Médio de Liberação</h4>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-sm">Duração média decorrida entre o lançamento de expedição e a finalização de conferência final no gate do auditor.</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-4">
+                      <div className="p-3 bg-amber-100 text-amber-700 rounded-2xl">
+                        <Clock className="w-6 h-6" />
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-3xl font-black text-slate-800 tracking-tight leading-none">
+                          {formattedAverageReleaseTime}
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">META: ≤ 45 min</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Blocked loads in last 24h */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-red-500/[0.03] to-red-500/[0.005] border border-red-200/60 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded">Alertas de Risco</span>
+                      <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight mt-1.5">Cargas Bloqueadas (Últimas 24h)</h4>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-sm">Volume total acumulado de manifestos que apresentaram irregularidades e divergências impeditivas de liberação.</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-4">
+                      <div className="p-3 bg-red-100 text-red-700 rounded-2xl">
+                        <ShieldAlert className="w-6 h-6 text-red-600" />
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-3xl font-black text-red-600 tracking-tight leading-none">
+                          {blockedLast24Hours.length}
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Cargas Críticas</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-grid with Graphs */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Chart: Line chart for Daily Average Release Time */}
+                  <div className="lg:col-span-8 bg-slate-50/40 border border-slate-200/60 rounded-2xl p-5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between border-b border-slate-100/80 pb-3 mb-4">
+                      <div>
+                        <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-tight">Histórico de Tempo Médio</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Média diária de conferência (últimos 7 dias)</p>
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                        Média de {formattedAverageReleaseTime} Geral
+                      </span>
+                    </div>
+
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={releaseTimeTrendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#94a3b8" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            fontFamily="JetBrains Mono" 
+                            fontWeight="bold"
+                          />
+                          <YAxis 
+                            stroke="#94a3b8" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            fontFamily="JetBrains Mono" 
+                            fontWeight="bold"
+                            label={{ value: 'minutos', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' } }}
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '11px', fontFamily: 'sans-serif' }}
+                            itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="Tempo (min)" 
+                            stroke="#f59e0b" 
+                            strokeWidth={3} 
+                            dot={{ stroke: '#f59e0b', strokeWidth: 2, r: 4 }} 
+                            activeDot={{ r: 6 }} 
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Right Chart: Status Distribution in Last 24 Hours */}
+                  <div className="lg:col-span-4 bg-slate-50/40 border border-slate-200/60 rounded-2xl p-5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between border-b border-slate-100/80 pb-3 mb-4">
+                      <div>
+                        <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-tight">Status das Cargas (Past 24h)</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Distribuição de manifestos ativos</p>
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-primary-navy bg-slate-100 px-2 py-0.5 rounded">
+                        Últimas 24h
+                      </span>
+                    </div>
+
+                    <div className="h-40 w-full flex items-center justify-center relative">
+                      {last24hDistributionData.length === 0 ? (
+                        <div className="text-center italic text-[10px] text-slate-400 px-4">
+                          Nenhum manifesto ativo ou conferido registrado nas últimas 24 horas.
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={last24hDistributionData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={45}
+                              outerRadius={65}
+                              paddingAngle={4}
+                              dataKey="value"
+                            >
+                              {last24hDistributionData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '11px' }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                    
+                    {/* Pie Legend List explicitly styled matching specifications */}
+                    {last24hDistributionData.length > 0 && (
+                      <div className="grid grid-cols-3 gap-1 pt-3 border-t border-slate-150/80 text-center">
+                        {last24hDistributionData.map((item, idx) => (
+                          <div key={idx} className="flex flex-col items-center">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1 justify-center leading-none">
+                              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: item.color }} />
+                              {item.name}
+                            </span>
+                            <span className="text-[11px] font-black text-slate-800 mt-1 leading-none">
+                              {item.value} {item.value === 1 ? 'carga' : 'cargas'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* List of released loads for audit */}
           <div className={`${viewMode === 'split' ? 'lg:col-span-4' : 'lg:col-span-12'} bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[750px] transition-all duration-300`}>
             <div className="p-5 border-b bg-slate-50/50 rounded-t-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -1045,19 +1415,106 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   </button>
                 </div>
                 <span className="text-[10px] font-black bg-primary-navy text-white px-2.5 py-1.5 rounded-lg uppercase tracking-widest shadow-sm">
-                  {loads.length} Cargas
+                  {filteredLoads.length} / {loads.length} Cargas
                 </span>
               </div>
             </div>
+
+            {/* Sistema de Filtros de Auditoria */}
+            <div className="bg-slate-50/70 p-4 border-b border-slate-200 flex flex-col gap-3">
+              {/* Pesquisa por texto */}
+              <div className="relative">
+                <Search className="absolute left-3 top-3 w-3.5 h-3.5 text-slate-400" />
+                <input
+                  id="load-search-query"
+                  type="text"
+                  placeholder="Pesquisar por Placa, Motorista, Lacre, Origem..."
+                  value={loadSearchQuery}
+                  onChange={(e) => setLoadSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary-navy"
+                />
+              </div>
+
+              {/* Filtros Dropdown */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Status Auditoria</label>
+                  <select
+                    id="load-audit-filter"
+                    value={loadAuditFilter}
+                    onChange={(e) => setLoadAuditFilter(e.target.value as any)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy"
+                  >
+                    <option value="ALL">TODAS</option>
+                    <option value="PENDING">A SEREM AUDITADAS</option>
+                    <option value="AUDITED">AUDITADAS</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Status Carga</label>
+                  <select
+                    id="load-status-filter"
+                    value={loadStatusFilter}
+                    onChange={(e) => setLoadStatusFilter(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy"
+                  >
+                    <option value="ALL">TODOS OS STATUS</option>
+                    <option value="AWAITING">AGUARDANDO</option>
+                    <option value="RELEASED">LIBERADO</option>
+                    <option value="BLOCKED">BLOQUEADO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Ocorrência</label>
+                  <select
+                    id="load-occurrence-filter"
+                    value={loadOccurrenceFilter}
+                    onChange={(e) => setLoadOccurrenceFilter(e.target.value as any)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy"
+                  >
+                    <option value="ALL">TODAS</option>
+                    <option value="WITH_OCCURRENCE">COM OCORRÊNCIA</option>
+                    <option value="WITHOUT_OCCURRENCE">SEM OCORRÊNCIAS</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Botão de limpar filtros quando algum estiver ativo */}
+              {(loadSearchQuery || loadAuditFilter !== 'ALL' || loadStatusFilter !== 'ALL' || loadOccurrenceFilter !== 'ALL') && (
+                <div className="flex justify-between items-center bg-blue-50/50 px-2 py-1.5 rounded-lg border border-blue-100">
+                  <span className="text-[9px] text-blue-800 font-bold">
+                    Resultados: {filteredLoads.length} de {loads.length}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setLoadSearchQuery('');
+                      setLoadAuditFilter('ALL');
+                      setLoadStatusFilter('ALL');
+                      setLoadOccurrenceFilter('ALL');
+                    }}
+                    className="flex items-center gap-1.5 text-[8px] font-black text-rose-600 uppercase hover:text-rose-800 transition-colors border-0 bg-transparent cursor-pointer"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    Limpar Filtros
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className={`overflow-y-auto flex-1 p-3 ${
               viewMode === 'split' 
                 ? 'space-y-3' 
                 : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-max align-start content-start placeholder-parent pb-16'
             }`}>
-              {loads.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-slate-400 italic">Sem registros no sistema.</div>
+              {filteredLoads.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 italic py-12 text-center text-xs">
+                  <p className="font-bold">Nenhum registro encontrado.</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Experimente trocar ou limpar os filtros para buscar novamente.</p>
+                </div>
               ) : (
-                loads.map((load) => (
+                filteredLoads.map((load) => (
                   <button
                     key={load.id}
                     onClick={() => handleSelectLoad(load.id)}
@@ -1633,6 +2090,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
             )}
             </div>
           </div>
+        </div>
         </div>
       )}
 
