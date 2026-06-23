@@ -87,10 +87,13 @@ export const Layout: React.FC<LayoutProps> = ({
 
   React.useEffect(() => {
     const root = document.documentElement;
+    const body = document.body;
     if (theme === 'dark') {
       root.classList.add('dark');
+      body.classList.add('dark');
     } else {
       root.classList.remove('dark');
+      body.classList.remove('dark');
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
@@ -281,6 +284,33 @@ export const Layout: React.FC<LayoutProps> = ({
                 <p className="text-[8px] font-bold text-primary-gold uppercase tracking-widest leading-none mt-0.5">{user?.systemRole}</p>
               </div>
             </div>
+
+            {/* Modo Escuro Toggle Switch inside Desktop Sidebar */}
+            <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
+              <span className="text-[9.5px] font-extrabold text-[#567bb0] uppercase tracking-wider">Modo Escuro / Turno</span>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                id="sidebar-darkmode-toggle"
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0c1f38] ${
+                  theme === 'dark' ? 'bg-primary-gold' : 'bg-slate-700'
+                }`}
+                aria-label="Alternar modo escuro"
+              >
+                <span
+                  id="sidebar-darkmode-knob"
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                    theme === 'dark' ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                >
+                  {theme === 'dark' ? (
+                    <Moon className="w-2.5 h-2.5 text-primary-navy" />
+                  ) : (
+                    <Sun className="w-2.5 h-2.5 text-amber-500" />
+                  )}
+                </span>
+              </button>
+            </div>
             
             <button
               onClick={() => onLogout()}
@@ -373,6 +403,34 @@ export const Layout: React.FC<LayoutProps> = ({
                   <p className="text-[8px] text-primary-gold uppercase leading-none mt-0.5">{user?.systemRole}</p>
                 </div>
               </div>
+
+              {/* Modo Escuro Toggle Switch inside Mobile Sidebar */}
+              <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
+                <span className="text-[9.5px] font-extrabold text-[#567bb0] uppercase tracking-wider">Modo Escuro / Turno</span>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  id="mobile-darkmode-toggle"
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0c1f38] ${
+                    theme === 'dark' ? 'bg-primary-gold' : 'bg-slate-700'
+                  }`}
+                  aria-label="Alternar modo escuro"
+                >
+                  <span
+                    id="mobile-darkmode-knob"
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                      theme === 'dark' ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  >
+                    {theme === 'dark' ? (
+                      <Moon className="w-2.5 h-2.5 text-primary-navy" />
+                    ) : (
+                      <Sun className="w-2.5 h-2.5 text-amber-500" />
+                    )}
+                  </span>
+                </button>
+              </div>
+
               <button
                 onClick={() => {
                   onLogout();

@@ -560,29 +560,8 @@ export const AuditView: React.FC<AuditViewProps> = ({
           originEmail: originEmail
         });
 
-        // Realiza o disparo à API HTTP POST para envio de e-mails via SendGrid
-        try {
-          const response = await fetch('/api/send-alert-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              plate: selectedLoad.plate,
-              driverName: selectedLoad.driverName || selectedLoad.driver,
-              occurrenceType: finalOccType,
-              occurrenceDescription: occDescription || 'Sem observações adicionais',
-              targetEmails: alertEmails,
-              originEmail: originEmail
-            })
-          });
-          const result = await response.json();
-          if (!response.ok) {
-            console.warn('API de e-mail retornou status de falha:', result);
-          } else {
-            console.log('Alerta SendGrid disparado com sucesso:', result);
-          }
-        } catch (apiErr) {
-          console.error('Falha de rede/API ao disparar SendGrid:', apiErr);
-        }
+        // O envio real à API SendGrid foi movido para o controlador central de estado no App (onUpdateOccurrence) para centralizar todos os alertas de bloqueio de forma automatizada.
+        console.log('Notificação de e-mail automática delegada ao gerenciador central de estado.');
 
         // Tenta tocar uma notificação discreta (chime de envio de alerta)
         try {
@@ -1209,191 +1188,6 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
       {activeSubTab === 'audit' && (
         <div className="space-y-6 animate-in fade-in duration-300">
-          {/* Collapsible Metrics Dashboard */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300">
-            {/* Header / Toggle */}
-            <div 
-              onClick={() => setShowDashboard(!showDashboard)}
-              className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-amber-500/10 text-amber-500 rounded-xl">
-                  <Activity className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-800 uppercase tracking-tight">Painel de Diretrizes e Métricas Operacionais</h3>
-                  <p className="text-[10px] text-slate-440 font-bold uppercase tracking-wider">Acompanhamento em tempo real de auditorias - Prevenção de Perdas</p>
-                </div>
-              </div>
-              <button 
-                type="button"
-                className="p-1 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 border-0 cursor-pointer"
-              >
-                <span>{showDashboard ? 'RECOLHER MÉTRICAS' : 'MOSTRAR MÉTRICAS'}</span>
-                {showDashboard ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-              </button>
-            </div>
-
-            {/* Dashboard Content */}
-            {showDashboard && (
-              <div className="p-6 space-y-6 animate-in slide-in-from-top-4 duration-300">
-                {/* Metric Summary Cards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Tempo Médio of release */}
-                  <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/[0.03] to-amber-500/[0.005] border border-amber-200/60 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Eficiência Operacional</span>
-                      <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight mt-1.5">Tempo Médio de Liberação</h4>
-                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-sm">Duração média decorrida entre o lançamento de expedição e a finalização de conferência final no gate do auditor.</p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-4">
-                      <div className="p-3 bg-amber-100 text-amber-700 rounded-2xl">
-                        <Clock className="w-6 h-6" />
-                      </div>
-                      <div className="flex flex-col text-right">
-                        <span className="text-3xl font-black text-slate-800 tracking-tight leading-none">
-                          {formattedAverageReleaseTime}
-                        </span>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">META: ≤ 45 min</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Blocked loads in last 24h */}
-                  <div className="p-5 rounded-2xl bg-gradient-to-br from-red-500/[0.03] to-red-500/[0.005] border border-red-200/60 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded">Alertas de Risco</span>
-                      <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-tight mt-1.5">Cargas Bloqueadas (Últimas 24h)</h4>
-                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-sm">Volume total acumulado de manifestos que apresentaram irregularidades e divergências impeditivas de liberação.</p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-4">
-                      <div className="p-3 bg-red-100 text-red-700 rounded-2xl">
-                        <ShieldAlert className="w-6 h-6 text-red-600" />
-                      </div>
-                      <div className="flex flex-col text-right">
-                        <span className="text-3xl font-black text-red-600 tracking-tight leading-none">
-                          {blockedLast24Hours.length}
-                        </span>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Cargas Críticas</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sub-grid with Graphs */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  {/* Left Chart: Line chart for Daily Average Release Time */}
-                  <div className="lg:col-span-8 bg-slate-50/40 border border-slate-200/60 rounded-2xl p-5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between border-b border-slate-100/80 pb-3 mb-4">
-                      <div>
-                        <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-tight">Histórico de Tempo Médio</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Média diária de conferência (últimos 7 dias)</p>
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
-                        Média de {formattedAverageReleaseTime} Geral
-                      </span>
-                    </div>
-
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={releaseTimeTrendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis 
-                            dataKey="date" 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            fontFamily="JetBrains Mono" 
-                            fontWeight="bold"
-                          />
-                          <YAxis 
-                            stroke="#94a3b8" 
-                            fontSize={10} 
-                            tickLine={false} 
-                            fontFamily="JetBrains Mono" 
-                            fontWeight="bold"
-                            label={{ value: 'minutos', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' } }}
-                          />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '11px', fontFamily: 'sans-serif' }}
-                            itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
-                          />
-                          <Line 
-                            type="monotone" 
-                            dataKey="Tempo (min)" 
-                            stroke="#f59e0b" 
-                            strokeWidth={3} 
-                            dot={{ stroke: '#f59e0b', strokeWidth: 2, r: 4 }} 
-                            activeDot={{ r: 6 }} 
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Right Chart: Status Distribution in Last 24 Hours */}
-                  <div className="lg:col-span-4 bg-slate-50/40 border border-slate-200/60 rounded-2xl p-5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between border-b border-slate-100/80 pb-3 mb-4">
-                      <div>
-                        <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-tight">Status das Cargas (Past 24h)</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Distribuição de manifestos ativos</p>
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-primary-navy bg-slate-100 px-2 py-0.5 rounded">
-                        Últimas 24h
-                      </span>
-                    </div>
-
-                    <div className="h-40 w-full flex items-center justify-center relative">
-                      {last24hDistributionData.length === 0 ? (
-                        <div className="text-center italic text-[10px] text-slate-400 px-4">
-                          Nenhum manifesto ativo ou conferido registrado nas últimas 24 horas.
-                        </div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={last24hDistributionData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={45}
-                              outerRadius={65}
-                              paddingAngle={4}
-                              dataKey="value"
-                            >
-                              {last24hDistributionData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip 
-                              contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '11px' }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                    
-                    {/* Pie Legend List explicitly styled matching specifications */}
-                    {last24hDistributionData.length > 0 && (
-                      <div className="grid grid-cols-3 gap-1 pt-3 border-t border-slate-150/80 text-center">
-                        {last24hDistributionData.map((item, idx) => (
-                          <div key={idx} className="flex flex-col items-center">
-                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1 justify-center leading-none">
-                              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: item.color }} />
-                              {item.name}
-                            </span>
-                            <span className="text-[11px] font-black text-slate-800 mt-1 leading-none">
-                              {item.value} {item.value === 1 ? 'carga' : 'cargas'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* List of released loads for audit */}
           <div className={`${viewMode === 'split' ? 'lg:col-span-4' : 'lg:col-span-12'} bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[750px] transition-all duration-300`}>
@@ -1506,6 +1300,20 @@ export const AuditView: React.FC<AuditViewProps> = ({
                     id="load-start-date"
                     value={loadStartDate}
                     onChange={(e) => setLoadStartDate(e.target.value)}
+                    onClick={(e) => {
+                      try {
+                        (e.currentTarget as any).showPicker();
+                      } catch (err) {
+                        console.log('showPicker not supported / failed', err);
+                      }
+                    }}
+                    onFocus={(e) => {
+                      try {
+                        (e.currentTarget as any).showPicker();
+                      } catch (err) {
+                        console.log('showPicker failed', err);
+                      }
+                    }}
                     className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy cursor-pointer"
                   />
                 </div>
@@ -1516,6 +1324,20 @@ export const AuditView: React.FC<AuditViewProps> = ({
                     id="load-end-date"
                     value={loadEndDate}
                     onChange={(e) => setLoadEndDate(e.target.value)}
+                    onClick={(e) => {
+                      try {
+                        (e.currentTarget as any).showPicker();
+                      } catch (err) {
+                        console.log('showPicker not supported / failed', err);
+                      }
+                    }}
+                    onFocus={(e) => {
+                      try {
+                        (e.currentTarget as any).showPicker();
+                      } catch (err) {
+                        console.log('showPicker failed', err);
+                      }
+                    }}
                     className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[10px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-navy cursor-pointer"
                   />
                 </div>

@@ -2,7 +2,8 @@
 export enum CargoStatus {
   AWAITING = 'AGUARDANDO CONFERÊNCIA',
   RELEASED = 'EM TRÂNSITO',
-  BLOCKED = 'ALERTA DE DIVERGÊNCIA'
+  BLOCKED = 'ALERTA DE DIVERGÊNCIA',
+  FINISHED = 'FINALIZADA'
 }
 
 export enum CargoType {

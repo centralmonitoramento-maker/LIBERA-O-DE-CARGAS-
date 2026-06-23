@@ -994,18 +994,21 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
   const awaitingCount = useMemo(() => loads.filter(l => l.status === CargoStatus.AWAITING).length, [loads]);
   
+  const finishedCount = useMemo(() => loads.filter(l => l.status === CargoStatus.FINISHED).length, [loads]);
+  
   const pieData = useMemo(() => {
     const data = [
       { name: 'Divergência', value: centralStats.blockedCount, color: '#f43f5e' },
       { name: 'Liberado', value: centralStats.releasedCount, color: '#10b981' },
-      { name: 'Aguardando', value: awaitingCount, color: '#f59e0b' }
+      { name: 'Aguardando', value: awaitingCount, color: '#f59e0b' },
+      { name: 'Finalizada', value: finishedCount, color: '#6366f1' }
     ].filter(item => item.value > 0);
     
     if (data.length === 0) {
       return [{ name: 'Sem cargas', value: 1, color: '#cbd5e1' }];
     }
     return data;
-  }, [centralStats.blockedCount, centralStats.releasedCount, awaitingCount]);
+  }, [centralStats.blockedCount, centralStats.releasedCount, awaitingCount, finishedCount]);
 
   const activeTripsPendingCheckout = useMemo(() => {
     return loads.filter(l => l.gateCheckedIn && l.status === CargoStatus.RELEASED && !l.tripFinished);
@@ -1243,7 +1246,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
     const updatedLoad: CargoLoad = {
       ...selectedLoad,
-      status: CargoStatus.RELEASED,
+      status: CargoStatus.FINISHED,
       tripFinished: true,
       gateStatus: 'Divergente' as const,
       auditedAt: timestamp,
@@ -1261,7 +1264,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     if (onUpdateLoad) {
       onUpdateLoad(updatedLoad);
     } else {
-      onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+      onUpdateStatus(selectedLoad.id, CargoStatus.FINISHED);
     }
 
     setSealConfirm('');
@@ -1587,7 +1590,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     data={[
                       { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
                       { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
-                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' }
+                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' },
+                      { name: 'FINALIZADA', value: finishedCount, color: '#6366f1' }
                     ].filter(i => i.value > 0)}
                     cx="50%"
                     cy="50%"
@@ -1599,7 +1603,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     {[
                       { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
                       { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
-                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' }
+                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' },
+                      { name: 'FINALIZADA', value: finishedCount, color: '#6366f1' }
                     ].filter(i => i.value > 0).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
@@ -1640,6 +1645,10 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                 <span>Aguardando ({awaitingCount})</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                <span>Finalizadas ({finishedCount})</span>
               </div>
             </div>
           </div>
@@ -2352,6 +2361,14 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   activeBg: 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20', 
                   hoverBg: 'hover:bg-orange-100',
                   dotColor: 'bg-orange-500'
+                },
+                { 
+                  key: CargoStatus.FINISHED, 
+                  label: 'FINALIZADAS', 
+                  count: loads.filter(l => l.status === CargoStatus.FINISHED).length, 
+                  activeBg: 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/25', 
+                  hoverBg: 'hover:bg-indigo-100',
+                  dotColor: 'bg-indigo-500'
                 }
               ].map((item) => (
                 <button
@@ -2509,7 +2526,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                         : 'bg-white border-slate-100 hover:border-slate-200 hover:shadow-md'
                     } ${
                       load.status === CargoStatus.RELEASED ? 'border-l-emerald-500' :
-                      load.status === CargoStatus.BLOCKED ? 'border-l-red-500' : 'border-l-amber-500 font-bold'
+                      load.status === CargoStatus.BLOCKED ? 'border-l-red-500' :
+                      load.status === CargoStatus.FINISHED ? 'border-l-indigo-500 opacity-80' : 'border-l-amber-500 font-bold'
                     }`}
                   >
                     <div className="flex justify-between items-center mb-3">
@@ -2537,14 +2555,18 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
                           : load.status === CargoStatus.BLOCKED 
                             ? 'bg-orange-50 text-orange-700 border border-orange-200 animate-pulse' 
-                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                            : load.status === CargoStatus.FINISHED
+                              ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                              : 'bg-amber-50 text-amber-700 border border-amber-100'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           load.status === CargoStatus.RELEASED ? 'bg-emerald-500' :
-                          load.status === CargoStatus.BLOCKED ? 'bg-orange-500' : 'bg-amber-500'
+                          load.status === CargoStatus.BLOCKED ? 'bg-orange-500' :
+                          load.status === CargoStatus.FINISHED ? 'bg-indigo-500' : 'bg-amber-500'
                         }`} />
                         {load.status === CargoStatus.RELEASED ? 'EM TRÂNSITO' :
-                         load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' : 'PORTARIA'}
+                         load.status === CargoStatus.BLOCKED ? 'DIVERGÊNCIA' :
+                         load.status === CargoStatus.FINISHED ? 'FINALIZADA' : 'PORTARIA'}
                       </span>
                     </div>
                     
@@ -2675,7 +2697,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       </button>
                       <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg ${
                         selectedLoad.status === CargoStatus.RELEASED ? 'bg-emerald-600 text-white' :
-                        selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
+                        selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-600 text-white' :
+                        selectedLoad.status === CargoStatus.FINISHED ? 'bg-indigo-600 text-white' : 'bg-amber-500 text-white'
                       }`}>
                         {selectedLoad.status}
                       </span>
@@ -3780,21 +3803,21 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             // Last destination, complete the route!
                             const updatedLoad = {
                               ...selectedLoad,
-                              status: CargoStatus.RELEASED,
+                              status: CargoStatus.FINISHED,
                               tripFinished: true,
                               checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest]
                             };
                             if (onUpdateLoad) {
                               onUpdateLoad(updatedLoad);
                             } else {
-                              onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+                              onUpdateStatus(selectedLoad.id, CargoStatus.FINISHED);
                             }
                           }
                         } else {
                           // Standard load
                           const updatedLoad = {
                             ...selectedLoad,
-                            status: CargoStatus.RELEASED,
+                            status: CargoStatus.FINISHED,
                             tripFinished: true,
                             gateStatus: 'Aprovado' as const,
                             auditedAt: new Date().toISOString()
@@ -3802,7 +3825,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                           if (onUpdateLoad) {
                             onUpdateLoad(updatedLoad);
                           } else {
-                            onUpdateStatus(selectedLoad.id, CargoStatus.RELEASED);
+                            onUpdateStatus(selectedLoad.id, CargoStatus.FINISHED);
                           }
                         }
                       }
@@ -3930,10 +3953,12 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status Atual</p>
                 <span className={`inline-flex px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider ${
                   selectedLoad.status === CargoStatus.RELEASED ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                  selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 border border-red-100 animate-pulse' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                  selectedLoad.status === CargoStatus.BLOCKED ? 'bg-red-50 text-red-700 border border-red-100 animate-pulse' :
+                  selectedLoad.status === CargoStatus.FINISHED ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
                 }`}>
                   {selectedLoad.status === CargoStatus.RELEASED ? 'EM TRÂNSITO' :
-                   selectedLoad.status === CargoStatus.BLOCKED ? 'ALERTA / DIVERGÊNCIA' : 'PORTARIA'}
+                   selectedLoad.status === CargoStatus.BLOCKED ? 'ALERTA / DIVERGÊNCIA' :
+                   selectedLoad.status === CargoStatus.FINISHED ? 'FINALIZADA' : 'PORTARIA'}
                 </span>
               </div>
 

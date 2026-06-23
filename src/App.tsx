@@ -721,6 +721,45 @@ const App: React.FC = () => {
     }
   };
 
+  const sendBlockedAlertEmail = async (load: CargoLoad, optType?: string, optDesc?: string) => {
+    try {
+      const savedEmails = localStorage.getItem('occurrenceAlertEmails');
+      const targetEmails = savedEmails ? JSON.parse(savedEmails) : [
+        'central.monitoramento@atacadaodiaadia.com.br',
+        'prevencao.perdas@atacadaodiaadia.com.br'
+      ];
+      
+      const originEmail = loggedInUser 
+        ? `${loggedInUser.username.toLowerCase()}@cargarelease.com`
+        : 'central.monitoramento@atacadaodiaadia.com.br';
+
+      const type = optType || load.occurrenceType || 'OUTRAS DIVERGÊNCIAS';
+      const desc = optDesc || load.occurrenceDescription || 'Carga marcada como BLOQUEADA por ação operacional.';
+
+      console.log(`Disparando envio automático de e-mail de bloqueio via SendGrid...`);
+      const response = await fetch('/api/send-alert-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plate: load.plate,
+          driverName: load.driverName || 'Não cadastrado',
+          occurrenceType: type,
+          occurrenceDescription: desc,
+          targetEmails: targetEmails,
+          originEmail: originEmail
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        console.warn('SendGrid automatically triggered alert returned failure:', result);
+      } else {
+        console.log('SendGrid automatically triggered alert email sent successfully:', result);
+      }
+    } catch (err) {
+      console.error('Error on auto SendGrid alert dispatch:', err);
+    }
+  };
+
   const handleUpdateStatus = async (id: string, newStatus: CargoStatus) => {
     const load = loads.find(l => l.id === id);
     const username = loggedInUser?.username || 'Sistema';
@@ -730,7 +769,7 @@ const App: React.FC = () => {
     const updatedLoad = {
       ...load,
       status: newStatus,
-      auditedAt: newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.BLOCKED ? timestamp : (load.auditedAt || "")
+      auditedAt: newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.BLOCKED || newStatus === CargoStatus.FINISHED ? timestamp : (load.auditedAt || "")
     };
 
     // Otimista: Atualiza localmente
@@ -747,6 +786,10 @@ const App: React.FC = () => {
       console.warn('Conexão instável. Modificação do status mantida localmente.', err);
       addLog('Atualização de Status (Local)', `Carga ${load.plate} alterada para ${newStatus} offline por ${username}`, username, id);
     }
+
+    if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
+      sendBlockedAlertEmail(updatedLoad);
+    }
   };
 
   const handleUpdateOccurrence = async (id: string, type: OccurrenceType, description: string, photo?: string) => {
@@ -755,13 +798,15 @@ const App: React.FC = () => {
     const timestamp = new Date().toISOString();
     if (!load) return;
 
+    const newStatus = type !== OccurrenceType.NONE ? CargoStatus.BLOCKED : load.status;
+
     const updatedLoad = {
       ...load,
       occurrenceType: type,
       occurrenceDescription: description,
       occurrencePhoto: photo || "",
       auditedAt: timestamp,
-      status: type !== OccurrenceType.NONE ? CargoStatus.BLOCKED : load.status,
+      status: newStatus,
       occurrenceHistory: [
         ...(load.occurrenceHistory || []),
         {
@@ -787,6 +832,10 @@ const App: React.FC = () => {
     } catch (err) {
       console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
       addLog('Auditoria de Carga (Local)', `Auditoria offline na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
+    }
+
+    if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
+      sendBlockedAlertEmail(updatedLoad, type, description);
     }
   };
 
