@@ -942,10 +942,10 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                         }`}
                       >
                         <span className="font-mono tracking-widest">{p}</span>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded text-[#ffffff] ${
                           activeSuggestionIndex === index 
-                            ? 'bg-primary-gold/20 text-primary-navy' 
-                            : 'bg-slate-100 text-slate-400'
+                            ? 'bg-primary-gold/40' 
+                            : 'bg-slate-600'
                         }`}>
                           Sugestão de Placa
                         </span>
@@ -1426,15 +1426,15 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 </div>
               )}
 
-              <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-6">
+              <div className="md:col-span-2 bg-slate-50 dark:bg-white keep-white border border-slate-200 rounded-3xl p-6 space-y-6">
                 <div>
-                  <h3 className="text-xs font-black uppercase text-primary-navy tracking-wider">Lançamento & Classificação de Paletes</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Selecione o tipo, informe a quantidade e clique em OK para lançar</p>
+                  <h3 className="text-xs font-black uppercase text-primary-navy dark:text-black tracking-wider">Lançamento & Classificação de Paletes</h3>
+                  <p className="text-[10px] text-slate-400 dark:text-black dark:font-black font-bold uppercase tracking-widest mt-0.5">Selecione o tipo, informe a quantidade e clique em OK para lançar</p>
                 </div>
 
                 {cargoType === CargoType.COMPARTILHADA && (
-                  <div className="bg-blue-50/50 border border-blue-200/50 p-4 rounded-2xl space-y-2">
-                    <span className="text-[10px] font-black uppercase text-blue-900 tracking-wider flex items-center gap-1">
+                  <div className="bg-blue-50/50 dark:bg-blue-50/20 border border-blue-200/50 p-4 rounded-2xl space-y-2">
+                    <span className="text-[10px] font-black uppercase text-blue-900 dark:text-black dark:font-black tracking-wider flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-blue-600" />
                       Destino para Lançamento do Palete:
                     </span>
@@ -1467,7 +1467,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 {/* Launcher Inputs Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
                   <div className="sm:col-span-6 space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Palete</label>
+                    <label className="text-[9px] font-black text-slate-400 dark:text-black dark:font-black uppercase tracking-widest ml-1">Tipo de Palete</label>
                     <select
                       value={selectedPalletType}
                       onChange={(e) => setSelectedPalletType(e.target.value)}
@@ -1482,7 +1482,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                   </div>
 
                   <div className="sm:col-span-4 space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantidade</label>
+                    <label className="text-[9px] font-black text-slate-400 dark:text-black dark:font-black uppercase tracking-widest ml-1">Quantidade</label>
                     <div className="relative">
                       <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
@@ -1515,17 +1515,17 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
 
                 {/* Current Pallets Summary and List */}
                 <div className="border-t border-slate-200/60 pt-5 space-y-3">
-                  <div className="flex flex-col sm:flex-row gap-2 justify-between items-start sm:items-center bg-white border border-slate-200/80 p-4 rounded-2xl">
+                  <div className="flex flex-col sm:flex-row gap-2 justify-between items-start sm:items-center bg-white dark:bg-white keep-white border border-slate-200/80 p-4 rounded-2xl">
                     <div className="flex items-center gap-2">
                       <Package className="w-5 h-5 text-primary-gold" />
                       <div>
-                        <span className="text-[10px] font-black uppercase text-primary-navy tracking-wider block">Somatória Final da Carga:</span>
+                        <span className="text-[10px] font-black uppercase text-primary-navy dark:text-black dark:font-black tracking-wider block">Somatória Final da Carga:</span>
                         {cargoType === CargoType.COMPARTILHADA && activeDest && (
-                          <span className="text-[9px] font-bold text-blue-500 uppercase tracking-tight block">Filtro Ativo: {activeDest} ({activeDestPalletCount} P)</span>
+                          <span className="text-[9px] font-bold text-blue-500 dark:text-blue-900 dark:font-black uppercase tracking-tight block">Filtro Ativo: {activeDest} ({activeDestPalletCount} P)</span>
                         )}
                       </div>
                     </div>
-                    <span className="text-sm font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl self-end sm:self-auto shrink-0 animate-pulse">
+                    <span className="text-sm font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 dark:bg-emerald-50 keep-white border border-emerald-200 px-3.5 py-1.5 rounded-xl self-end sm:self-auto shrink-0 animate-pulse">
                       {palletCount} {palletCount === 1 ? 'Palete' : 'Paletes'}
                     </span>
                   </div>
@@ -1535,7 +1535,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                       {/* Detailed list grouped per active / all destinations if shared */}
                       <div className="space-y-2">
                         {cargoType === CargoType.COMPARTILHADA && (
-                          <p className="text-[9px] font-black uppercase text-slate-500 tracking-wider">
+                          <p className="text-[9px] font-black uppercase text-slate-500 dark:text-black dark:font-black tracking-wider">
                             Lista de Paletes em {activeDest || 'Sem destino selecionado'}:
                           </p>
                         )}
@@ -1543,23 +1543,23 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                           {Object.entries(getPalletDetailsForDest(activeDest || destination || 'Principal'))
                             .filter(([_, qty]) => (qty as number) > 0)
                             .map(([type, qty]) => (
-                              <div key={type} className="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-xs group hover:border-slate-300 transition-all">
+                              <div key={type} className="bg-white dark:bg-white keep-white border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-xs group hover:border-slate-300 transition-all">
                                 <div className="flex flex-col">
-                                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{type}</span>
-                                  <span className="text-xs font-black text-primary-navy">{qty} un</span>
+                                  <span className="text-[9px] font-black text-slate-500 dark:text-black/80 dark:font-black uppercase tracking-widest">{type}</span>
+                                  <span className="text-xs font-black text-primary-navy dark:text-black dark:font-black">{qty} un</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => handleUpdateDetail(type, (qty as number) - 1)}
-                                    className="w-6 h-6 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-stone-600 font-black text-xs flex items-center justify-center cursor-pointer active:scale-90 transition-all"
+                                    className="w-6 h-6 bg-slate-50 dark:bg-slate-100 keep-white hover:bg-slate-100 border border-slate-200 rounded-md text-stone-600 font-black text-xs flex items-center justify-center cursor-pointer active:scale-90 transition-all"
                                   >
                                     -
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleUpdateDetail(type, (qty as number) + 1)}
-                                    className="w-6 h-6 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-stone-600 font-black text-xs flex items-center justify-center cursor-pointer active:scale-90 transition-all"
+                                    className="w-6 h-6 bg-slate-50 dark:bg-slate-100 keep-white hover:bg-slate-100 border border-slate-200 rounded-md text-stone-600 font-black text-xs flex items-center justify-center cursor-pointer active:scale-90 transition-all"
                                   >
                                     +
                                   </button>
@@ -1579,8 +1579,8 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
 
                       {/* Summary of other destinations if any */}
                       {cargoType === CargoType.COMPARTILHADA && destinationsList.length > 1 && (
-                        <div className="bg-slate-100/50 p-3.5 rounded-2xl space-y-2 border border-slate-200/50">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Visão Geral dos Outros Destinos:</p>
+                        <div className="bg-slate-100/50 dark:bg-slate-100/50 keep-white p-3.5 rounded-2xl space-y-2 border border-slate-200/50">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-black/80 dark:font-black">Visão Geral dos Outros Destinos:</p>
                           <div className="flex flex-wrap gap-2">
                             {destinationsList.filter(d => d !== activeDest).map(dest => {
                               const list = getPalletDetailsForDest(dest);
@@ -1590,7 +1590,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                                   key={dest}
                                   type="button"
                                   onClick={() => setSelectedDestForPallets(dest)}
-                                  className="text-[9px] font-bold bg-white text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer hover:border-blue-300"
+                                  className="text-[9px] font-bold bg-white dark:bg-white keep-white text-slate-600 dark:text-black dark:font-black border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer hover:border-blue-300"
                                 >
                                   {dest}: <span className="font-extrabold text-blue-600">{listCount}P</span>
                                 </button>
@@ -1601,8 +1601,8 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                       )}
                     </div>
                   ) : (
-                    <div className="text-center py-6 border border-dashed border-slate-200 rounded-2xl bg-white/50">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Nenhum palete lançado nesta liberação</p>
+                    <div className="text-center py-6 border border-dashed border-slate-200 rounded-2xl bg-white/50 dark:bg-white/50 keep-white">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-black dark:font-black">Nenhum palete lançado nesta liberação</p>
                     </div>
                   )}
                 </div>
@@ -1610,15 +1610,15 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
             </div>
 
             {/* High Risk Section */}
-            <div className={`p-6 rounded-2xl border transition-all duration-500 ${isHighRisk ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`p-6 rounded-2xl border transition-all duration-500 ${isHighRisk ? 'bg-red-50 dark:bg-red-50/20 border-red-200' : 'bg-slate-50 dark:bg-white keep-white border-slate-200'}`}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${isHighRisk ? 'bg-red-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
                     <AlertCircle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className={`text-sm font-black uppercase tracking-tight ${isHighRisk ? 'text-red-700' : 'text-slate-700'}`}>Carga de Alto Risco (PAR)</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Produtos de Alto Risco / Valor Agregado</p>
+                    <h3 className={`text-sm font-black uppercase tracking-tight ${isHighRisk ? 'text-red-700 dark:text-red-800 dark:font-black' : 'text-slate-700 dark:text-black dark:font-black'}`}>Carga de Alto Risco (PAR)</h3>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-black/80 dark:font-black uppercase tracking-widest">Produtos de Alto Risco / Valor Agregado</p>
                   </div>
                 </div>
                 <button
@@ -1633,7 +1633,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
               {isHighRisk && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-4 duration-300">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-red-400 uppercase tracking-wider ml-1">Tipo de Produto PAR</label>
+                    <label className="text-[10px] font-black text-red-400 dark:text-red-800 dark:font-black uppercase tracking-wider ml-1">Tipo de Produto PAR</label>
                     <input
                       type="text"
                       value={parType}
@@ -1644,7 +1644,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-red-400 uppercase tracking-wider ml-1">Número da Nota Fiscal</label>
+                    <label className="text-[10px] font-black text-red-400 dark:text-red-800 dark:font-black uppercase tracking-wider ml-1">Número da Nota Fiscal</label>
                     <input
                       type="text"
                       value={parInvoiceNumber}
@@ -1655,7 +1655,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                     />
                   </div>
                   <div className="md:col-span-2 space-y-2">
-                    <label className="text-[10px] font-black text-red-400 uppercase tracking-wider ml-1">Descrição Adicional</label>
+                    <label className="text-[10px] font-black text-red-400 dark:text-red-800 dark:font-black uppercase tracking-wider ml-1">Descrição Adicional</label>
                     <textarea
                       value={parDescription}
                       onChange={(e) => setParDescription(e.target.value)}

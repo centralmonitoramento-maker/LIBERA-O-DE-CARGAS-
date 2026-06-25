@@ -45,12 +45,264 @@ import {
   EyeOff,
   Flame
 } from 'lucide-react';
-import { CargoLoad, CargoStatus } from '../types';
+import { CargoLoad, CargoStatus, CargoType } from '../types';
 import { Lojas_Atacadao } from '../data/lojas';
 import { TELEMETRY_DATA } from '../data/telemetryData';
 
-const normalizePlateStr = (p: string): string => {
-  return p.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
+  'CD-01': {
+    lat: -16.01515,
+    lng: -47.98503,
+    address: 'DVA ATACADOS EIRELI, Trecho 2, Conjunto 8 lote 17 - Santa Maria, Brasília - DF',
+    label: 'CD-01 (Santa Maria)'
+  },
+  'CD-02': {
+    lat: -16.01515,
+    lng: -47.98503,
+    address: 'DVA ATACADOS EIRELI, Trecho 2, Conjunto 8 lote 17 - Santa Maria, Brasília - DF',
+    label: 'CD-02 (Santa Maria)'
+  },
+  '07 -SIA': {
+    lat: -15.7953,
+    lng: -47.9622,
+    address: 'SIA Trecho 5, Brasília - DF',
+    label: 'SIA'
+  },
+  '28-AGUAS CLARAS': {
+    lat: -15.8396,
+    lng: -48.0261,
+    address: 'Av. das Castanheiras, Águas Claras, Brasília - DF',
+    label: 'Águas Claras'
+  },
+  '29-GUARA': {
+    lat: -15.8190,
+    lng: -47.9863,
+    address: 'QE 13, Guará II, Brasília - DF',
+    label: 'Guará'
+  },
+  '42-JARDIM BOTANICO': {
+    lat: -15.8821,
+    lng: -47.8189,
+    address: 'SMDB Jardim Botânico, Brasília - DF',
+    label: 'Jardim Botânico'
+  },
+  '25-NOVO GAMA': {
+    lat: -16.0592,
+    lng: -48.0371,
+    address: 'Novo Gama - GO',
+    label: 'Novo Gama'
+  },
+  '13-LUZIANIA 01': {
+    lat: -16.2559,
+    lng: -47.9398,
+    address: 'Parque Estrela Dalva II, Luziânia - GO',
+    label: 'Luziânia 13'
+  },
+  '16-SANTO ANTONIO': {
+    lat: -15.9404,
+    lng: -48.2562,
+    address: 'Santo Antônio do Descoberto - GO',
+    label: 'Santo Antônio'
+  },
+  '32-CEILANDIA CENTRO': {
+    lat: -15.8235,
+    lng: -48.1032,
+    address: 'QNM 11, Ceilândia Centro, Brasília - DF',
+    label: 'Ceilândia Centro'
+  },
+  '01-BR 070': {
+    lat: -15.8115,
+    lng: -48.1189,
+    address: 'Rodovia BR 070, Km 08, Ceilândia - DF',
+    label: 'BR 070'
+  },
+  '21-CEILÂNDIA SUL': {
+    lat: -15.8262,
+    lng: -48.1256,
+    address: 'Ceilândia Sul, Brasília - DF',
+    label: 'Ceilândia Sul (O SUL)'
+  },
+  '55-RECANTO DAS EMAS': {
+    lat: -15.9015,
+    lng: -48.0743,
+    address: 'Recanto das Emas, Brasília - DF',
+    label: 'Recanto das Emas'
+  },
+  '34-SAMAMBAIA SUL': {
+    lat: -15.8814,
+    lng: -48.1165,
+    address: 'QR 502, ADE Sul, Samambaia Sul, Brasília - DF',
+    label: 'Samambaia Sul'
+  },
+  '60-FURNAS': {
+    lat: -15.8643,
+    lng: -48.0872,
+    address: 'Furnas, Brasília - DF',
+    label: 'Furnas'
+  },
+  '08-TAGUATINGA': {
+    lat: -15.8335,
+    lng: -48.0560,
+    address: 'Taguatinga, Brasília - DF',
+    label: 'Taguatinga'
+  },
+  '58-EPTG': {
+    lat: -15.8164,
+    lng: -48.0182,
+    address: 'Marginal EPTG, Brasília - DF',
+    label: 'EPTG'
+  },
+  '38-VICENTE PIRES R04': {
+    lat: -15.8012,
+    lng: -48.0263,
+    address: 'Rua 4, Vicente Pires, Brasília - DF',
+    label: 'Vicente Pires Rua 4'
+  },
+  '37-VICENTE PIRES R12': {
+    lat: -15.8078,
+    lng: -48.0163,
+    address: 'Rua 12, Vicente Pires, Brasília - DF',
+    label: 'Vicente Pires Rua 12'
+  },
+  '52-RIACHO FUNDO': {
+    lat: -15.8784,
+    lng: -48.0189,
+    address: 'Riacho Fundo I, Brasília - DF',
+    label: 'Riacho Fundo'
+  },
+  '18-AGUAS LINDAS': {
+    lat: -15.7702,
+    lng: -48.2778,
+    address: 'Alameda Santa Luzia, Águas Lindas de Goiás - GO',
+    label: 'Águas Lindas (Águas Belas)'
+  },
+  '33-PLANALTINA DF': {
+    lat: -15.6173,
+    lng: -47.6698,
+    address: 'Setor Norte, Planaltina - DF',
+    label: 'Planaltina DF'
+  },
+  '27-PLANLTINA GO': {
+    lat: -15.4542,
+    lng: -47.6152,
+    address: 'Planaltina de Goiás - GO',
+    label: 'Planaltina GO (Plantina GO)'
+  },
+  "50- MESTRE D'ARMAS": {
+    lat: -15.6025,
+    lng: -47.6983,
+    address: 'Mestre d\'Armas, Planaltina - DF',
+    label: 'Planaltina Mestre d\'Armas'
+  },
+  '63-FORMOSA': {
+    lat: -15.5414,
+    lng: -47.3344,
+    address: 'Formosa - GO',
+    label: 'Formosa'
+  },
+  '40-GURUPI TO': {
+    lat: -11.7268,
+    lng: -49.0668,
+    address: 'Av. Maranhão, 2901 - Perímetro Urbano, Gurupi - TO, 77410-020',
+    label: '40-Gurupi TO'
+  },
+  '30-LEM': {
+    lat: -12.0933,
+    lng: -45.7909,
+    address: 'Luís Eduardo Magalhães - BA',
+    label: 'LEM'
+  },
+  '19-CALDAS NOVAS': {
+    lat: -17.7441,
+    lng: -48.6258,
+    address: 'Caldas Novas - GO',
+    label: 'Caldas Novas'
+  },
+  '47-APARECIDA DE GOIANIA': {
+    lat: -16.8208,
+    lng: -49.2559,
+    address: 'Aparecida de Goiânia - GO',
+    label: 'Aparecida de Goiânia'
+  },
+  '15-BALNEARIO': {
+    lat: -16.6341,
+    lng: -49.2882,
+    address: 'Setor Balneário, Goiânia - GO',
+    label: 'Balneário'
+  },
+  '26-CESAR LATTES': {
+    lat: -16.7325,
+    lng: -49.3245,
+    address: 'Av. César Lattes, Goiânia - GO',
+    label: 'César Lattes'
+  },
+  '12-GAMA': {
+    lat: -15.9912,
+    lng: -48.0494,
+    address: 'Setor Leste, Gama - DF',
+    label: 'Gama (Completo)'
+  },
+  '39-GOIANESIA': {
+    lat: -15.3189,
+    lng: -49.1179,
+    address: 'Área Comercial, Goianésia - GO',
+    label: 'Goianésia (Goiênia)'
+  },
+  '64-ITUMBIARA': {
+    lat: -18.4189,
+    lng: -49.2157,
+    address: 'Vila Vitória, Itumbiara - GO',
+    label: 'Itumbiara'
+  },
+  '62-LUZIANIA 2': {
+    lat: -16.2754,
+    lng: -47.9622,
+    address: 'Luziânia Loja 2 - GO',
+    label: 'Luziânia 2 (Luciani 2)'
+  },
+  '53-RIO VERDE': {
+    lat: -17.7915,
+    lng: -50.9208,
+    address: 'Rio Verde - GO',
+    label: 'Rio Verde'
+  },
+  '04-SOBRADINHO': {
+    lat: -15.6514,
+    lng: -47.7915,
+    address: 'Sobradinho - DF',
+    label: 'Sobradinho'
+  }
+};
+
+const resolveDestinationCoords = (name: any): [number, number] => {
+  if (!name) return [-16.048231, -47.971867];
+  const nameStr = String(name).toLowerCase();
+  
+  // 1. Direct or partial match in ROUTE_COORDINATES
+  let geo = ROUTE_COORDINATES[name];
+  if (!geo) {
+    const key = Object.keys(ROUTE_COORDINATES).find(k => 
+      k.toLowerCase().includes(nameStr) || 
+      nameStr.includes(k.toLowerCase())
+    );
+    if (key) geo = ROUTE_COORDINATES[key];
+  }
+  if (geo) return [geo.lat, geo.lng];
+
+  // 2. Fallback to Lojas_Atacadao
+  const foundStore = Lojas_Atacadao.find(loja => {
+    const storeName = String(loja.name || '').toLowerCase();
+    return nameStr.includes(storeName) || storeName.includes(nameStr);
+  });
+  if (foundStore) return [foundStore.latitude, foundStore.longitude];
+
+  // 3. Absolute fallback (Santa Maria)
+  return [-16.048231, -47.971867];
+};
+
+const normalizePlateStr = (p: any): string => {
+  if (!p) return '';
+  return String(p).toUpperCase().replace(/[^A-Z0-9]/g, '');
 };
 
 const platesMatch = (p1?: string, p2?: string): boolean => {
@@ -148,63 +400,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const cdSiaCoordinates: [number, number] = [-15.7953, -47.9622];
   const cdSantaMariaCoordinates: [number, number] = [-16.048231, -47.971867];
 
-  // Store Coordinates for 500m geofencing
-  const ROUTE_STORE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
-    '07 -SIA': {
-      lat: -15.7953,
-      lng: -47.9622,
-      address: 'SIA Trecho 5, Brasília - DF',
-      label: 'SIA'
-    },
-    '28-AGUAS CLARAS': {
-      lat: -15.8396,
-      lng: -48.0261,
-      address: 'Av. das Castanheiras, Águas Claras, Brasília - DF',
-      label: 'Águas Claras'
-    },
-    '29-GUARA': {
-      lat: -15.8190,
-      lng: -47.9863,
-      address: 'QE 13, Guará II, Brasília - DF',
-      label: 'Guará'
-    },
-    '42-JARDIM BOTANICO': {
-      lat: -15.8821,
-      lng: -47.8189,
-      address: 'SMDB Jardim Botânico, Brasília - DF',
-      label: 'Jardim Botânico'
-    },
-    '25-NOVO GAMA': {
-      lat: -16.0592,
-      lng: -48.0371,
-      address: 'Novo Gama - GO',
-      label: 'Novo Gama'
-    },
-    '13-LUZIANIA 01': {
-      lat: -16.2559,
-      lng: -47.9398,
-      address: 'Parque Estrela Dalva II, Luziânia - GO',
-      label: 'Luziânia 13'
-    },
-    '16-SANTO ANTONIO': {
-      lat: -15.9404,
-      lng: -48.2562,
-      address: 'Santo Antônio do Descoberto - GO',
-      label: 'Santo Antônio'
-    },
-    '32-CEILANDIA CENTRO': {
-      lat: -15.8235,
-      lng: -48.1032,
-      address: 'QNM 11, Ceilândia Centro, Brasília - DF',
-      label: 'Ceilândia Centro'
-    },
-    '01-BR 070': {
-      lat: -15.8115,
-      lng: -48.1189,
-      address: 'Rodovia BR 070, Km 08, Ceilândia - DF',
-      label: 'BR 070'
-    }
-  };
+  // Store Coordinates for 500m geofencing - now mapped to our full list of route coordinates
+  const ROUTE_STORE_COORDINATES = ROUTE_COORDINATES;
 
   interface FenceAlert {
     id: string;
@@ -231,6 +428,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const previousInsideStoreRef = useRef<Record<string, Record<string, boolean>>>({});
   const previousDeviatedRef = useRef<Record<string, boolean>>({});
   const isFirstLoadRef = useRef(true);
+  const fetchedRoutesRef = useRef<Set<string>>(new Set());
 
   const playDeviationSiren = () => {
     try {
@@ -275,18 +473,107 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
   // Helper: Get origin coordinates for a truck based on its associated cargo load
   const getOriginCoordinates = (truck: TruckData): [number, number] => {
+    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+    if (matchedLoad && matchedLoad.origin) {
+      return resolveDestinationCoords(matchedLoad.origin);
+    }
     return cdSantaMariaCoordinates;
   };
 
   // Helper: Get destination coordinates for a truck
   const getDestinationCoordinates = (truck: TruckData): [number, number] => {
+    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
+    if (matchedLoad && matchedLoad.destination) {
+      return resolveDestinationCoords(matchedLoad.destination);
+    }
     const destCoords = findStoreCoordinates(truck.destinationName || '');
     return destCoords || cdSantaMariaCoordinates; // fallback to Santa Maria
   };
 
-  // Helper: Generate expected route waypoints between origin and destination
+  // Helper: Generate expected route waypoints between origin and destination (highway backbone router)
   const getExpectedRoutePoints = (origin: [number, number], dest: [number, number]): [number, number][] => {
-    // Generate 4 structured waypoints to model real transit highways (e.g., EPTG, Estrutural, BR-040)
+    const latDiff = Math.abs(origin[0] - dest[0]);
+    const lngDiff = Math.abs(origin[1] - dest[1]);
+    
+    // If origin and destination are extremely close, return direct line
+    if (latDiff < 0.01 && lngDiff < 0.01) {
+      return [origin, dest];
+    }
+
+    const isFromSantaMaria = Math.abs(origin[0] - (-16.01515)) < 0.05 || Math.abs(origin[0] - (-16.048231)) < 0.05;
+    
+    if (isFromSantaMaria) {
+      // Base route from Santa Maria going North along BR-040 / EPIA South
+      const route: [number, number][] = [origin];
+      
+      // Step 1: Santa Maria to BR-040 near Valparaíso border
+      route.push([-16.002, -47.989]);
+      
+      // Step 2: BR-040 near Catetinho
+      route.push([-15.955, -47.978]);
+      
+      // Step 3: BR-040 / EPIA South Interchange
+      route.push([-15.918, -47.969]);
+      
+      // Step 4: EPIA South near Park Way / Airport junction
+      route.push([-15.882, -47.961]);
+
+      // Determine the destination region to route through the correct highway
+      const destLat = dest[0];
+      const destLng = dest[1];
+
+      if (destLng < -48.08) {
+        // West/Ceilândia region (Ceilândia, Samambaia, BR-070)
+        route.push([-15.836, -47.945]); // EPIA Zoo
+        route.push([-15.798, -47.947]); // EPIA SIA
+        route.push([-15.776, -47.995]); // Estrutural / Vicente Pires
+        route.push([-15.793, -48.065]); // Estrutural West / Pistão Norte
+        route.push([-15.811, -48.115]); // BR-070 Ceilândia
+      } else if (destLng < -47.99) {
+        // West-Central / Taguatinga, Águas Claras, Vicente Pires
+        route.push([-15.836, -47.945]); // EPIA Zoo
+        route.push([-15.815, -47.985]); // EPTG Vicente Pires entrance
+        route.push([-15.835, -48.015]); // EPTG Águas Claras entrance
+      } else if (destLat > -15.75) {
+        // North region (Sobradinho, Planaltina, Formosa)
+        route.push([-15.836, -47.945]); // EPIA Zoo
+        route.push([-15.798, -47.947]); // EPIA SIA
+        route.push([-15.735, -47.905]); // EPIA North Balão do Torto
+        
+        if (destLng > -47.6) {
+          // Formosa
+          route.push([-15.660, -47.800]); // BR-020 Sobradinho
+          route.push([-15.617, -47.669]); // BR-020 Planaltina
+          route.push([-15.570, -47.500]); // BR-020 to Formosa
+        } else if (destLat > -15.64) {
+          // Planaltina
+          route.push([-15.660, -47.800]); // BR-020 Sobradinho
+          route.push([-15.617, -47.669]); // BR-020 Planaltina
+        } else {
+          // Sobradinho
+          route.push([-15.660, -47.800]); // BR-020 Sobradinho
+        }
+      } else if (destLat < -16.05) {
+        // South region (Luziânia)
+        const southRoute: [number, number][] = [origin];
+        southRoute.push([-16.055, -48.020]); // Novo Gama / BR-040 South
+        southRoute.push([-16.150, -47.990]); // BR-040 South midway
+        southRoute.push([-16.255, -47.939]); // Luziânia
+        southRoute.push(dest);
+        return southRoute;
+      } else {
+        // Central region (SIA, Guará, Jardim Botânico, Riacho Fundo)
+        route.push([-15.836, -47.945]); // EPIA Zoo / Guará
+        if (destLat > -15.81) {
+          route.push([-15.798, -47.947]); // EPIA SIA
+        }
+      }
+
+      route.push(dest);
+      return route;
+    }
+
+    // Default generic 4-segment interpolation fallback
     const lat1 = origin[0] + (dest[0] - origin[0]) * 0.35 + (dest[0] > origin[0] ? -0.003 : 0.003);
     const lng1 = origin[1] + (dest[1] - origin[1]) * 0.35 + (dest[1] > origin[1] ? 0.004 : -0.004);
     
@@ -296,10 +583,62 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     return [origin, [lat1, lng1], [lat2, lng2], dest];
   };
 
+  // Helper: Get full planned route sequence for a truck including additional destinations (Carga Compartilhada)
+  const getTruckRoutePoints = (truck: TruckData): [number, number][] => {
+    const placa = truck.ras_vei_placa;
+    const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
+    const origin = getOriginCoordinates(truck);
+    const dest = getDestinationCoordinates(truck);
+    const addDests = matchedLoad && matchedLoad.cargoType === CargoType.COMPARTILHADA 
+      ? (matchedLoad.additionalDestinations || []).join('|')
+      : '';
+    const routeKey = `${placa}_${origin[0]},${origin[1]}_${dest[0]},${dest[1]}_${addDests}`;
+
+    // If OSRM has returned the high-precision road coordinate points, use them!
+    if (osrmRoutes[routeKey]) {
+      return osrmRoutes[routeKey];
+    }
+    if (osrmRoutes[placa]) {
+      return osrmRoutes[placa];
+    }
+
+    let waypoints: [number, number][] = [];
+    waypoints.push(...getExpectedRoutePoints(origin, dest));
+    
+    if (matchedLoad && matchedLoad.cargoType === CargoType.COMPARTILHADA && matchedLoad.additionalDestinations && matchedLoad.additionalDestinations.length > 0) {
+      let currentDest = dest;
+      matchedLoad.additionalDestinations.forEach(addDestName => {
+        const nextDest = resolveDestinationCoords(addDestName);
+        const legPoints = getExpectedRoutePoints(currentDest, nextDest);
+        waypoints.push(...legPoints.slice(1));
+        currentDest = nextDest;
+      });
+    }
+    
+    return waypoints;
+  };
+
   // Helper: Interpolate truck position along expected route based on progress percent
   const getTruckPositionOnRoute = (origin: [number, number], dest: [number, number], progress: number): [number, number] => {
     const ratio = progress / 100;
     const waypoints = getExpectedRoutePoints(origin, dest);
+    const numSegments = waypoints.length - 1;
+    const segmentIndex = Math.min(Math.floor(ratio * numSegments), numSegments - 1);
+    const segmentRatio = (ratio * numSegments) - segmentIndex;
+    
+    const start = waypoints[segmentIndex];
+    const end = waypoints[segmentIndex + 1];
+    
+    const lat = start[0] + (end[0] - start[0]) * segmentRatio;
+    const lng = start[1] + (end[1] - start[1]) * segmentRatio;
+    return [lat, lng];
+  };
+
+  const getTruckPositionOnRoutePoints = (waypoints: [number, number][], progress: number): [number, number] => {
+    if (waypoints.length === 0) return cdSantaMariaCoordinates;
+    if (waypoints.length === 1) return waypoints[0];
+    
+    const ratio = progress / 100;
     const numSegments = waypoints.length - 1;
     const segmentIndex = Math.min(Math.floor(ratio * numSegments), numSegments - 1);
     const segmentRatio = (ratio * numSegments) - segmentIndex;
@@ -357,9 +696,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
   // Helper: Calculate how far a truck is from its planned route path
   const getTruckDeviation = (truck: TruckData): number => {
-    const originCoords = getOriginCoordinates(truck);
-    const destCoords = getDestinationCoordinates(truck);
-    const waypoints = getExpectedRoutePoints(originCoords, destCoords);
+    const waypoints = getTruckRoutePoints(truck);
     const truckCoords: [number, number] = [parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude)];
     return getMinDistanceToRoute(truckCoords, waypoints);
   };
@@ -379,6 +716,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const [activeRoutePlaca, setActiveRoutePlaca] = useState<string | null>(null);
   const [activeShortcutAction, setActiveShortcutAction] = useState<string | null>(null);
   const [traces, setTraces] = useState<{ [placa: string]: [number, number][] }>({});
+  const [osrmRoutes, setOsrmRoutes] = useState<Record<string, [number, number][]>>({});
 
   const [comandosLogs, setComandosLogs] = useState<{ [placa: string]: string[] }>({});
   const [blockLoading, setBlockLoading] = useState<boolean>(false);
@@ -386,15 +724,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   // Helper: Find Coordinates
   const findStoreCoordinates = (destName: string): [number, number] | null => {
     if (!destName) return null;
-    const normalizedDest = destName.toLowerCase();
-    const foundStore = Lojas_Atacadao.find(loja => 
-      normalizedDest.includes(loja.name.toLowerCase()) || 
-      loja.name.toLowerCase().includes(normalizedDest)
-    );
-    if (foundStore) {
-      return [foundStore.latitude, foundStore.longitude];
-    }
-    return null;
+    return resolveDestinationCoords(destName);
   };
 
   // Helper: Distance
@@ -427,15 +757,23 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         : (matchedLoad?.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
 
       const destinationName = matchedLoad?.destination || (t.ras_vei_placa === 'KTU-4C64' ? 'Santa Maria (DF)' : 'Atacadão SIA');
-      const originCoords = cdSantaMariaCoordinates;
-      const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
+      const tempTruck: TruckData = {
+        ras_vei_placa: t.ras_vei_placa,
+        ras_eve_latitude: t.ras_eve_latitude,
+        ras_eve_longitude: t.ras_eve_longitude,
+        ras_eve_velocidade: t.ras_eve_velocidade,
+        ras_eve_ignicao: t.ras_eve_ignicao,
+        destinationName
+      };
+
+      const routePts = getTruckRoutePoints(tempTruck);
       const isDeviated = forcedDeviatedPlacas[t.ras_vei_placa];
 
       let initialLat = t.ras_eve_latitude;
       let initialLng = t.ras_eve_longitude;
 
       if (matchedLoad?.status === CargoStatus.RELEASED) {
-        const normalPos = getTruckPositionOnRoute(originCoords, destCoords, baselineProgress);
+        const normalPos = getTruckPositionOnRoutePoints(routePts, baselineProgress);
         if (isDeviated) {
           initialLat = String(normalPos[0] + 0.038);
           initialLng = String(normalPos[1] - 0.038);
@@ -472,8 +810,16 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
     const customMapped: TruckData[] = customLoads.map((load, idx) => {
       const destinationName = load.destination || '';
-      const originCoords = cdSantaMariaCoordinates;
-      const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
+      const tempTruck: TruckData = {
+        ras_vei_placa: load.plate ? load.plate.toUpperCase() : "PLA-0000",
+        ras_eve_latitude: "0",
+        ras_eve_longitude: "0",
+        ras_eve_velocidade: "0",
+        ras_eve_ignicao: "0",
+        destinationName
+      };
+
+      const routePts = getTruckRoutePoints(tempTruck);
       const isDeviated = load.plate ? forcedDeviatedPlacas[load.plate.toUpperCase()] : false;
 
       const existingTruck = trucks.find(x => platesMatch(x.ras_vei_placa, load.plate));
@@ -481,20 +827,20 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         ? existingTruck.progressPercent
         : (load.status === CargoStatus.RELEASED ? Math.floor(Math.random() * 50) + 25 : 0);
 
-      let initialLat = String(destCoords[0]);
-      let initialLng = String(destCoords[1]);
+      let initialLat = routePts.length > 0 ? String(routePts[routePts.length - 1][0]) : String(cdSantaMariaCoordinates[0]);
+      let initialLng = routePts.length > 0 ? String(routePts[routePts.length - 1][1]) : String(cdSantaMariaCoordinates[1]);
 
       if (load.status === CargoStatus.RELEASED) {
-        const normalPos = getTruckPositionOnRoute(originCoords, destCoords, baselineProgress);
+        const normalPos = getTruckPositionOnRoutePoints(routePts, baselineProgress);
         if (isDeviated) {
           initialLat = String(normalPos[0] + 0.038);
           initialLng = String(normalPos[1] - 0.038);
         } else {
           initialLat = String(normalPos[0]);
-          normalPos[1] = normalPos[1];
           initialLng = String(normalPos[1]);
         }
       } else {
+        const originCoords = getOriginCoordinates(tempTruck);
         initialLat = existingTruck?.ras_eve_latitude || String(originCoords[0]);
         initialLng = existingTruck?.ras_eve_longitude || String(originCoords[1]);
       }
@@ -665,28 +1011,171 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     });
   }, [trucks, loads, geofenceRadius, deviationThreshold, routeDeviationEnabled]);
 
+  // Reactive OSRM Route Fetching Effect
+  useEffect(() => {
+    let active = true;
+
+    const fetchActiveRoutes = async () => {
+      // Find plates that need high-precision street routes:
+      // - Trucks with active/released cargo
+      // - Active route displaying
+      // - Selected vehicle
+      const platesToFetch = new Set<string>();
+      
+      trucks.forEach(t => {
+        const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
+        if (matchedLoad?.status === CargoStatus.RELEASED) {
+          platesToFetch.add(t.ras_vei_placa);
+        }
+      });
+
+      if (activeRoutePlaca) {
+        platesToFetch.add(activeRoutePlaca);
+      }
+      if (selectedPlaca) {
+        platesToFetch.add(selectedPlaca);
+      }
+
+      for (const placa of platesToFetch) {
+        if (!active) return;
+        const truck = trucks.find(t => t.ras_vei_placa === placa);
+        if (!truck) continue;
+
+        const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
+        const origin = getOriginCoordinates(truck);
+        const dest = getDestinationCoordinates(truck);
+        const addDests = matchedLoad && matchedLoad.cargoType === CargoType.COMPARTILHADA 
+          ? (matchedLoad.additionalDestinations || []).join('|')
+          : '';
+        const routeKey = `${placa}_${origin[0]},${origin[1]}_${dest[0]},${dest[1]}_${addDests}`;
+
+        // If already cached or currently fetching, skip
+        if (osrmRoutes[routeKey] || fetchedRoutesRef.current.has(routeKey)) continue;
+
+        // Mark as fetching/fetched to prevent duplicate parallel requests
+        fetchedRoutesRef.current.add(routeKey);
+
+        // Form multiple stop coordinates: [Origin, Destination, ...AdditionalDestinations]
+        const points: [number, number][] = [origin, dest];
+        if (matchedLoad && matchedLoad.cargoType === CargoType.COMPARTILHADA && matchedLoad.additionalDestinations && matchedLoad.additionalDestinations.length > 0) {
+          matchedLoad.additionalDestinations.forEach(addDestName => {
+            points.push(resolveDestinationCoords(addDestName));
+          });
+        }
+
+        const coordString = points.map(p => `${p[1]},${p[0]}`).join(';');
+        try {
+          const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+          const response = await fetch(url);
+          if (response.ok && active) {
+            const data = await response.json();
+            if (data.code === 'Ok' && data.routes && data.routes[0]) {
+              const coords = data.routes[0].geometry.coordinates;
+              const routePoints = coords.map((c: any) => [c[1], c[0]] as [number, number]);
+              setOsrmRoutes(prev => ({
+                ...prev,
+                [routeKey]: routePoints,
+                [placa]: routePoints
+              }));
+            } else {
+              // On OSRM error or no routes, remove from ref so we can retry or fallback later
+              fetchedRoutesRef.current.delete(routeKey);
+            }
+          } else {
+            fetchedRoutesRef.current.delete(routeKey);
+          }
+        } catch (err) {
+          console.error(`Failed to fetch high-precision OSRM route for ${placa}:`, err);
+          fetchedRoutesRef.current.delete(routeKey);
+        }
+      }
+    };
+
+    fetchActiveRoutes();
+
+    return () => {
+      active = false;
+    };
+  }, [trucks, loads, activeRoutePlaca, selectedPlaca]);
+
   // Leaflet Map Initial setup
   useEffect(() => {
     if (!mapContainerRef.current) return;
+    
+    // Safely cleanup the previous map instance if it exists
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
+      try {
+        mapInstanceRef.current.remove();
+      } catch (err) {
+        console.warn("Error removing previous map instance:", err);
+      }
       mapInstanceRef.current = null;
     }
 
-    const map = L.map(mapContainerRef.current, {
-      zoomControl: false,
-      attributionControl: false
-    }).setView([-15.79361, -47.88215], 11);
+    // Safely remove pre-existing _leaflet_id to avoid "Map container is already initialized" crash
+    const container = mapContainerRef.current;
+    if (container && (container as any)._leaflet_id) {
+      (container as any)._leaflet_id = null;
+    }
+
+    let map: L.Map;
+    try {
+      map = L.map(container, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([-15.79361, -47.88215], 11);
+    } catch (e) {
+      console.warn("Failed to initialize Leaflet map, retrying after resetting container:", e);
+      if (container) {
+        container.innerHTML = "";
+        (container as any)._leaflet_id = null;
+      }
+      map = L.map(container, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([-15.79361, -47.88215], 11);
+    }
 
     mapInstanceRef.current = map;
 
     return () => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch (err) {
+          console.warn("Cleanup error removing map:", err);
+        }
         mapInstanceRef.current = null;
       }
     };
   }, []);
+
+  // Force Leaflet map resize/invalidate size when panels shift or window resizes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+
+    // Multiple timeouts to capture layout changes before/after transition end
+    handleResize();
+    const t1 = setTimeout(handleResize, 50);
+    const t2 = setTimeout(handleResize, 150);
+    const t3 = setTimeout(handleResize, 300);
+    const t4 = setTimeout(handleResize, 500);
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [selectedPlaca, sidebarTab, isFullscreen]);
 
   // Map Click handler (for target geofencing)
   useEffect(() => {
@@ -1139,20 +1628,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     if (activeRoutePlaca) {
       const truck = trucks.find(t => t.ras_vei_placa === activeRoutePlaca);
       if (truck) {
-        const truckCoords: [number, number] = [parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude)];
-        const destCoords = findStoreCoordinates(truck.destinationName || '');
-        const finalDest = destCoords || [-16.048, -47.972];
-
-        // Layout operational logistics nodes starting from CD Santa Maria
-        const routePts: [number, number][] = [
-          cdSantaMariaCoordinates,
-          [-15.900, -47.975], 
-          truckCoords,
-          finalDest
-        ];
+        const routePts = getTruckRoutePoints(truck);
 
         const poly = L.polyline(routePts, {
-          color: '#10b981',
+          color: '#4f46e5',
           weight: 5,
           opacity: 0.85
         }).addTo(map);
@@ -1188,10 +1667,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
           const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
           if (matchedLoad?.status === CargoStatus.RELEASED) {
-            const destinationName = matchedLoad.destination;
-            const originCoords = cdSantaMariaCoordinates;
-            const destCoords = findStoreCoordinates(destinationName) || cdSantaMariaCoordinates;
-            const routePos = getTruckPositionOnRoute(originCoords, destCoords, nextProgress);
+            const routePts = getTruckRoutePoints(truck);
+            const routePos = getTruckPositionOnRoutePoints(routePts, nextProgress);
             
             const isDeviated = forcedDeviatedPlacas[truck.ras_vei_placa];
             if (isDeviated) {
@@ -1351,10 +1828,10 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const selectedTruckLoad = selectedTruckObj ? loads.find(l => platesMatch(l.plate, selectedTruckObj.ras_vei_placa)) : null;
 
   return (
-    <div className={`flex flex-col lg:flex-row gap-5 ${isFullscreen ? 'fixed inset-0 z-[1050] bg-slate-100 p-6 h-screen' : 'h-[calc(100vh-10rem)] min-h-[580px]'} select-none transition-all duration-300 font-sans text-left`}>
+    <div className={`flex flex-col lg:flex-row gap-5 relative ${isFullscreen ? 'fixed inset-0 z-[1050] bg-slate-100 p-6 h-screen' : 'h-[calc(100vh-10rem)] min-h-[580px]'} select-none transition-all duration-300 font-sans text-left`}>
       
       {/* PANEL 1: SIDEBAR LIST OF VEHICLES */}
-      <div className={`bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-full shrink-0 transition-all duration-300 ${isFullscreen ? 'w-full lg:w-96' : selectedPlaca ? 'w-full lg:w-80 xl:w-[330px]' : 'w-full lg:w-[420px]'}`}>
+      <div className={`bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-full shrink-0 transition-all duration-300 ${isFullscreen ? 'w-full lg:w-96' : 'w-full lg:w-[380px] xl:w-[400px]'}`}>
         
         {/* Header Title Section */}
         <div className="mb-4 flex justify-between items-center">
@@ -2143,9 +2620,9 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         )}
       </div>
 
-      {/* PANEL 2: INTEGRATED MIDDLE DETALHES SHEET */}
+      {/* PANEL 2: INTEGRATED MIDDLE DETALHES SHEET (FLOATING OVER MAP) */}
       {selectedPlaca && selectedTruckObj && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-full shrink-0 w-full lg:w-80 xl:w-[350px] overflow-y-auto font-sans relative">
+        <div className="absolute top-5 right-5 bottom-5 left-5 lg:left-auto z-[1010] w-auto lg:w-[360px] bg-white rounded-2xl border border-slate-200 p-5 flex flex-col h-[calc(100%-2.5rem)] shadow-2xl overflow-y-auto font-sans pointer-events-auto">
           
           {/* Details header row with action icons */}
           <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-4 select-none">
@@ -2865,7 +3342,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
           {/* DYNAMIC MAP GEOFENCING CORNER ALERTS */}
           {geofenceEnabled && outOfGeofenceTrucks.length > 0 && (
-            <div className="absolute top-4 right-4 z-[999] bg-rose-600/95 backdrop-blur-md border border-rose-500 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce max-w-xs select-none">
+            <div className={`absolute top-4 ${selectedPlaca ? 'right-[384px]' : 'right-4'} z-[999] bg-rose-600/95 backdrop-blur-md border border-rose-500 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce max-w-xs select-none`}>
               <AlertTriangle className="w-4.5 h-4.5 text-white animate-pulse shrink-0" />
               <div className="text-left font-sans">
                 <h4 className="text-[8px] font-black uppercase tracking-widest text-rose-200">Notificação de Alerta</h4>
@@ -2877,7 +3354,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           )}
 
           {/* DYNAMIC STACKED POPUP ALERTS FOR EXITS AND ENTRANCES */}
-          <div className="absolute top-[80px] right-4 z-[1000] flex flex-col gap-2 max-w-xs w-full pointer-events-none select-none">
+          <div className={`absolute top-[80px] ${selectedPlaca ? 'right-[384px]' : 'right-4'} z-[1000] flex flex-col gap-2 max-w-xs w-full pointer-events-none select-none`}>
             <AnimatePresence>
               {fenceAlerts.map(alert => (
                 <motion.div

@@ -73,8 +73,8 @@ service cloud.firestore {
 
     function isValidCargoLoad(data) {
       return data.id is string && data.id.size() <= 128 &&
-             data.plate is string && data.plate.size() <= 16 &&
-             data.driverName is string && data.driverName.size() <= 128 &&
+             data.plate is string && data.plate.size() <= 32 &&
+             data.driverName is string && data.driverName.size() <= 256 &&
              data.status is string;
     }
 

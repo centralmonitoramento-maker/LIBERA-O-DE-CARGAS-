@@ -564,13 +564,31 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [selectedRegionStoreSearch, setSelectedRegionStoreSearch] = useState<string>('');
   const [expandedStoreKey, setExpandedStoreKey] = useState<string | null>(null);
 
+  const toLocalYMD = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return '';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const dateFilteredLoads = useMemo(() => {
+    return loads.filter(load => !filterDate ? true : toLocalYMD(load.createdAt) === filterDate);
+  }, [loads, filterDate]);
+
   const regionStoresDetails = useMemo(() => {
     if (!selectedRegionName) return [];
 
     // 1. Collect all known store keys from ROUTE_COORDINATES + any destination from current loads
     const allStoreNames = new Set<string>();
     Object.keys(ROUTE_COORDINATES).forEach(k => allStoreNames.add(k));
-    loads.forEach(l => {
+    dateFilteredLoads.forEach(l => {
       if (l.destination) allStoreNames.add(l.destination);
       if (l.additionalDestinations) {
         l.additionalDestinations.forEach(d => allStoreNames.add(d));
@@ -593,7 +611,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
     // 3. For each store, calculate its metrics based on the loads
     return selectedStoresFiltered.map(storeName => {
-      const storeLoads = loads.filter(l => {
+      const storeLoads = dateFilteredLoads.filter(l => {
         const carriesToStore = l.destination === storeName || 
           (l.additionalDestinations && l.additionalDestinations.includes(storeName));
         return carriesToStore;
@@ -640,7 +658,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         loads: storeLoads
       };
     }).sort((a, b) => b.loadsCount - a.loadsCount); // Sort by most active store (highest manifest volume)
-  }, [selectedRegionName, selectedRegionStoreSearch, loads]);
+  }, [selectedRegionName, selectedRegionStoreSearch, dateFilteredLoads]);
 
   const handleReorderTargets = (fromIndex: number, toIndex: number) => {
     if (!selectedLoad) return;
@@ -731,7 +749,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     let baBlocked = 0;
     let toBlocked = 0;
 
-    loads.forEach(load => {
+    dateFilteredLoads.forEach(load => {
       const dest = load.destination.toUpperCase();
       
       const isGo = dest.includes('-GO') || 
@@ -833,11 +851,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         color: '#2563EB', // Azul
       },
     ];
-  }, [loads]);
+  }, [dateFilteredLoads]);
 
   const centralStats = useMemo(() => {
     // 1. Tempo médio de liberação
-    const releasedLoads = loads.filter(l => l.status === CargoStatus.RELEASED);
+    const releasedLoads = dateFilteredLoads.filter(l => l.status === CargoStatus.RELEASED);
     let totalMin = 0;
     let countWithTime = 0;
 
@@ -866,7 +884,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     let baPallets = 0;
     let toPallets = 0;
 
-    loads.forEach(load => {
+    dateFilteredLoads.forEach(load => {
       const dest = load.destination.toUpperCase();
       
       // Determine region
@@ -913,7 +931,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
       }
     });
 
-    const totalLoadsCount = loads.length;
+    const totalLoadsCount = dateFilteredLoads.length;
 
     return {
       avgReleaseTime,
@@ -950,29 +968,15 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
           pct: 0
         }
       },
-      totalPallets: loads.reduce((acc, l) => acc + l.palletCount, 0),
-      riskCount: loads.filter(l => l.isHighRisk).length,
+      totalPallets: dateFilteredLoads.reduce((acc, l) => acc + l.palletCount, 0),
+      riskCount: dateFilteredLoads.filter(l => l.isHighRisk).length,
       releasedCount: releasedLoads.length,
-      blockedCount: loads.filter(l => l.status === CargoStatus.BLOCKED).length
+      blockedCount: dateFilteredLoads.filter(l => l.status === CargoStatus.BLOCKED).length
     };
-  }, [loads]);
-
-  const toLocalYMD = (dateString: string) => {
-    if (!dateString) return '';
-    try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return '';
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    } catch {
-      return '';
-    }
-  };
+  }, [dateFilteredLoads]);
 
   const filteredLoads = useMemo(() => {
-    return loads
+    return dateFilteredLoads
       .filter(load => {
         const matchesSearch = 
           load.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -983,18 +987,16 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         
         const matchesStatus = filterStatus === 'ALL' || load.status === filterStatus;
         
-        const matchesDate = !filterDate ? true : toLocalYMD(load.createdAt) === filterDate;
-        
-        return matchesSearch && matchesStatus && matchesDate;
+        return matchesSearch && matchesStatus;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [loads, searchTerm, filterStatus, filterDate]);
+  }, [dateFilteredLoads, searchTerm, filterStatus]);
 
   const selectedLoad = loads.find(l => l.id === selectedLoadId);
 
-  const awaitingCount = useMemo(() => loads.filter(l => l.status === CargoStatus.AWAITING).length, [loads]);
+  const awaitingCount = useMemo(() => dateFilteredLoads.filter(l => l.status === CargoStatus.AWAITING).length, [dateFilteredLoads]);
   
-  const finishedCount = useMemo(() => loads.filter(l => l.status === CargoStatus.FINISHED).length, [loads]);
+  const finishedCount = useMemo(() => dateFilteredLoads.filter(l => l.status === CargoStatus.FINISHED).length, [dateFilteredLoads]);
   
   const pieData = useMemo(() => {
     const data = [
@@ -1011,8 +1013,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   }, [centralStats.blockedCount, centralStats.releasedCount, awaitingCount, finishedCount]);
 
   const activeTripsPendingCheckout = useMemo(() => {
-    return loads.filter(l => l.gateCheckedIn && l.status === CargoStatus.RELEASED && !l.tripFinished);
-  }, [loads]);
+    return dateFilteredLoads.filter(l => l.gateCheckedIn && l.status === CargoStatus.RELEASED && !l.tripFinished);
+  }, [dateFilteredLoads]);
 
   const handleExportManifest = () => {
     if (!selectedLoad) return;
@@ -1587,12 +1589,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={[
-                      { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
-                      { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
-                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' },
-                      { name: 'FINALIZADA', value: finishedCount, color: '#6366f1' }
-                    ].filter(i => i.value > 0)}
+                    data={pieData}
                     cx="50%"
                     cy="50%"
                     innerRadius={44}
@@ -1600,12 +1597,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     paddingAngle={3}
                     dataKey="value"
                   >
-                    {[
-                      { name: 'BLOQUEADO', value: centralStats.blockedCount, color: '#f43f5e' },
-                      { name: 'LIBERADO', value: centralStats.releasedCount, color: '#10b981' },
-                      { name: 'AGUARDANDO', value: awaitingCount, color: '#f59e0b' },
-                      { name: 'FINALIZADA', value: finishedCount, color: '#6366f1' }
-                    ].filter(i => i.value > 0).map((entry, index) => (
+                    {pieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -1627,7 +1619,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               
               {/* Central counter summary overlay */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-xl font-black text-slate-800 leading-none">{loads.length}</span>
+                <span className="text-xl font-black text-slate-800 leading-none">{dateFilteredLoads.length}</span>
                 <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest mt-0.5">Cargas</span>
               </div>
             </div>
@@ -2250,7 +2242,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <span className="text-xs font-black text-slate-500 uppercase">unidades</span>
             </div>
             <p className="text-[10px] font-bold text-slate-500">
-              Média de {(centralStats.totalPallets / (loads.length || 1)).toFixed(1)} paletes por carga
+              Média de {(centralStats.totalPallets / (dateFilteredLoads.length || 1)).toFixed(1)} paletes por carga
             </p>
           </div>
           <div className="p-3 bg-blue-50 rounded-2xl text-blue-500">
@@ -2264,7 +2256,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Eficiência de Liberação</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-3xl font-black text-emerald-600 font-mono">
-                {loads.length > 0 ? Math.round((centralStats.releasedCount / loads.length) * 100) : 100}%
+                {dateFilteredLoads.length > 0 ? Math.round((centralStats.releasedCount / dateFilteredLoads.length) * 100) : 100}%
               </span>
             </div>
             <p className="text-[10px] font-bold text-slate-500">
@@ -2337,11 +2329,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
             </div>
             <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
               {[
-                { key: 'ALL', label: 'TODOS', count: loads.length, activeBg: 'bg-primary-navy border-primary-navy text-white shadow-lg shadow-slate-900/10', hoverBg: 'hover:bg-slate-200' },
+                { key: 'ALL', label: 'TODOS', count: dateFilteredLoads.length, activeBg: 'bg-primary-navy border-primary-navy text-white shadow-lg shadow-slate-900/10', hoverBg: 'hover:bg-slate-200' },
                 { 
                   key: CargoStatus.AWAITING, 
                   label: 'PORTARIA', 
-                  count: loads.filter(l => l.status === CargoStatus.AWAITING).length, 
+                  count: dateFilteredLoads.filter(l => l.status === CargoStatus.AWAITING).length, 
                   activeBg: 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20', 
                   hoverBg: 'hover:bg-amber-100',
                   dotColor: 'bg-amber-500'
@@ -2349,7 +2341,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 { 
                   key: CargoStatus.RELEASED, 
                   label: 'EM TRÂNSITO', 
-                  count: loads.filter(l => l.status === CargoStatus.RELEASED).length, 
+                  count: dateFilteredLoads.filter(l => l.status === CargoStatus.RELEASED).length, 
                   activeBg: 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-600/20', 
                   hoverBg: 'hover:bg-emerald-100',
                   dotColor: 'bg-emerald-500'
@@ -2357,7 +2349,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 { 
                   key: CargoStatus.BLOCKED, 
                   label: 'DIVERGÊNCIAS', 
-                  count: loads.filter(l => l.status === CargoStatus.BLOCKED).length, 
+                  count: dateFilteredLoads.filter(l => l.status === CargoStatus.BLOCKED).length, 
                   activeBg: 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-600/20', 
                   hoverBg: 'hover:bg-orange-100',
                   dotColor: 'bg-orange-500'
@@ -2365,7 +2357,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 { 
                   key: CargoStatus.FINISHED, 
                   label: 'FINALIZADAS', 
-                  count: loads.filter(l => l.status === CargoStatus.FINISHED).length, 
+                  count: dateFilteredLoads.filter(l => l.status === CargoStatus.FINISHED).length, 
                   activeBg: 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/25', 
                   hoverBg: 'hover:bg-indigo-100',
                   dotColor: 'bg-indigo-500'
@@ -2475,7 +2467,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       Alterar estado ({selectedLoadIds.length} selecionadas):
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-4 gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleBulkUpdateStatus(CargoStatus.RELEASED)}
@@ -2496,6 +2488,13 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       className="bg-amber-500 hover:bg-amber-400 text-white text-[9px] font-black py-2 rounded-lg uppercase tracking-widest transition-all cursor-pointer text-center"
                     >
                       Portaria
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkUpdateStatus(CargoStatus.FINISHED)}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black py-2 rounded-lg uppercase tracking-widest transition-all cursor-pointer text-center"
+                    >
+                      Finalizar
                     </button>
                   </div>
                 </div>
@@ -2716,23 +2715,23 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
               {/* Grid Info */}
               <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-3 text-slate-400">
-                    <MapPin className="w-5 h-5" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Logística</span>
+                <div className="bg-white keep-white p-6 rounded-3xl border border-slate-200/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 text-zinc-400">
+                    <MapPin className="w-5 h-5 text-zinc-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Logística</span>
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Origem</p>
-                      <p className="text-sm font-black text-slate-800">{selectedLoad.origin}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Origem</p>
+                      <p className="text-sm font-black text-black">{selectedLoad.origin}</p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Destino</p>
-                      <p className="text-sm font-black text-slate-800">{selectedLoad.destination}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Destino</p>
+                      <p className="text-sm font-black text-black">{selectedLoad.destination}</p>
                       {selectedLoad.additionalDestinations && selectedLoad.additionalDestinations.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {selectedLoad.additionalDestinations.map((d, i) => (
-                            <span key={i} className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">
+                            <span key={i} className="text-[8px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-extrabold uppercase shadow-2xs">
                               + {d}
                             </span>
                           ))}
@@ -2742,34 +2741,34 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-3 text-slate-400">
-                    <Package className="w-5 h-5" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Carga</span>
+                <div className="bg-white keep-white p-6 rounded-3xl border border-slate-200/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 text-zinc-400">
+                    <Package className="w-5 h-5 text-zinc-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carga</span>
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Tipo</p>
-                      <p className="text-sm font-black text-slate-800">{selectedLoad.cargoType}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Tipo</p>
+                      <p className="text-sm font-black text-black">{selectedLoad.cargoType}</p>
                       {selectedLoad.cargoType === CargoType.COMPARTILHADA && selectedLoad.sharedCargoDescriptions && Object.keys(selectedLoad.sharedCargoDescriptions).length > 0 && (
-                        <div className="mt-2 text-[10px] space-y-1 bg-white p-2.5 rounded-xl border border-slate-200/80">
-                          <p className="font-extrabold text-slate-500 uppercase tracking-widest text-[8px] mb-1">Descrição por destino:</p>
+                        <div className="mt-2 text-[10px] space-y-1 bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                          <p className="font-extrabold text-zinc-500 uppercase tracking-widest text-[8px] mb-1">Descrição por destino:</p>
                           {Object.entries(selectedLoad.sharedCargoDescriptions).map(([dest, desc]) => (
-                            <div key={dest} className="flex justify-between gap-2 border-b border-slate-50 last:border-0 pb-1 last:pb-0">
-                              <span className="font-bold text-slate-600 shrink-0">{dest}:</span>
-                              <span className="text-slate-700 italic text-right truncate max-w-[150px]" title={desc}>{desc}</span>
+                            <div key={dest} className="flex justify-between gap-2 border-b border-slate-150/80 last:border-0 pb-1 last:pb-0">
+                              <span className="font-bold text-zinc-700 shrink-0">{dest}:</span>
+                              <span className="text-zinc-600 italic text-right truncate max-w-[150px]" title={desc}>{desc}</span>
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Volume</p>
-                      <p className="text-sm font-black text-slate-800">{selectedLoad.palletCount} Paletes</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Volume</p>
+                      <p className="text-sm font-black text-black">{selectedLoad.palletCount} Paletes</p>
                       {selectedLoad.palletDetails && selectedLoad.palletDetails.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {selectedLoad.palletDetails.map((p, i) => (
-                            <span key={i} className="text-[9px] bg-white text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-extrabold uppercase shadow-2xs">
+                            <span key={i} className="text-[9px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200 font-extrabold uppercase shadow-2xs">
                               {p.quantity}x {p.type}
                             </span>
                           ))}
@@ -2779,19 +2778,19 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-3 text-slate-400">
-                    <ShieldCheck className="w-5 h-5" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Segurança</span>
+                <div className="bg-white keep-white p-6 rounded-3xl border border-slate-200/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 text-zinc-400">
+                    <ShieldCheck className="w-5 h-5 text-zinc-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Segurança</span>
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Lacre</p>
-                      <p className="text-sm font-mono font-black text-primary-gold">{selectedLoad.sealNumber}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Lacre</p>
+                      <p className="text-sm font-mono font-black text-amber-600">{selectedLoad.sealNumber}</p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Expedidor</p>
-                      <p className="text-sm font-black text-slate-800">{selectedLoad.createdBy}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase">Expedidor</p>
+                      <p className="text-sm font-black text-black">{selectedLoad.createdBy}</p>
                     </div>
                   </div>
                 </div>

@@ -65,6 +65,34 @@
   background-color: var(--bg-card);
 }
 
+/* Ensure high visibility and bold black text inside cards that remain white in dark mode (.keep-white) */
+.dark .keep-white .text-slate-400,
+.dark .keep-white .text-slate-500,
+.dark .keep-white .text-slate-600,
+.dark .keep-white .text-slate-700,
+.dark .keep-white .text-slate-800,
+.dark .keep-white .text-zinc-400,
+.dark .keep-white .text-zinc-500,
+.dark .keep-white .text-zinc-600,
+.dark .keep-white .text-zinc-700,
+.dark .keep-white .text-primary-navy,
+.dark .keep-white h3,
+.dark .keep-white p,
+.dark .keep-white label,
+.dark .keep-white span:not(.text-primary-gold):not(.text-white) {
+  color: #000000 !important;
+  font-weight: 800 !important;
+}
+
+/* Ensure inputs, select boxes, and options inside keep-white cards maintain white text on dark backgrounds in dark mode */
+.dark .keep-white select,
+.dark .keep-white select option,
+.dark .keep-white input {
+  color: #ffffff !important;
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
 .dark .border-slate-200,
 .dark .border-slate-300\/60,
 .dark .border-slate-300,

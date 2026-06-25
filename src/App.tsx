@@ -487,9 +487,43 @@ const App: React.FC = () => {
         }
       });
 
+      // Real-time automatic migration/correction of cargo status based on validation progress
+      const migrates: Promise<void>[] = [];
+      const correctedLoads = liveLoads.map(load => {
+        let changed = false;
+        let newStatus = load.status;
+
+        // Rule 1: Validated by Central (tripFinished === true) -> Change status to FINISHED
+        if (load.tripFinished && load.status !== CargoStatus.FINISHED) {
+          newStatus = CargoStatus.FINISHED;
+          changed = true;
+        }
+
+        // Rule 2: Awaiting 4-step verification -> Change status to EM TRÂNSITO (RELEASED)
+        // If gate checked-in is completed, trip is not finished, and status is not EM TRÂNSITO
+        if (load.gateCheckedIn && !load.tripFinished && load.status !== CargoStatus.RELEASED && load.status !== CargoStatus.BLOCKED) {
+          newStatus = CargoStatus.RELEASED;
+          changed = true;
+        }
+
+        if (changed) {
+          const updated = {
+            ...load,
+            status: newStatus
+          };
+          migrates.push(setDoc(doc(db, 'loads', load.id), sanitizeFirestoreData(updated), { merge: true }));
+          return updated;
+        }
+        return load;
+      });
+
+      if (migrates.length > 0) {
+        Promise.all(migrates).catch(e => console.warn('Erro na migração automática de cargas:', e));
+      }
+
       isFirstLoad.current = false;
-      setLoads(liveLoads);
-      saveLoadsToLocalStorage(liveLoads);
+      setLoads(correctedLoads);
+      saveLoadsToLocalStorage(correctedLoads);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
       setIsOffline(true);
@@ -769,6 +803,7 @@ const App: React.FC = () => {
     const updatedLoad = {
       ...load,
       status: newStatus,
+      tripFinished: newStatus === CargoStatus.FINISHED ? true : (newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.AWAITING ? false : load.tripFinished),
       auditedAt: newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.BLOCKED || newStatus === CargoStatus.FINISHED ? timestamp : (load.auditedAt || "")
     };
 
@@ -1002,6 +1037,9 @@ const App: React.FC = () => {
         await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser));
         await deleteDoc(doc(db, 'users', user.id));
         console.log(`Migration completed for user ${user.username}`);
+      } else if (authUser) {
+        // Garantir que o documento do usuário existe no Firestore com os dados corretos
+        await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser), { merge: true });
       }
     } catch (authErr) {
       console.error("Critical Auth migration step skipped:", authErr);

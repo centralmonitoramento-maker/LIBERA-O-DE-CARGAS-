@@ -68,7 +68,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     return;
   }
 
-  throw new Error(JSON.stringify(errInfo));
+  console.warn(`[Firestore Resiliency] Erro de operação "${operationType}" no caminho "${path}":`, errInfo);
 }
 
 export function sanitizeFirestoreData<T extends Record<string, any>>(data: T): T {
