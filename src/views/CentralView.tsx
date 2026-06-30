@@ -3764,22 +3764,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             }`}
                           />
                         </div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {['CargoRadar', 'WhatsApp', 'Teams', 'Copiloto', 'Sascar'].map(app => (
-                            <button
-                              type="button"
-                              key={app}
-                              onClick={() => setContactApp(app)}
-                              className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase tracking-wider transition-all cursor-pointer ${
-                                contactApp === app 
-                                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                              }`}
-                            >
-                              {app}
-                            </button>
-                          ))}
-                        </div>
+
                       </div>
 
                       {/* Horário de Validação */}
