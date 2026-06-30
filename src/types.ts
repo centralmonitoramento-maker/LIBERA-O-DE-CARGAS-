@@ -88,6 +88,8 @@ export interface CargoLoad {
   gateCheckedIn?: boolean;
   needsCentralCheckout?: boolean;
   tripFinished?: boolean;
+  contactApp?: string;
+  validationTime?: string;
 }
 
 export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer';

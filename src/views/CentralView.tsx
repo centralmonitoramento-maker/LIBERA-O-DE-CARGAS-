@@ -26,7 +26,9 @@ import {
   PanelRight,
   History,
   ImageOff,
-  Calendar
+  Calendar,
+  MessageSquare,
+  Clipboard
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -544,6 +546,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [palletsConfirm, setPalletsConfirm] = useState('');
   const [plateConfirm, setPlateConfirm] = useState('');
   const [driverConfirm, setDriverConfirm] = useState('');
+  const [contactApp, setContactApp] = useState('');
+  const [validationTime, setValidationTime] = useState(() => {
+    const now = new Date();
+    return now.toTimeString().substring(0, 5);
+  });
 
   const [newSealForNextTrip, setNewSealForNextTrip] = useState('');
   const [isAwaitingNextSeal, setIsAwaitingNextSeal] = useState(false);
@@ -563,6 +570,38 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [selectedRegionName, setSelectedRegionName] = useState<string | null>(null);
   const [selectedRegionStoreSearch, setSelectedRegionStoreSearch] = useState<string>('');
   const [expandedStoreKey, setExpandedStoreKey] = useState<string | null>(null);
+
+  const [copiedDriverName, setCopiedDriverName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (copiedDriverName) {
+      const timer = setTimeout(() => {
+        setCopiedDriverName(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [copiedDriverName]);
+
+  const copyDriverToClipboard = (name: string) => {
+    if (!name) return;
+    navigator.clipboard.writeText(name)
+      .then(() => {
+        setCopiedDriverName(name);
+      })
+      .catch((err) => {
+        console.error('Failed to copy text: ', err);
+      });
+  };
+
+  const getDriverForRegion = (regionName: string): string => {
+    const regionalLoad = dateFilteredLoads.find(l => 
+      l.destination.toUpperCase().includes(regionName.toUpperCase()) || 
+      l.origin.toUpperCase().includes(regionName.toUpperCase())
+    );
+    if (regionalLoad) return regionalLoad.driverName;
+    if (selectedLoad) return selectedLoad.driverName;
+    return filteredLoads[0]?.driverName || loads[0]?.driverName || 'Motorista Não Identificado';
+  };
 
   const toLocalYMD = (dateString: string) => {
     if (!dateString) return '';
@@ -1252,11 +1291,13 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
       tripFinished: true,
       gateStatus: 'Divergente' as const,
       auditedAt: timestamp,
+      contactApp: contactApp || undefined,
+      validationTime: validationTime || undefined,
       occurrenceHistory: [
         ...(selectedLoad.occurrenceHistory || []),
         {
           type: OccurrenceType.QUANTITY_DISCREPANCY,
-          description: `Liberação forçada com divergência autorizada pela Central de Monitoramento por ${currentAuditor}. Detalhes informados no gate: Placa [${plateConfirm}], Lacre [${sealConfirm}], Motorista [${driverConfirm}], Paletes [${palletsConfirm}].`,
+          description: `Liberação forçada com divergência autorizada pela Central de Monitoramento por ${currentAuditor}. Detalhes informados no gate: Placa [${plateConfirm}], Lacre [${sealConfirm}], Motorista [${driverConfirm}], Paletes [${palletsConfirm}]. App que Validou: [${contactApp || 'N/A'}], Horário de Validação: [${validationTime || 'N/A'}].`,
           auditor: currentAuditor,
           timestamp
         }
@@ -1273,6 +1314,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     setPalletsConfirm('');
     setPlateConfirm('');
     setDriverConfirm('');
+    setContactApp('');
+    setValidationTime(new Date().toTimeString().substring(0, 5));
     setShowDivergentReleaseConfirm(false);
   };
 
@@ -1286,6 +1329,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     setPalletsConfirm('');
     setPlateConfirm('');
     setDriverConfirm('');
+    setContactApp('');
+    setValidationTime(new Date().toTimeString().substring(0, 5));
     setNewSealForNextTrip('');
     setIsAwaitingNextSeal(false);
     setEditingSeals({});
@@ -1647,48 +1692,6 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         </div>
       </div>
 
-      {/* ALERTA DE VIAGEM INICIADA PELA PORTARIA */}
-      {activeTripsPendingCheckout.length > 0 && (
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top duration-500">
-          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 pointer-events-none bg-[radial-gradient(circle_at_70%_50%,_white_0%,_transparent_70%)]"></div>
-          
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10 text-left">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-white/10 rounded-2xl text-amber-300 shrink-0 animate-bounce">
-                <Truck className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="bg-amber-300 text-slate-900 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">
-                    VIAGEM EM ANDAMENTO
-                  </span>
-                  <span className="text-white/80 text-[9px] font-black uppercase tracking-wider font-mono">
-                    {activeTripsPendingCheckout.length} veículo(s) sob trânsito ativo
-                  </span>
-                </div>
-                <h3 className="text-base font-black uppercase tracking-tight">Check-in de Portaria Registrado! Começar Acompanhamento</h3>
-                <p className="text-xs text-blue-100 font-medium max-w-2xl">
-                  A portaria validou o veículo e iniciou a viagem de monitoramento. Prepare os dados para realizar o checkout e finalizar a rota quando o veículo chegar.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 shrink-0">
-              {activeTripsPendingCheckout.map(load => (
-                <button
-                  key={load.id}
-                  onClick={() => setSelectedLoadId(load.id)}
-                  className="bg-white hover:bg-slate-50 text-slate-850 text-[10px] font-black px-4.5 py-3 rounded-2xl uppercase tracking-wider transition-all duration-200 shadow-md hover:scale-[1.03] cursor-pointer flex items-center gap-2 border-0"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
-                  <span>Acompanhar {load.plate} ({load.driverName.split(' ')[0]})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Componente de Dashboard Inteligente - Volume de Cargas por Região (DF, GO, BA) */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 md:p-8 animate-in fade-in duration-500">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-zinc-100">
@@ -1823,11 +1826,19 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       <span className="text-[9px] font-black tracking-widest uppercase text-slate-400">Manifestos</span>
                     </div>
                     <div className="border-l border-slate-200 pl-3">
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                        reg['Alto Risco (PAR)'] > 0 
-                          ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                      }`}>
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyDriverToClipboard(getDriverForRegion(reg.name));
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase cursor-pointer ${
+                          reg['Alto Risco (PAR)'] > 0 
+                            ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        }`}
+                        title="Copiar nome do motorista desta região"
+                      >
+                        <Clipboard className="w-2.5 h-2.5 shrink-0" />
                         {reg['Alto Risco (PAR)']} PAR
                       </span>
                     </div>
@@ -2376,11 +2387,22 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     <span className={`w-1.5 h-1.5 rounded-full ${item.dotColor} ${filterStatus === item.key ? 'bg-white animate-pulse' : ''}`} />
                   )}
                   <span>{item.label}</span>
-                  <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black ${
-                    filterStatus === item.key 
-                      ? 'bg-white/20 text-white' 
-                      : 'bg-slate-200 text-slate-700'
-                  }`}>
+                  <span 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const driverName = selectedLoad?.driverName || filteredLoads[0]?.driverName || loads[0]?.driverName || '';
+                      if (driverName) {
+                        copyDriverToClipboard(driverName);
+                      }
+                    }}
+                    className={`px-1.5 py-0.5 rounded-md text-[8px] font-black cursor-pointer flex items-center gap-0.5 ${
+                      filterStatus === item.key 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                    title="Copiar nome do motorista"
+                  >
+                    <Clipboard className="w-2 h-2 opacity-80 shrink-0" />
                     {item.count}
                   </span>
                 </button>
@@ -2569,10 +2591,18 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       </span>
                     </div>
                     
-                    <div className="flex justify-between items-end">
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate w-40">
-                          {load.driverName} {load.driverPhone ? `• ${load.driverPhone}` : ''}
+                    <div className="flex justify-between items-end gap-2">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <p 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyDriverToClipboard(load.driverName);
+                          }}
+                          className="text-[10px] font-bold text-slate-500 uppercase tracking-widest break-words cursor-pointer hover:text-primary-navy hover:underline transition-all flex items-center gap-1.5"
+                          title="Clique para copiar o nome completo do motorista"
+                        >
+                          <Clipboard className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{load.driverName} {load.driverPhone ? `• ${load.driverPhone}` : ''}</span>
                         </p>
                         <p className="text-[9px] font-black text-primary-navy uppercase tracking-tighter">{load.origin} ➔ {load.destination}</p>
                         {load.cargoClassificationByDest && Object.keys(load.cargoClassificationByDest).length > 0 && (
@@ -3712,6 +3742,64 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                       </div>
                     </div>
 
+                    {/* Canal de Contato e Horário de Validação */}
+                    <div className="pt-4 border-t border-slate-250/50 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* App de Validação */}
+                      <div className="space-y-1.5 text-left">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>Nome do App que Validou as Informações</span>
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={contactApp}
+                            onChange={(e) => setContactApp(e.target.value)}
+                            placeholder="Ex: CargoRadar, WhatsApp, Copiloto..."
+                            className={`w-full bg-white border rounded-xl px-3 py-2.5 text-xs font-bold outline-none transition-all ${
+                              contactApp.trim() === ''
+                                ? 'border-amber-300 focus:ring-2 focus:ring-amber-400 bg-amber-50/10'
+                                : 'border-emerald-500 focus:ring-2 focus:ring-emerald-500 bg-emerald-50/10'
+                            }`}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {['CargoRadar', 'WhatsApp', 'Teams', 'Copiloto', 'Sascar'].map(app => (
+                            <button
+                              type="button"
+                              key={app}
+                              onClick={() => setContactApp(app)}
+                              className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase tracking-wider transition-all cursor-pointer ${
+                                contactApp === app 
+                                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >
+                              {app}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Horário de Validação */}
+                      <div className="space-y-1.5 text-left">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>Horário que foi Validado</span>
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="time"
+                            value={validationTime}
+                            onChange={(e) => setValidationTime(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Novo Número do Lacre do Veículo para avançar para o próximo destino */}
                     {selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && isFourStepValidated && (
                       <div className="pt-4 border-t border-amber-300/40 space-y-2 animate-in fade-in slide-in-from-top-4 duration-300 text-left">
@@ -3788,7 +3876,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                               sealsByDest: {
                                 ...(selectedLoad.sealsByDest || {}),
                                 [targets[currentDestIndex + 1]]: newSealForNextTrip.toUpperCase()
-                              }
+                              },
+                              contactApp: contactApp.trim() || undefined,
+                              validationTime: validationTime.trim() || undefined
                             };
                             if (onUpdateLoad) {
                               onUpdateLoad(updatedLoad);
@@ -3797,6 +3887,8 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             setPalletsConfirm('');
                             setPlateConfirm('');
                             setDriverConfirm('');
+                            setContactApp('');
+                            setValidationTime(new Date().toTimeString().substring(0, 5));
                             setNewSealForNextTrip('');
                           } else {
                             // Last destination, complete the route!
@@ -3804,7 +3896,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                               ...selectedLoad,
                               status: CargoStatus.FINISHED,
                               tripFinished: true,
-                              checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest]
+                              checkedDestinations: [...(selectedLoad.checkedDestinations || []), currentDest],
+                              contactApp: contactApp.trim() || undefined,
+                              validationTime: validationTime.trim() || undefined
                             };
                             if (onUpdateLoad) {
                               onUpdateLoad(updatedLoad);
@@ -3819,7 +3913,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             status: CargoStatus.FINISHED,
                             tripFinished: true,
                             gateStatus: 'Aprovado' as const,
-                            auditedAt: new Date().toISOString()
+                            auditedAt: new Date().toISOString(),
+                            contactApp: contactApp.trim() || undefined,
+                            validationTime: validationTime.trim() || undefined
                           };
                           if (onUpdateLoad) {
                             onUpdateLoad(updatedLoad);
@@ -3832,11 +3928,15 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                     disabled={
                       selectedLoad.tripFinished || 
                       !isFourStepValidated || 
+                      !contactApp.trim() ||
+                      !validationTime.trim() ||
                       (selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && !newSealForNextTrip.trim())
                     }
                     className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer ${
                       selectedLoad.tripFinished || 
                       !isFourStepValidated || 
+                      !contactApp.trim() ||
+                      !validationTime.trim() ||
                       (selectedLoad.cargoType === CargoType.COMPARTILHADA && currentDestIndex < targets.length - 1 && !newSealForNextTrip.trim())
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : selectedLoad.status === CargoStatus.BLOCKED
@@ -3925,7 +4025,14 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nome do Motorista</p>
-                <span className="text-sm font-bold text-slate-700 block truncate">{selectedLoad.driverName}</span>
+                <span 
+                  onClick={() => copyDriverToClipboard(selectedLoad.driverName)}
+                  className="text-sm font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer hover:text-primary-navy hover:underline transition-all"
+                  title="Clique para copiar o nome completo"
+                >
+                  <Clipboard className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{selectedLoad.driverName}</span>
+                </span>
                 {selectedLoad.driverPhone && (
                   <span className="text-xs font-semibold text-slate-500 block mt-0.5">{selectedLoad.driverPhone}</span>
                 )}
@@ -3976,6 +4083,32 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                 <span className="text-xs font-bold text-slate-600 block">{selectedLoad.createdBy}</span>
               </div>
             </div>
+
+            {(selectedLoad.contactApp || selectedLoad.validationTime) && (
+              <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-in fade-in duration-350">
+                <div className="space-y-1 text-left">
+                  <h4 className="text-[10px] font-black uppercase text-indigo-800 tracking-widest flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                    <span>Dados de Validação do Monitoramento</span>
+                  </h4>
+                  <p className="text-xs text-indigo-700/80 font-medium">Informações registradas pela Central de Monitoramento no momento da liberação.</p>
+                </div>
+                <div className="flex gap-6">
+                  {selectedLoad.contactApp && (
+                    <div className="text-left">
+                      <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-0.5">App que Validou</p>
+                      <span className="text-sm font-black text-indigo-900 uppercase">{selectedLoad.contactApp}</span>
+                    </div>
+                  )}
+                  {selectedLoad.validationTime && (
+                    <div className="text-left">
+                      <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-0.5">Horário da Validação</p>
+                      <span className="text-sm font-black text-indigo-900 font-mono">{selectedLoad.validationTime}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Histórico completo de ocorrências */}
             <div className="space-y-4">
@@ -4185,6 +4318,13 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         </div>
       </div>
     )}
+
+      {copiedDriverName && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] bg-slate-900 border border-emerald-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300 backdrop-blur-md">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+          <span>Copiado: {copiedDriverName}</span>
+        </div>
+      )}
    </div>
   );
 };
