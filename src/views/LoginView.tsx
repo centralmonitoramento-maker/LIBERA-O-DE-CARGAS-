@@ -15,11 +15,12 @@ const ROLE_NAMES = {
   audit: 'Auditoria de Gate',
   analysis: 'Análise de Dados',
   portaria: 'Portaria',
+  store_app: 'App Loja'
 };
 
 export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onRegisterRequest }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [registerRole, setRegisterRole] = useState<'expedition' | 'central' | 'audit' | 'analysis' | 'portaria'>('expedition');
+  const [registerRole, setRegisterRole] = useState<'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app'>('expedition');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');

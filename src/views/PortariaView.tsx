@@ -129,9 +129,9 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     const q = searchQuery.toLowerCase().trim();
     if (q) {
       result = result.filter(load => 
-        load.plate.toLowerCase().includes(q) ||
-        load.driverName.toLowerCase().includes(q) ||
-        load.destination.toLowerCase().includes(q) ||
+        (load.plate || '').toLowerCase().includes(q) ||
+        (load.driverName || '').toLowerCase().includes(q) ||
+        (load.destination || '').toLowerCase().includes(q) ||
         (load.sealNumber && load.sealNumber.toLowerCase().includes(q))
       );
     }

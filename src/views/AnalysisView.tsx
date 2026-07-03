@@ -701,11 +701,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ loads }) => {
     if (finalizedLoadsSearch.trim() !== '') {
       const searchLower = finalizedLoadsSearch.toLowerCase();
       filtered = filtered.filter(load => 
-        load.plate.toLowerCase().includes(searchLower) ||
-        load.driverName.toLowerCase().includes(searchLower) ||
-        load.id.toLowerCase().includes(searchLower) ||
-        load.origin.toLowerCase().includes(searchLower) ||
-        load.destination.toLowerCase().includes(searchLower) ||
+        (load.plate || '').toLowerCase().includes(searchLower) ||
+        (load.driverName || '').toLowerCase().includes(searchLower) ||
+        (load.id || '').toLowerCase().includes(searchLower) ||
+        (load.origin || '').toLowerCase().includes(searchLower) ||
+        (load.destination || '').toLowerCase().includes(searchLower) ||
         (load.occurrenceType && load.occurrenceType.toLowerCase().includes(searchLower))
       );
     }

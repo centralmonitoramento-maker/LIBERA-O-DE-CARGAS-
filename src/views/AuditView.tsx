@@ -74,7 +74,8 @@ export const AuditView: React.FC<AuditViewProps> = ({
   onUpdateSystemRole,
   currentUser
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'users' | 'logs'>('audit');
+  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'config'>('audit');
+  const [activeConfigTab, setActiveConfigTab] = useState<'users' | 'logs'>('users');
   
   const isAdmin = currentUser?.systemRole === 'administrator';
 
@@ -1168,19 +1169,11 @@ export const AuditView: React.FC<AuditViewProps> = ({
           </button>
           {isAdmin && (
             <button 
-              onClick={() => setActiveSubTab('users')}
-              className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'users' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setActiveSubTab('config')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'config' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              USUÁRIOS
+              CONFIGURAÇÕES
               {pendingUsers.length > 0 && <span className="w-2 h-2 bg-primary-red rounded-full animate-pulse"></span>}
-            </button>
-          )}
-          {isAdmin && (
-            <button 
-              onClick={() => setActiveSubTab('logs')}
-              className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${activeSubTab === 'logs' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              LOGS
             </button>
           )}
         </div>
@@ -1958,7 +1951,52 @@ export const AuditView: React.FC<AuditViewProps> = ({
         </div>
       )}
 
-      {activeSubTab === 'users' && (
+      {activeSubTab === 'config' && (
+        <div className="mb-6 animate-in fade-in duration-300">
+          {/* Subtabs for Configuration */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+                <UserIcon className="w-5 h-5 text-primary-gold" />
+              </span>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800 uppercase tracking-tight">Configurações do Administrador</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Acesso restrito ao perfil de gestão</p>
+              </div>
+            </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+              <button
+                id="config-tab-users"
+                onClick={() => setActiveConfigTab('users')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  activeConfigTab === 'users' 
+                    ? 'bg-primary-navy text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-750'
+                }`}
+              >
+                USUÁRIOS
+                {pendingUsers.length > 0 && (
+                  <span className="w-1.5 h-1.5 bg-primary-red rounded-full animate-pulse"></span>
+                )}
+              </button>
+              <button
+                id="config-tab-logs"
+                onClick={() => setActiveConfigTab('logs')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  activeConfigTab === 'logs' 
+                    ? 'bg-primary-navy text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-750'
+                }`}
+              >
+                LOGS DO SISTEMA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'config' && activeConfigTab === 'users' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
           <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
             <div>
@@ -1997,6 +2035,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
                 <option value="central">CENTRAL</option>
                 <option value="audit">AUDITORIA</option>
                 <option value="analysis">ANÁLISE</option>
+                <option value="store_app">APP LOJA</option>
               </select>
             </div>
             <div className="w-full md:w-48">
@@ -2027,10 +2066,12 @@ export const AuditView: React.FC<AuditViewProps> = ({
                     <div>
                       <h4 className="font-black text-slate-800 uppercase tracking-tight truncate w-40">{user.fullName || user.username}</h4>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-black text-primary-navy uppercase tracking-widest">{user.role}</span>
+                        <span className="text-[10px] font-black text-primary-navy uppercase tracking-widest">
+                          {user.role === 'store_app' ? 'App Loja' : user.role}
+                        </span>
                         {user.systemRole && (
                           <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded uppercase tracking-widest border border-purple-100">
-                            {user.systemRole}
+                            {user.systemRole === 'store_app' ? 'App Loja' : user.systemRole}
                           </span>
                         )}
                         <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
@@ -2079,6 +2120,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
                         <option value="dispatcher">Expedidor</option>
                         <option value="auditor">Auditor</option>
                         <option value="viewer">Visualizador</option>
+                        <option value="store_app">App Loja</option>
                       </select>
                     </div>
                   </div>
@@ -2161,7 +2203,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
         </div>
       )}
 
-      {activeSubTab === 'logs' && (
+      {activeSubTab === 'config' && activeConfigTab === 'logs' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
           <div className="p-6 border-b bg-primary-navy flex justify-between items-center">
             <div>

@@ -10,6 +10,7 @@ import { LoginView } from './views/LoginView';
 import { PortariaView } from './views/PortariaView';
 import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
+import { ReverseTransferView } from './views/ReverseTransferView';
 import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { 
   collection, 
@@ -28,7 +29,7 @@ import {
   signOut 
 } from 'firebase/auth';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -69,6 +70,10 @@ const App: React.FC = () => {
       const persistedUser = localStorage.getItem('cargoradar_user');
       if (persistedUser) {
         const user = JSON.parse(persistedUser);
+        if (user.role === 'store_app') {
+          const saved = localStorage.getItem('cargoradar_tab') as TabType;
+          return (saved === 'tracking' || saved === 'reverse_transfer') ? saved : 'reverse_transfer';
+        }
         return (localStorage.getItem('cargoradar_tab') as TabType) || (user.role as TabType) || 'expedition';
       }
       return 'expedition';
@@ -955,6 +960,8 @@ const App: React.FC = () => {
           systemRole = 'auditor';
         } else if (user.role === 'central' || user.role === 'analysis') {
           systemRole = 'administrator';
+        } else if (user.role === 'store_app') {
+          systemRole = 'store_app';
         }
       }
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ 
@@ -1047,13 +1054,14 @@ const App: React.FC = () => {
 
     setIsAuthenticated(true);
     setLoggedInUser(finalUser);
-    setActiveTab(finalUser.role as TabType);
+    const initialTab = (finalUser.role === 'store_app' ? 'reverse_transfer' : finalUser.role) as TabType;
+    setActiveTab(initialTab);
 
     // Salva sessão localmente no localStorage
     try {
       localStorage.setItem('cargoradar_auth', 'true');
       localStorage.setItem('cargoradar_user', JSON.stringify(finalUser));
-      localStorage.setItem('cargoradar_tab', finalUser.role);
+      localStorage.setItem('cargoradar_tab', initialTab);
     } catch (e) {
       console.error('Erro ao persistir sessão do usuário no localStorage:', e);
     }
@@ -1103,6 +1111,7 @@ const App: React.FC = () => {
             onUpdateLoad={handleUpdateLoad}
             loads={loads} 
             logs={logs.filter(l => l.username === loggedInUser?.username)} 
+            currentUser={loggedInUser}
           />
         );
       case 'central':
@@ -1160,6 +1169,16 @@ const App: React.FC = () => {
         return (
           <TrackingView 
             loads={loads}
+          />
+        );
+      case 'reverse_transfer':
+        return (
+          <ReverseTransferView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            onDeleteLoad={handleDeleteLoad}
+            loads={loads}
+            currentUser={loggedInUser}
           />
         );
       case 'settings':

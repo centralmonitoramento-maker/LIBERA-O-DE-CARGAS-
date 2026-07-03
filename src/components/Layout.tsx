@@ -29,7 +29,7 @@ import {
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -57,7 +57,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'dark'; // Default to dark theme for modern cosmic purple-navy ambiance
   });
 
   const [notifPermission, setNotifPermission] = React.useState<NotificationPermission | 'unsupported'>(() => {
@@ -80,7 +80,7 @@ export const Layout: React.FC<LayoutProps> = ({
   });
 
   const [accentColor, setAccentColor] = React.useState(() => {
-    return localStorage.getItem('cargoradar_accent_color') || 'gold';
+    return localStorage.getItem('cargoradar_accent_color') || 'purple';
   });
 
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
@@ -112,7 +112,7 @@ export const Layout: React.FC<LayoutProps> = ({
       }
     };
     const handleAccent = () => {
-      setAccentColor(localStorage.getItem('cargoradar_accent_color') || 'gold');
+      setAccentColor(localStorage.getItem('cargoradar_accent_color') || 'purple');
     };
     const handleThemeChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -153,7 +153,7 @@ export const Layout: React.FC<LayoutProps> = ({
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
     return loads.filter(load => 
-      load.plate.toLowerCase().includes(q) || 
+      (load.plate || '').toLowerCase().includes(q) || 
       (load.driverName || '').toLowerCase().includes(q)
     );
   }, [searchQuery, loads]);
@@ -183,6 +183,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const allTabs = [
     { id: 'expedition' as TabType, label: 'EXPEDIÇÃO', icon: Truck },
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
+    { id: 'reverse_transfer' as TabType, label: 'REVERSA & TRANSF.', icon: Layers },
     { id: 'tracking' as TabType, label: 'RASTREAMENTO', icon: Compass },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
@@ -197,6 +198,9 @@ export const Layout: React.FC<LayoutProps> = ({
     if (!user) return false;
     if (tab.id === 'settings') return true;
     if (user.systemRole === 'administrator') return true;
+    if (user.role === 'store_app' || user.systemRole === 'store_app') {
+      return tab.id === 'reverse_transfer' || tab.id === 'tracking';
+    }
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }
@@ -217,9 +221,9 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* PERSISTENT LEFT SIDEBAR FOR DESKTOP */}
       {isAuthenticated && (
-        <aside className="hidden lg:flex flex-col w-72 bg-[#0c1f38] text-white sticky top-0 h-screen border-r border-[#193254] flex-shrink-0 z-30 shadow-2xl">
+        <aside className="hidden lg:flex flex-col w-72 bg-[#0a0915] text-white sticky top-0 h-screen border-r border-[#1f1b40] flex-shrink-0 z-30 shadow-2xl">
           {/* Top Branding Header */}
-          <div className="flex items-center gap-3 px-6 py-6 border-b border-[#193254] bg-[#071526]/50">
+          <div className="flex items-center gap-3 px-6 py-6 border-b border-[#1f1b40] bg-[#080714]/50">
             <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg border border-primary-gold overflow-hidden flex-shrink-0">
               <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
             </div>
@@ -274,7 +278,7 @@ export const Layout: React.FC<LayoutProps> = ({
           </div>
 
           {/* Bottom Profile and support link inside sidebar */}
-          <div className="p-4 border-t border-[#193254] space-y-3 bg-[#071526]/40">
+          <div className="p-4 border-t border-[#1f1b40] space-y-3 bg-[#080714]/40">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-gold to-red-650 border border-white/10 flex items-center justify-center text-xs font-black text-white uppercase shadow-md flex-shrink-0">
                 {user?.username?.substring(0, 2) || 'OP'}
@@ -287,12 +291,12 @@ export const Layout: React.FC<LayoutProps> = ({
 
             {/* Modo Escuro Toggle Switch inside Desktop Sidebar */}
             <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
-              <span className="text-[9.5px] font-extrabold text-[#567bb0] uppercase tracking-wider">Modo Escuro / Turno</span>
+              <span className="text-[9.5px] font-extrabold text-[#8a8ca3] uppercase tracking-wider">Modo Escuro / Turno</span>
               <button
                 type="button"
                 onClick={toggleTheme}
                 id="sidebar-darkmode-toggle"
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0c1f38] ${
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0a0915] ${
                   theme === 'dark' ? 'bg-primary-gold' : 'bg-slate-700'
                 }`}
                 aria-label="Alternar modo escuro"
@@ -332,8 +336,8 @@ export const Layout: React.FC<LayoutProps> = ({
             onClick={() => setMobileMenuOpen(false)}
           />
           {/* Sliding drawer list */}
-          <div className="relative flex flex-col w-72 max-w-xs bg-[#0c1f38] text-white h-full shadow-2xl p-5 space-y-6 animate-in slide-in-from-left duration-300">
-            <div className="flex items-center justify-between border-b border-[#193254] pb-4">
+          <div className="relative flex flex-col w-72 max-w-xs bg-[#0a0915] text-white h-full shadow-2xl p-5 space-y-6 animate-in slide-in-from-left duration-300">
+            <div className="flex items-center justify-between border-b border-[#1f1b40] pb-4 border-opacity-70">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-primary-gold overflow-hidden">
                   <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" />
@@ -393,7 +397,7 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
 
             {/* User profile & connect bottom */}
-            <div className="pt-4 border-t border-[#193254] space-y-3 bg-black/20 p-4 rounded-2xl">
+            <div className="pt-4 border-t border-[#1f1b40] space-y-3 bg-black/20 p-4 rounded-2xl">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-gold to-red-600 flex items-center justify-center text-xs font-black text-white uppercase shadow-md">
                   {user?.username?.substring(0, 2) || 'OP'}
@@ -406,12 +410,12 @@ export const Layout: React.FC<LayoutProps> = ({
 
               {/* Modo Escuro Toggle Switch inside Mobile Sidebar */}
               <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
-                <span className="text-[9.5px] font-extrabold text-[#567bb0] uppercase tracking-wider">Modo Escuro / Turno</span>
+                <span className="text-[9.5px] font-extrabold text-[#8a8ca3] uppercase tracking-wider">Modo Escuro / Turno</span>
                 <button
                   type="button"
                   onClick={toggleTheme}
                   id="mobile-darkmode-toggle"
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0c1f38] ${
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0a0915] ${
                     theme === 'dark' ? 'bg-primary-gold' : 'bg-slate-700'
                   }`}
                   aria-label="Alternar modo escuro"
@@ -447,10 +451,10 @@ export const Layout: React.FC<LayoutProps> = ({
       )}
 
       {/* RIGHT SIDE WORKSPACE WORKFLOW PANEL */}
-      <div className="flex-grow flex flex-col min-h-screen min-w-0 bg-slate-50 dark:bg-[#071324] transition-colors duration-250">
+      <div className="flex-grow flex flex-col min-h-screen min-w-0 bg-slate-50 dark:bg-[#080714] transition-colors duration-250">
         
         {/* TOP SLIM HEADER UTILITY BAR */}
-        <header className="bg-primary-navy dark:bg-[#071526] text-white shadow-md sticky top-0 z-40 transition-colors duration-250 border-b border-white/5">
+        <header className="bg-primary-navy dark:bg-[#080714] text-white shadow-md sticky top-0 z-40 transition-colors duration-250 border-b border-[#1f1b40]">
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16 items-center">
               
@@ -656,7 +660,7 @@ export const Layout: React.FC<LayoutProps> = ({
         </main>
 
         {/* FOOTER */}
-        <footer className="bg-white dark:bg-[#071526] border-t border-slate-200 dark:border-slate-800 py-8 transition-colors duration-250 relative z-10">
+        <footer className="bg-white dark:bg-[#080714] border-t border-slate-200 dark:border-[#1f1b40] py-8 transition-colors duration-250 relative z-10">
           <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px]">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 bg-slate-900 rounded flex items-center justify-center">

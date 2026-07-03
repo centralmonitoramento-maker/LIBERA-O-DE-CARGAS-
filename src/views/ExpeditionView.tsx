@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { CargoLoad, CargoType, CargoStatus, EventLog } from '../types';
+import { CargoLoad, CargoType, CargoStatus, EventLog, User } from '../types';
 import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { 
   Truck, 
@@ -22,7 +22,9 @@ import {
   Phone,
   Leaf,
   Snowflake,
-  Activity
+  Activity,
+  RotateCcw,
+  ArrowLeftRight
 } from 'lucide-react';
 
 const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
@@ -368,9 +370,11 @@ interface ExpeditionViewProps {
   onUpdateLoad?: (updatedLoad: CargoLoad) => Promise<void>;
   loads: CargoLoad[];
   logs: EventLog[];
+  currentUser?: User;
 }
 
-export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpdateLoad, loads = [], logs }) => {
+export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpdateLoad, loads = [], logs, currentUser }) => {
+  const [flowType, setFlowType] = useState<'standard' | 'reverse_cd' | 'transfer'>('standard');
   const [plate, setPlate] = useState('');
   const [plateCavalo, setPlateCavalo] = useState('');
   const [plateBau, setPlateBau] = useState('');
@@ -548,6 +552,35 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
   const [error, setError] = useState('');
 
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
+
+  // Synchronize defaults on flowType changes or currentUser changes
+  useEffect(() => {
+    // If editing, don't override the existing values
+    if (editingLoadId) return;
+
+    if (flowType === 'reverse_cd') {
+      setCargoType(CargoType.REVERSA_CD);
+      if (currentUser?.storeLocation) {
+        setOrigin(currentUser.storeLocation.toUpperCase());
+      } else {
+        setOrigin('');
+      }
+      setDestination('CD-01'); // Default destination to CD-01
+    } else if (flowType === 'transfer') {
+      setCargoType(CargoType.TRANSFERENCIA);
+      if (currentUser?.storeLocation) {
+        setOrigin(currentUser.storeLocation.toUpperCase());
+      } else {
+        setOrigin('');
+      }
+      setDestination('');
+    } else {
+      setCargoType(CargoType.SECA);
+      setOrigin('CD-01'); // Default origin to CD-01
+      setDestination('');
+    }
+  }, [flowType, currentUser, editingLoadId]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarTab, setSidebarTab] = useState<'resumo' | 'atividades'>('resumo');
 
@@ -555,12 +588,12 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     const q = searchQuery.toLowerCase().trim();
     if (!q) return loads;
     return loads.filter(load => 
-      load.plate.toLowerCase().includes(q) ||
-      load.driverName.toLowerCase().includes(q) ||
-      load.destination.toLowerCase().includes(q) ||
-      (load.additionalDestinations && load.additionalDestinations.some(d => d.toLowerCase().includes(q))) ||
-      load.sealNumber.toLowerCase().includes(q) ||
-      load.cargoType.toLowerCase().includes(q)
+      (load.plate || '').toLowerCase().includes(q) ||
+      (load.driverName || '').toLowerCase().includes(q) ||
+      (load.destination || '').toLowerCase().includes(q) ||
+      (load.additionalDestinations && load.additionalDestinations.some(d => (d || '').toLowerCase().includes(q))) ||
+      (load.sealNumber || '').toLowerCase().includes(q) ||
+      (load.cargoType || '').toLowerCase().includes(q)
     );
   }, [loads, searchQuery]);
 
@@ -578,6 +611,13 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
     setDriverName(load.driverName);
     setDriverPhone(load.driverPhone || '');
     setCargoType(load.cargoType);
+    if (load.cargoType === CargoType.REVERSA_CD) {
+      setFlowType('reverse_cd');
+    } else if (load.cargoType === CargoType.TRANSFERENCIA) {
+      setFlowType('transfer');
+    } else {
+      setFlowType('standard');
+    }
     setOrigin(load.origin);
     setDestination(load.destination);
     setAdditionalDestinations(load.additionalDestinations || []);
@@ -618,6 +658,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
 
   const handleCancelEdit = () => {
     setEditingLoadId(null);
+    setFlowType('standard');
     setPlate('');
     setPlateCavalo('');
     setPlateBau('');
@@ -879,6 +920,7 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                 {error}
               </div>
             )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2 relative" id="plate-autocomplete-container">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Placa do Cavalo</label>
@@ -1209,6 +1251,32 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                         </span>
                       </button>
                     ))}
+                  </div>
+                )}
+                {flowType === 'reverse_cd' && (
+                  <div className="flex gap-2 mt-2 animate-in fade-in duration-200">
+                    <button
+                      type="button"
+                      onClick={() => setDestination('CD-01')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border cursor-pointer ${
+                        destination === 'CD-01'
+                          ? 'bg-primary-gold border-primary-gold text-primary-navy shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      CD-01 (Santa Maria)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDestination('CD-02')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border cursor-pointer ${
+                        destination === 'CD-02'
+                          ? 'bg-primary-gold border-primary-gold text-primary-navy shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      CD-02 (Santa Maria)
+                    </button>
                   </div>
                 )}
               </div>
@@ -1776,6 +1844,23 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                               <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${statusBg}`}>
                                 {load.status.split(' ')[1] || load.status}
                               </span>
+                              {(() => {
+                                const isReversa = load.cargoType.startsWith('Reversa CD') || load.cargoType === CargoType.REVERSA_CD;
+                                const isTransf = load.cargoType === CargoType.TRANSFERENCIA;
+                                const isColeta = load.cargoType === CargoType.COLETA;
+                                const typeBadgeColor = isReversa
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : isTransf
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                  : isColeta
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200';
+                                return (
+                                  <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${typeBadgeColor}`}>
+                                    {load.cargoType.split(' (')[0] || load.cargoType}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div className="text-xs font-bold text-slate-700">
                               Motorista: <span className="font-semibold text-slate-500">{load.driverName}</span>

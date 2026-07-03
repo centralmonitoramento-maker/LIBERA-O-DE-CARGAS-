@@ -49,11 +49,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'dark';
   });
 
   const [accentColor, setAccentColor] = useState(() => {
-    return localStorage.getItem('cargoradar_accent_color') || 'gold';
+    return localStorage.getItem('cargoradar_accent_color') || 'purple';
   });
 
   const [compactMode, setCompactMode] = useState(() => {
@@ -450,6 +450,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
               </h4>
               <div className="flex flex-wrap gap-3">
                 {[
+                  { name: 'purple', class: 'bg-purple-600', label: 'Roxo Reversa (Moderno)' },
                   { name: 'gold', class: 'bg-primary-gold', label: 'Dourado Operacional' },
                   { name: 'emerald', class: 'bg-emerald-600', label: 'Verde Segurança' },
                   { name: 'blue', class: 'bg-[#1e40af]', label: 'Azul Corporativo' },

@@ -12,7 +12,9 @@ export enum CargoType {
   SECA = 'Seca',
   TRANSFERENCIA = 'Transferência',
   COMPARTILHADA = 'Carga Compartilhada',
-  PERECIVEIS = 'Perecíveis'
+  PERECIVEIS = 'Perecíveis',
+  REVERSA_CD = 'Reversa CD (Retorno CD / Transf. Lojas)',
+  COLETA = 'Coleta (Recicláveis / Resíduos / Terceiros)'
 }
 
 export enum OccurrenceType {
@@ -92,7 +94,7 @@ export interface CargoLoad {
   validationTime?: string;
 }
 
-export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer';
+export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer' | 'store_app';
 
 export interface User {
   id: string;
@@ -101,7 +103,7 @@ export interface User {
   fullName?: string;
   storeLocation?: string;
   jobFunction?: string;
-  role: 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria';
+  role: 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app';
   systemRole?: SystemRole;
   status: 'pending' | 'active' | 'rejected';
   createdAt: string;

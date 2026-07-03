@@ -28,8 +28,10 @@ import {
   ImageOff,
   Calendar,
   MessageSquare,
-  Clipboard
+  Clipboard,
+  UserCheck
 } from 'lucide-react';
+import { getDriversByPlate, DriverLink } from '../data/driversData';
 import { GoogleGenAI } from "@google/genai";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell,
@@ -546,6 +548,19 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
   const [palletsConfirm, setPalletsConfirm] = useState('');
   const [plateConfirm, setPlateConfirm] = useState('');
   const [driverConfirm, setDriverConfirm] = useState('');
+  const [driverPhoneConfirm, setDriverPhoneConfirm] = useState('');
+  const [matchedDriversConfirm, setMatchedDriversConfirm] = useState<DriverLink[]>([]);
+
+  useEffect(() => {
+    const drivers = getDriversByPlate(plateConfirm);
+    setMatchedDriversConfirm(drivers);
+    if (drivers.length === 1) {
+      setDriverConfirm(drivers[0].driverName);
+      if (drivers[0].driverPhone) {
+        setDriverPhoneConfirm(drivers[0].driverPhone);
+      }
+    }
+  }, [plateConfirm]);
   const [contactApp, setContactApp] = useState('');
   const [validationTime, setValidationTime] = useState(() => {
     const now = new Date();
@@ -1018,11 +1033,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     return dateFilteredLoads
       .filter(load => {
         const matchesSearch = 
-          load.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          load.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          load.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          load.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          load.id.toLowerCase().includes(searchTerm.toLowerCase());
+          (load.plate || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+          (load.driverName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+          (load.origin || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+          (load.destination || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+          (load.id || '').toLowerCase().includes((searchTerm || '').toLowerCase());
         
         const matchesStatus = filterStatus === 'ALL' || load.status === filterStatus;
         
@@ -1253,15 +1268,15 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     ? currentDestPalletCount
     : (selectedLoad ? selectedLoad.palletCount : 0);
 
-  const isSealMatched = selectedLoad ? (sealConfirm.trim().toUpperCase() === currentActiveSeal.toUpperCase()) : false;
+  const isSealMatched = selectedLoad ? (sealConfirm.trim().toUpperCase() === (currentActiveSeal || '').toUpperCase()) : false;
   const isPalletsMatched = selectedLoad ? (Number(palletsConfirm.trim()) === targetPalletCount) : false;
 
-  const normalizeText = (text: string) => 
-    text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const normalizeText = (text: string | null | undefined) => 
+    (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 
   const isPlateMatched = selectedLoad 
     ? (plateConfirm.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === 
-       selectedLoad.plate.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()) 
+       (selectedLoad.plate || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()) 
     : false;
 
   const isDriverMatched = selectedLoad 
@@ -1297,7 +1312,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
         ...(selectedLoad.occurrenceHistory || []),
         {
           type: OccurrenceType.QUANTITY_DISCREPANCY,
-          description: `Liberação forçada com divergência autorizada pela Central de Monitoramento por ${currentAuditor}. Detalhes informados no gate: Placa [${plateConfirm}], Lacre [${sealConfirm}], Motorista [${driverConfirm}], Paletes [${palletsConfirm}]. App que Validou: [${contactApp || 'N/A'}], Horário de Validação: [${validationTime || 'N/A'}].`,
+          description: `Liberação forçada com divergência autorizada pela Central de Monitoramento por ${currentAuditor}. Detalhes informados no gate: Placa [${plateConfirm}], Lacre [${sealConfirm}], Motorista [${driverConfirm}]${driverPhoneConfirm ? ` • ${driverPhoneConfirm}` : ''}, Paletes [${palletsConfirm}]. App que Validou: [${contactApp || 'N/A'}], Horário de Validação: [${validationTime || 'N/A'}].`,
           auditor: currentAuditor,
           timestamp
         }
@@ -1314,6 +1329,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     setPalletsConfirm('');
     setPlateConfirm('');
     setDriverConfirm('');
+    setDriverPhoneConfirm('');
     setContactApp('');
     setValidationTime(new Date().toTimeString().substring(0, 5));
     setShowDivergentReleaseConfirm(false);
@@ -1329,6 +1345,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
     setPalletsConfirm('');
     setPlateConfirm('');
     setDriverConfirm('');
+    setDriverPhoneConfirm('');
     setContactApp('');
     setValidationTime(new Date().toTimeString().substring(0, 5));
     setNewSealForNextTrip('');
@@ -3739,6 +3756,52 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
                             </span>
                           )}
                         </div>
+                        {matchedDriversConfirm.length > 0 && (
+                          <div className="mt-1.5 bg-slate-50 border border-slate-150 rounded-xl p-2 text-left space-y-1">
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                              <UserCheck className="w-3 h-3 text-indigo-500" />
+                              <span>Motorista(s) para esta placa:</span>
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {matchedDriversConfirm.map((drv, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    setDriverConfirm(drv.driverName);
+                                    if (drv.driverPhone) {
+                                      setDriverPhoneConfirm(drv.driverPhone);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                    driverConfirm.toUpperCase().trim() === drv.driverName.toUpperCase().trim()
+                                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span>{drv.driverName}</span>
+                                  {drv.driverPhone && <span className="opacity-75 font-mono text-[8px]">{drv.driverPhone}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Driver Phone Confirm */}
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                          Telefone do Motorista
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={driverPhoneConfirm}
+                            onChange={(e) => setDriverPhoneConfirm(e.target.value)}
+                            placeholder="Telefone do motorista..."
+                            className="w-full bg-white border border-slate-200 focus:ring-2 focus:ring-primary-gold rounded-xl px-3 py-2.5 text-xs font-bold outline-none transition-all"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -4269,7 +4332,9 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               </div>
               <div className="col-span-2">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">Motorista</span>
-                <span className="font-black text-slate-800">{driverConfirm}</span>
+                <span className="font-black text-slate-800">
+                  {driverConfirm} {driverPhoneConfirm ? `• ${driverPhoneConfirm}` : ''}
+                </span>
               </div>
               <div className="col-span-2">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">Quantidade de Paletes</span>
