@@ -310,9 +310,16 @@ const App: React.FC = () => {
   // Set up service worker
   useEffect(() => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      // Avoid registering Service Worker if inside an iframe (e.g. AI Studio development environment preview)
+      if (window.self !== window.top) {
+        console.log('Ambiente de visualização (Iframe) detectado. Registro de Service Worker ignorado.');
+        return;
+      }
       navigator.serviceWorker.register('/sw.js')
         .then((reg) => console.log('Service Worker registrado:', reg.scope))
-        .catch((err) => console.error('Erro ao registrar Service Worker:', err));
+        .catch((err) => {
+          console.warn('Aviso: Não foi possível registrar o Service Worker (comum em ambientes restritos/iframe):', err);
+        });
     }
   }, []);
 
