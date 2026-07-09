@@ -54,8 +54,12 @@ export const signInWithGmail = async () => {
     googleUser = result.user;
     window.dispatchEvent(new CustomEvent('gmail-auth-changed'));
     return { user: result.user, accessToken: credential.accessToken };
-  } catch (error) {
-    console.error('Erro na autenticação do Gmail:', error);
+  } catch (error: any) {
+    if (error && (error.code === 'auth/popup-closed-by-user' || error.message?.includes('popup-closed-by-user'))) {
+      console.warn('Autenticação do Gmail cancelada pelo usuário (popup fechado).');
+    } else {
+      console.error('Erro na autenticação do Gmail:', error);
+    }
     throw error;
   }
 };

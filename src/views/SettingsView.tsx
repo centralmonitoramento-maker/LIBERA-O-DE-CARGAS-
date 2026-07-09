@@ -148,8 +148,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
   const handleGmailLogin = async () => {
     try {
       await signInWithGmail();
-    } catch (err) {
-      console.error('Erro ao fazer login no Gmail:', err);
+    } catch (err: any) {
+      if (err && (err.code === 'auth/popup-closed-by-user' || err.message?.includes('popup-closed-by-user'))) {
+        console.warn('Login do Gmail cancelado pelo usuário (popup fechado).');
+      } else {
+        console.error('Erro ao fazer login no Gmail:', err);
+      }
     }
   };
 
