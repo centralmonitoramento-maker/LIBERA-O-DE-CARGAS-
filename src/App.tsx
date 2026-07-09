@@ -11,6 +11,7 @@ import { PortariaView } from './views/PortariaView';
 import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
 import { ReverseTransferView } from './views/ReverseTransferView';
+import { GuideView } from './views/GuideView';
 import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { getGmailToken, sendGmailEmail } from './utils/gmailService';
 import { 
@@ -30,7 +31,7 @@ import {
   signOut 
 } from 'firebase/auth';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -278,7 +279,7 @@ const App: React.FC = () => {
       // 3. Tab switching with Alt + Number (Alt + 1, Alt + 2, etc.)
       if (e.altKey && !isNaN(Number(e.key))) {
         const num = Number(e.key);
-        const tabs: TabType[] = ['expedition', 'central', 'audit', 'analysis', 'portaria', 'tracking', 'settings'];
+        const tabs: TabType[] = ['expedition', 'central', 'audit', 'analysis', 'portaria', 'tracking', 'settings', 'guide'];
         if (num >= 1 && num <= tabs.length) {
           e.preventDefault();
           const targetTab = tabs[num - 1];
@@ -1249,6 +1250,8 @@ const App: React.FC = () => {
             loads={loads}
           />
         );
+      case 'guide':
+        return <GuideView />;
       default:
         return null;
     }

@@ -23,13 +23,14 @@ import {
   Layers,
   FileSpreadsheet,
   Settings,
-  Menu
+  Menu,
+  BookOpen
 } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -189,6 +190,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
     { id: 'portaria' as TabType, label: 'PORTARIA', icon: ClipboardCheck },
     { id: 'settings' as TabType, label: 'CONFIGURAÇÕES', icon: Settings },
+    { id: 'guide' as TabType, label: 'GUIA OPERACIONAL', icon: BookOpen },
   ];
 
   // Logic: Admins see everything. Normal users only see their registered area.
@@ -196,7 +198,7 @@ export const Layout: React.FC<LayoutProps> = ({
   // 'tracking' is a global feature accessible by all roles except expedition.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
-    if (tab.id === 'settings') return true;
+    if (tab.id === 'settings' || tab.id === 'guide') return true;
     if (user.systemRole === 'administrator') return true;
     if (user.role === 'store_app' || user.systemRole === 'store_app') {
       return tab.id === 'reverse_transfer' || tab.id === 'tracking';
