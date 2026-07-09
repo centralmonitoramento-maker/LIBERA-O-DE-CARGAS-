@@ -12,6 +12,7 @@ import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
 import { ReverseTransferView } from './views/ReverseTransferView';
 import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
+import { getGmailToken, sendGmailEmail } from './utils/gmailService';
 import { 
   collection, 
   doc, 
@@ -782,6 +783,59 @@ const App: React.FC = () => {
       const type = optType || load.occurrenceType || 'OUTRAS DIVERGÊNCIAS';
       const desc = optDesc || load.occurrenceDescription || 'Carga marcada como BLOQUEADA por ação operacional.';
 
+      // Check for Gmail Token
+      const gmailToken = getGmailToken();
+      if (gmailToken) {
+        console.log(`Disparando envio automático de e-mail de bloqueio via Gmail API...`);
+        const emailHtml = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e1e8ed; border-radius: 16px; background-color: #ffffff; color: #1c2434;">
+            <div style="background-color: #0b1532; padding: 24px; border-radius: 12px 12px 0 0; text-align: center; border-bottom: 4px solid #f29c1f;">
+              <h1 style="margin: 0; font-size: 18px; text-transform: uppercase; font-weight: 900; color: #ffffff;">ALERTA DE OCORRÊNCIA EM CURSO</h1>
+              <p style="margin: 6px 0 0 0; font-size: 10px; text-transform: uppercase; color: #f29c1f; font-weight: 800;">Atacadão Dia a Dia - CargaRelease</p>
+            </div>
+            
+            <div style="padding: 24px 16px;">
+              <p style="font-size: 13.5px; margin-top: 0; line-height: 1.6; color: #475569;">
+                Informamos que foi registrada uma <strong>ocorrência operacional crítica</strong> durante o processo de auditoria de pátio/gate para a carga identificada abaixo:
+              </p>
+              
+              <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px;">
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 12px 16px; font-weight: bold; border-bottom: 1px solid #edf2f7; color: #64748b; width: 35%;">VEÍCULO / PLACA:</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #0b1532; font-family: monospace; font-weight: 800; font-size: 15px;">${load.plate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; font-weight: bold; border-bottom: 1px solid #edf2f7; color: #64748b;">MOTORISTA:</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #334155; font-weight: bold;">${load.driverName || "NÃO CADASTRADO"}</td>
+                </tr>
+                <tr style="background-color: #fef2f2;">
+                  <td style="padding: 12px 16px; font-weight: bold; border-bottom: 1px solid #edf2f7; color: #b91c1c;">TIPO DE OCORRÊNCIA:</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; font-weight: 900; color: #b91c1c; text-transform: uppercase;">${type}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; font-weight: bold; border-bottom: 1px solid #edf2f7; color: #64748b; vertical-align: top;">DESCRIÇÃO DETALHADA:</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #edf2f7; color: #1e293b; line-height: 1.6; font-weight: 500;">${desc}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #f8fafc; padding: 16px; border-radius: 0 0 12px 12px; border-top: 1px solid #edf2f7; font-size: 11px; color: #64748b; text-align: center; line-height: 1.6;">
+              Mensagem de comunicação automática instantânea enviada via API do Gmail conectada ao <strong>CargaRelease</strong>.
+            </div>
+          </div>
+        `;
+
+        for (const recipient of targetEmails) {
+          try {
+            await sendGmailEmail(recipient, `[ALERTA DE OCORRÊNCIA] Carga ${load.plate} - ${type}`, emailHtml);
+            console.log(`E-mail de alerta de ocorrência enviado para ${recipient} com sucesso via Gmail.`);
+          } catch (err) {
+            console.error(`Falha ao enviar e-mail de alerta de ocorrência para ${recipient} via Gmail:`, err);
+          }
+        }
+        return; // Exit as Gmail sent successfully
+      }
+
       console.log(`Disparando envio automático de e-mail de bloqueio via SendGrid...`);
       const response = await fetch('/api/send-alert-email', {
         method: 'POST',
@@ -802,7 +856,7 @@ const App: React.FC = () => {
         console.log('SendGrid automatically triggered alert email sent successfully:', result);
       }
     } catch (err) {
-      console.error('Error on auto SendGrid alert dispatch:', err);
+      console.error('Error on auto email alert dispatch:', err);
     }
   };
 

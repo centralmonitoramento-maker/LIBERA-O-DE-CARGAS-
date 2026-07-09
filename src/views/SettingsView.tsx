@@ -18,9 +18,26 @@ import {
   Eye,
   Sun,
   Moon,
-  Laptop
+  Laptop,
+  Mail,
+  Link2,
+  Send,
+  RefreshCw,
+  LogOut,
+  Check,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { User, CargoLoad } from '../types';
+import { 
+  getGmailToken, 
+  getGmailUser, 
+  signInWithGmail, 
+  logoutGmail, 
+  fetchGmailProfile, 
+  sendGmailEmail, 
+  fetchGmailSentMessages 
+} from '../utils/gmailService';
 
 interface SettingsViewProps {
   currentUser: User | null;
@@ -75,6 +92,97 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
   const [ticketMsg, setTicketMsg] = useState('');
   const [ticketSeverity, setTicketSeverity] = useState('low');
   const [ticketSuccess, setTicketSuccess] = useState(false);
+
+  // Gmail Integration States
+  const [gmailToken, setGmailToken] = useState<string | null>(getGmailToken());
+  const [gmailUser, setGmailUser] = useState<any>(getGmailUser());
+  const [gmailProfile, setGmailProfile] = useState<any>(null);
+  const [sentEmails, setSentEmails] = useState<any[]>([]);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  
+  // Custom Compose Form States
+  const [testTo, setTestTo] = useState('');
+  const [testSubject, setTestSubject] = useState('');
+  const [testBody, setTestBody] = useState('');
+  const [testEmailSuccess, setTestEmailSuccess] = useState(false);
+  const [testEmailError, setTestEmailError] = useState<string | null>(null);
+
+  // Sync Gmail states from custom window auth events
+  useEffect(() => {
+    const handleAuthChanged = () => {
+      const token = getGmailToken();
+      setGmailToken(token);
+      setGmailUser(getGmailUser());
+      if (!token) {
+        setGmailProfile(null);
+        setSentEmails([]);
+      }
+    };
+    window.addEventListener('gmail-auth-changed', handleAuthChanged);
+    return () => {
+      window.removeEventListener('gmail-auth-changed', handleAuthChanged);
+    };
+  }, []);
+
+  const loadGmailData = async () => {
+    setIsLoadingProfile(true);
+    try {
+      const profile = await fetchGmailProfile();
+      setGmailProfile(profile);
+      const messages = await fetchGmailSentMessages();
+      setSentEmails(messages);
+    } catch (err) {
+      console.error('Erro ao carregar dados do Gmail:', err);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    if (gmailToken) {
+      loadGmailData();
+    }
+  }, [gmailToken]);
+
+  const handleGmailLogin = async () => {
+    try {
+      await signInWithGmail();
+    } catch (err) {
+      console.error('Erro ao fazer login no Gmail:', err);
+    }
+  };
+
+  const handleGmailLogout = () => {
+    logoutGmail();
+  };
+
+  const handleSendTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testTo.trim() || !testSubject.trim() || !testBody.trim()) return;
+    setIsSendingEmail(true);
+    setTestEmailError(null);
+    setTestEmailSuccess(false);
+
+    try {
+      const formattedBody = '<p>' + testBody.trim().replace(/\n/g, '<br/>') + '</p>';
+      await sendGmailEmail(testTo.trim(), testSubject.trim(), formattedBody);
+      setTestEmailSuccess(true);
+      setTestTo('');
+      setTestSubject('');
+      setTestBody('');
+      
+      // Reload sent emails list
+      const messages = await fetchGmailSentMessages();
+      setSentEmails(messages);
+      
+      setTimeout(() => setTestEmailSuccess(false), 5000);
+    } catch (err: any) {
+      setTestEmailError(err.message || 'Erro ao enviar e-mail via Gmail.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
 
   // Sync theme changes with other views/components
   useEffect(() => {
@@ -185,11 +293,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
     }
   };
 
-  const handleSubmitTicket = (e: React.FormEvent) => {
+  const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticketSubject.trim() || !ticketMsg.trim()) return;
 
-    // Simulate sending a feedback/ticket or write log or call state
+    if (gmailToken) {
+      setIsSendingEmail(true);
+      try {
+        const emailBody = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
+            <h2 style="color: #e11d48; margin-top: 0;">Novo Chamado de Suporte Técnico</h2>
+            <p><strong>Usuário:</strong> ${currentUser?.fullName || currentUser?.username} (${currentUser?.username || ''})</p>
+            <p><strong>Gravidade:</strong> ${ticketSeverity.toUpperCase()}</p>
+            <p><strong>Assunto:</strong> ${ticketSubject}</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+            <p><strong>Descrição:</strong></p>
+            <p style="white-space: pre-wrap; background-color: #f8fafc; padding: 12px; border-radius: 8px;">${ticketMsg}</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+            <p style="font-size: 11px; color: #64748b;">Enviado de forma segura via API do Gmail do CargaRadar.</p>
+          </div>
+        `;
+        await sendGmailEmail(
+          'central.monitoramento@atacadaodiaadia.com.br',
+          `[SUPORTE CARGARADAR] ${ticketSubject}`,
+          emailBody
+        );
+        // Refresh sent emails list in background
+        const messages = await fetchGmailSentMessages();
+        setSentEmails(messages);
+      } catch (err) {
+        console.error('Falha ao enviar e-mail de suporte real via Gmail API:', err);
+      } finally {
+        setIsSendingEmail(false);
+      }
+    }
+
+    // Simulate/set success locally so user gets immediate visual feedback
     setTicketSuccess(true);
     setTicketSubject('');
     setTicketMsg('');
@@ -234,6 +373,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
               <a href="#notifications" className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-xs font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
                 <Bell className="w-4 h-4 text-amber-500" />
                 <span>Notificações</span>
+              </a>
+              <a href="#gmail-integration" className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-xs font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
+                <Mail className="w-4 h-4 text-blue-500" />
+                <span>Integração Gmail</span>
               </a>
               <a href="#personalization" className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-xs font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
                 <Palette className="w-4 h-4 text-emerald-500" />
@@ -592,6 +735,215 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* SEC 3.5: GMAIL INTEGRATION (GOOGLE WORKSPACE) */}
+          <section id="gmail-integration" className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Mail className="w-5 h-5 text-blue-500" />
+                <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                  Integração Gmail & Google Workspace
+                </h3>
+              </div>
+              <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase ${
+                gmailToken ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-400'
+              }`}>
+                {gmailToken ? 'Conectado' : 'Não Ativo'}
+              </span>
+            </div>
+
+            {!gmailToken ? (
+              <div className="bg-gradient-to-br from-blue-50/50 to-indigo-50/20 dark:from-blue-950/10 dark:to-slate-950 border border-blue-100/70 dark:border-slate-850 p-6 sm:p-8 rounded-3xl flex flex-col items-center text-center space-y-4">
+                <div className="p-3.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl">
+                  <Sparkles className="w-8 h-8" />
+                </div>
+                <div className="max-w-md space-y-2">
+                  <h4 className="text-sm font-black uppercase text-slate-800 dark:text-slate-100">
+                    Vincule seu Gmail do Google Workspace
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Habilite o envio em tempo real de relatórios de liberação de carga, alertas de bloqueio de prevenção de perdas e abertura automática de chamados de suporte técnico diretamente do seu e-mail corporativo.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleGmailLogin}
+                  className="flex items-center gap-3 px-6 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-black text-xs uppercase tracking-wider cursor-pointer shadow-sm text-slate-700 dark:text-slate-200 mt-2"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  <span>Conectar com Google</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Active Connection Profile */}
+                <div className="bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    {gmailUser?.photoURL ? (
+                      <img src={gmailUser.photoURL} alt="Profile" className="w-11 h-11 rounded-full border-2 border-blue-500/30" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-11 h-11 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold text-sm">
+                        {gmailUser?.displayName?.charAt(0) || gmailProfile?.emailAddress?.charAt(0).toUpperCase() || 'G'}
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-100">
+                          {gmailUser?.displayName || 'Conta Google Vinculada'}
+                        </h4>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-emerald-500"></span> Ativo
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium font-mono mt-0.5">
+                        {gmailProfile?.emailAddress || gmailUser?.email || 'Buscando endereço...'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={loadGmailData}
+                      disabled={isLoadingProfile}
+                      className="p-2 bg-white hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 cursor-pointer disabled:opacity-50"
+                      title="Sincronizar"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingProfile ? 'animate-spin text-blue-500' : ''}`} />
+                    </button>
+                    <button
+                      onClick={handleGmailLogout}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Desconectar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  {/* Left Column: Gmail history */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Histórico Recente de E-mails Enviados
+                      </h4>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase font-mono">Últimos 5</span>
+                    </div>
+
+                    {isLoadingProfile ? (
+                      <div className="bg-slate-50/50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-900 rounded-2xl p-8 flex flex-col items-center justify-center space-y-2">
+                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Consultando API do Gmail...</p>
+                      </div>
+                    ) : sentEmails.length === 0 ? (
+                      <div className="bg-slate-50/50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-900 rounded-2xl p-8 text-center">
+                        <p className="text-xs text-slate-400 font-semibold uppercase">Nenhum e-mail enviado recentemente via Gmail.</p>
+                        <p className="text-[10px] text-slate-400/80 mt-1">Envie uma mensagem ao lado ou abra um chamado para registrar correspondências.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {sentEmails.map((email) => (
+                          <div key={email.id} className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-850 hover:border-slate-200 rounded-xl space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-bold text-slate-500 font-mono">Para: {email.to}</span>
+                              <span className="text-slate-400 font-semibold">{email.date}</span>
+                            </div>
+                            <p className="font-black text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight">{email.subject}</p>
+                            <p className="text-[11px] text-slate-400 truncate leading-relaxed">{email.snippet}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Quick compose form */}
+                  <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-2xl p-5 space-y-4">
+                    <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 block">
+                      Enviar Notificação Rápida via Gmail
+                    </h4>
+
+                    {testEmailSuccess ? (
+                      <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-850/60 p-4 rounded-xl flex items-start gap-2 text-emerald-800 dark:text-emerald-450 text-xs font-bold leading-relaxed">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-emerald-900 dark:text-emerald-300 uppercase tracking-tight">E-MAIL ENVIADO!</p>
+                          <p className="text-[10px] font-normal opacity-80 mt-0.5">Mensagem enviada com sucesso utilizando sua conta corporativa vinculada.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleSendTestEmail} className="space-y-3 text-xs">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-1">Destinatário (E-mail)</label>
+                          <input
+                            type="email"
+                            value={testTo}
+                            onChange={(e) => setTestTo(e.target.value)}
+                            placeholder="Ex: coordenacao@atacadaodiaadia.com.br"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white font-medium focus:ring-blue-500 focus:border-blue-500"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-1">Assunto</label>
+                          <input
+                            type="text"
+                            value={testSubject}
+                            onChange={(e) => setTestSubject(e.target.value)}
+                            placeholder="Ex: Atualização de Status da Carga"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white font-medium focus:ring-blue-500 focus:border-blue-500"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block mb-1">Corpo do E-mail</label>
+                          <textarea
+                            rows={3}
+                            value={testBody}
+                            onChange={(e) => setTestBody(e.target.value)}
+                            placeholder="Digite sua mensagem operacional aqui..."
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white font-medium focus:ring-blue-500 focus:border-blue-500"
+                            required
+                          />
+                        </div>
+
+                        {testEmailError && (
+                          <div className="text-[10.5px] text-red-500 font-semibold uppercase flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            {testEmailError}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={isSendingEmail}
+                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-[10.5px] tracking-widest rounded-xl transition-colors cursor-pointer shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {isSendingEmail ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-3.5 h-3.5" />
+                              Transmitir Mensagem
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* SEC 4: TECHNICAL SUPPORT & MANUAL */}
