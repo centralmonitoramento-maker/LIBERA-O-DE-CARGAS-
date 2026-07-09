@@ -1,7 +1,7 @@
 {
   "firestore": [
     {
-      "database": "ai-studio-90558b52-6c0d-440b-b26e-9317815058a3",
+      "database": "ai-studio-cargaradar-90558b52-6c0d-440b-b26e-9317815058a3",
       "rules": "firestore.rules"
     }
   ]
