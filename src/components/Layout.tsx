@@ -29,6 +29,7 @@ import {
 
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
+import { ImageEnhanceZoom } from './ImageEnhanceZoom';
 
 type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
@@ -292,10 +293,20 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
 
             {/* Modo Escuro Toggle Switch inside Desktop Sidebar */}
-            <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
+            <div 
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  toggleTheme();
+                }
+              }}
+              className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left focus:outline-none focus:ring-1 focus:ring-primary-gold"
+            >
               <span className="text-[9.5px] font-extrabold text-[#8a8ca3] uppercase tracking-wider">Modo Escuro / Turno</span>
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={toggleTheme}
                 id="sidebar-darkmode-toggle"
                 className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0a0915] ${
@@ -411,10 +422,20 @@ export const Layout: React.FC<LayoutProps> = ({
               </div>
 
               {/* Modo Escuro Toggle Switch inside Mobile Sidebar */}
-              <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left">
+              <div 
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleTheme();
+                  }
+                }}
+                className="flex items-center justify-between bg-white/5 hover:bg-white/10 px-3 py-2.5 rounded-xl border border-white/5 transition-all text-left focus:outline-none focus:ring-1 focus:ring-primary-gold"
+              >
                 <span className="text-[9.5px] font-extrabold text-[#8a8ca3] uppercase tracking-wider">Modo Escuro / Turno</span>
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={toggleTheme}
                   id="mobile-darkmode-toggle"
                   className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-gold focus:ring-offset-1 focus:ring-offset-[#0a0915] ${
@@ -1060,17 +1081,11 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* REUSABLE LIGHTBOX OR PHOTO ZOOM OVERLAY */}
       {zoomPhoto && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-xl flex items-center justify-center z-[200] p-4 text-white animate-in fade-in duration-300">
-          <button 
-            onClick={() => setZoomPhoto(null)}
-            className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors cursor-pointer"
-          >
-            <X className="w-6 h-6" />
-          </button>
-          <div className="max-w-4xl max-h-[85vh] w-full flex items-center justify-center relative">
-            <img src={zoomPhoto} alt="Zoom" className="max-w-full max-h-[85vh] object-contain rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95 duration-300" referrerPolicy="no-referrer" />
-          </div>
-        </div>
+        <ImageEnhanceZoom 
+          src={zoomPhoto} 
+          onClose={() => setZoomPhoto(null)} 
+          title="Visualização e Melhoria de Evidência da Carga" 
+        />
       )}
 
       {isAuthenticated && <FeedbackChat currentUser={user} />}

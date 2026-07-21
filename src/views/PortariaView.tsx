@@ -17,8 +17,9 @@ import {
   ClipboardCheck, 
   Info 
 } from 'lucide-react';
-import { CargoLoad, CargoStatus, User, EventLog, getPhotosArray } from '../types';
+import { CargoLoad, CargoStatus, User, EventLog, getPhotosArray, CargoType } from '../types';
 import { compressImage } from '../utils/imageCompressor';
+import { ImageEnhanceZoom } from '../components/ImageEnhanceZoom';
 
 interface PortariaViewProps {
   loads: CargoLoad[];
@@ -41,6 +42,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
 
   // Validation Form states
   const [gatePhotoPlate, setGatePhotoPlate] = useState<string[]>([]);
+  const [zoomPhoto, setZoomPhoto] = useState<string | null>(null);
   const [gatePhotoSeal, setGatePhotoSeal] = useState<string[]>([]);
   const [gatePhotoManifest, setGatePhotoManifest] = useState<string[]>([]);
   const [gateObservation, setGateObservation] = useState('');
@@ -73,23 +75,27 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
   const refSealInput = useRef<HTMLInputElement>(null);
   const refManifestInput = useRef<HTMLInputElement>(null);
 
+  const filteredForPortaria = useMemo(() => {
+    return loads.filter(l => l.cargoType !== CargoType.REVERSA_CD && l.cargoType !== CargoType.TRANSFERENCIA && l.cargoType !== CargoType.COLETA);
+  }, [loads]);
+
   // Computed active load
   const selectedLoad = useMemo(() => {
-    return loads.find(l => l.id === selectedLoadId) || null;
-  }, [loads, selectedLoadId]);
+    return filteredForPortaria.find(l => l.id === selectedLoadId) || null;
+  }, [filteredForPortaria, selectedLoadId]);
 
   // Compute Overall Stats for the Portaria Dashboard
   const stats = useMemo(() => {
-    const total = loads.length;
-    const pending = loads.filter(l => !l.gateVerified).length;
-    const approved = loads.filter(l => l.gateStatus === 'Aprovado').length;
-    const divergent = loads.filter(l => l.gateStatus === 'Divergente').length;
+    const total = filteredForPortaria.length;
+    const pending = filteredForPortaria.filter(l => !l.gateVerified).length;
+    const approved = filteredForPortaria.filter(l => l.gateStatus === 'Aprovado').length;
+    const divergent = filteredForPortaria.filter(l => l.gateStatus === 'Divergente').length;
     return { total, pending, approved, divergent };
-  }, [loads]);
+  }, [filteredForPortaria]);
 
   // Filter loads by search and DATE, giving priority to the most recent elements (descending sort order)
   const filteredLoads = useMemo(() => {
-    let result = [...loads];
+    let result = [...filteredForPortaria];
 
     const toLocalYMD = (dateString: string) => {
       if (!dateString) return '';
@@ -835,7 +841,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           />
                           <div className="grid grid-cols-2 gap-2">
                             {gatePhotoPlate.map((p, idx) => (
-                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1 cursor-zoom-in" onClick={() => setZoomPhoto(p)}>
                                 <img 
                                   src={p} 
                                   alt={`Placa Portaria ${idx + 1}`} 
@@ -844,7 +850,10 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveGatePhoto('plate', idx)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveGatePhoto('plate', idx);
+                                  }}
                                   className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -883,7 +892,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           />
                           <div className="grid grid-cols-2 gap-2">
                             {gatePhotoSeal.map((p, idx) => (
-                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1 cursor-zoom-in" onClick={() => setZoomPhoto(p)}>
                                 <img 
                                   src={p} 
                                   alt={`Lacre Portaria ${idx + 1}`} 
@@ -892,7 +901,10 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveGatePhoto('seal', idx)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveGatePhoto('seal', idx);
+                                  }}
                                   className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -931,7 +943,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                           />
                           <div className="grid grid-cols-2 gap-2">
                             {gatePhotoManifest.map((p, idx) => (
-                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1">
+                              <div key={idx} className="relative h-24 bg-slate-100 rounded-xl overflow-hidden group shadow border border-slate-250 col-span-1 cursor-zoom-in" onClick={() => setZoomPhoto(p)}>
                                 <img 
                                   src={p} 
                                   alt={`Romaneio Portaria ${idx + 1}`} 
@@ -940,7 +952,10 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveGatePhoto('manifest', idx)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveGatePhoto('manifest', idx);
+                                  }}
                                   className="absolute top-1 right-1 p-1.5 bg-red-650 hover:bg-red-550 text-white rounded-lg shadow-md border-0 cursor-pointer flex items-center justify-center transition-all"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -1090,6 +1105,14 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {zoomPhoto && (
+        <ImageEnhanceZoom 
+          src={zoomPhoto} 
+          onClose={() => setZoomPhoto(null)} 
+          title="Visualização e Melhoria de Evidência da Portaria" 
+        />
       )}
 
     </div>

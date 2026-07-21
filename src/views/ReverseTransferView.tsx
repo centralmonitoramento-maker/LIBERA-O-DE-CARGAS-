@@ -32,6 +32,227 @@ import { CargoLoad, CargoType, CargoStatus, User, LOCATION_OPTIONS } from '../ty
 import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { getDriversByPlate, getAllPlatesWithDrivers, DriverLink } from '../data/driversData';
 
+const ROUTE_COORDINATES: Record<string, { lat: number; lng: number; address: string; label: string }> = {
+  'CD-01': {
+    lat: -16.01515,
+    lng: -47.98503,
+    address: 'DVA ATACADOS EIRELI, Trecho 2, Conjunto 8 lote 17 - Santa Maria, Brasília - DF',
+    label: 'CD-01 (Santa Maria)'
+  },
+  'CD-02': {
+    lat: -16.01515,
+    lng: -47.98503,
+    address: 'DVA ATACADOS EIRELI, Trecho 2, Conjunto 8 lote 17 - Santa Maria, Brasília - DF',
+    label: 'CD-02 (Santa Maria)'
+  },
+  '07 -SIA': {
+    lat: -15.7953,
+    lng: -47.9622,
+    address: 'SIA Trecho 5, Brasília - DF',
+    label: 'SIA'
+  },
+  '28-AGUAS CLARAS': {
+    lat: -15.8396,
+    lng: -48.0261,
+    address: 'Av. das Castanheiras, Águas Claras, Brasília - DF',
+    label: 'Águas Claras'
+  },
+  '29-GUARA': {
+    lat: -15.8190,
+    lng: -47.9863,
+    address: 'QE 13, Guará II, Brasília - DF',
+    label: 'Guará'
+  },
+  '42-JARDIM BOTANICO': {
+    lat: -15.8821,
+    lng: -47.8189,
+    address: 'SMDB Jardim Botânico, Brasília - DF',
+    label: 'Jardim Botânico'
+  },
+  '25-NOVO GAMA': {
+    lat: -16.0592,
+    lng: -48.0371,
+    address: 'Novo Gama - GO',
+    label: 'Novo Gama'
+  },
+  '13-LUZIANIA 01': {
+    lat: -16.2559,
+    lng: -47.9398,
+    address: 'Parque Estrela Dalva II, Luziânia - GO',
+    label: 'Luziânia 13'
+  },
+  '16-SANTO ANTONIO': {
+    lat: -15.9404,
+    lng: -48.2562,
+    address: 'Santo Antônio do Descoberto - GO',
+    label: 'Santo Antônio'
+  },
+  '32-CEILANDIA CENTRO': {
+    lat: -15.8235,
+    lng: -48.1032,
+    address: 'QNM 11, Ceilândia Centro, Brasília - DF',
+    label: 'Ceilândia Centro'
+  },
+  '01-BR 070': {
+    lat: -15.8115,
+    lng: -48.1189,
+    address: 'Rodovia BR 070, Km 08, Ceilândia - DF',
+    label: 'BR 070'
+  },
+  '21-CEILÂNDIA SUL': {
+    lat: -15.8262,
+    lng: -48.1256,
+    address: 'Ceilândia Sul, Brasília - DF',
+    label: 'Ceilândia Sul (O SUL)'
+  },
+  '55-RECANTO DAS EMAS': {
+    lat: -15.9015,
+    lng: -48.0743,
+    address: 'Recanto das Emas, Brasília - DF',
+    label: 'Recanto das Emas'
+  },
+  '34-SAMAMBAIA SUL': {
+    lat: -15.8814,
+    lng: -48.1165,
+    address: 'QR 502, ADE Sul, Samambaia Sul, Brasília - DF',
+    label: 'Samambaia Sul'
+  },
+  '60-FURNAS': {
+    lat: -15.8643,
+    lng: -48.0872,
+    address: 'Furnas, Brasília - DF',
+    label: 'Furnas'
+  },
+  '08-TAGUATINGA': {
+    lat: -15.8335,
+    lng: -48.0560,
+    address: 'Taguatinga, Brasília - DF',
+    label: 'Taguatinga'
+  },
+  '58-EPTG': {
+    lat: -15.8164,
+    lng: -48.0182,
+    address: 'Marginal EPTG, Brasília - DF',
+    label: 'EPTG'
+  },
+  '38-VICENTE PIRES R04': {
+    lat: -15.8012,
+    lng: -48.0263,
+    address: 'Rua 4, Vicente Pires, Brasília - DF',
+    label: 'Vicente Pires Rua 4'
+  },
+  '37-VICENTE PIRES R12': {
+    lat: -15.8078,
+    lng: -48.0163,
+    address: 'Rua 12, Vicente Pires, Brasília - DF',
+    label: 'Vicente Pires Rua 12'
+  },
+  '52-RIACHO FUNDO': {
+    lat: -15.8784,
+    lng: -48.0189,
+    address: 'Riacho Fundo I, Brasília - DF',
+    label: 'Riacho Fundo'
+  },
+  '18-AGUAS LINDAS': {
+    lat: -15.7702,
+    lng: -48.2778,
+    address: 'Alameda Santa Luzia, Águas Lindas de Goiás - GO',
+    label: 'Águas Lindas (Águas Belas)'
+  },
+  '33-PLANALTINA DF': {
+    lat: -15.6173,
+    lng: -47.6698,
+    address: 'Setor Norte, Planaltina - DF',
+    label: 'Planaltina DF'
+  },
+  '27-PLANLTINA GO': {
+    lat: -15.4542,
+    lng: -47.6152,
+    address: 'Planaltina de Goiás - GO',
+    label: 'Planaltina GO (Plantina GO)'
+  },
+  '63-FORMOSA': {
+    lat: -15.5414,
+    lng: -47.3344,
+    address: 'Formosa - GO',
+    label: 'Formosa'
+  },
+  '40-GURUPI TO': {
+    lat: -11.7268,
+    lng: -49.0668,
+    address: 'Av. Maranhão, 2901 - Perímetro Urbano, Gurupi - TO, 77410-020',
+    label: '40-Gurupi TO'
+  },
+  '30-LEM': {
+    lat: -12.0933,
+    lng: -45.7909,
+    address: 'Luís Eduardo Magalhães - BA',
+    label: 'LEM'
+  },
+  '19-CALDAS NOVAS': {
+    lat: -17.7441,
+    lng: -48.6258,
+    address: 'Caldas Novas - GO',
+    label: 'Caldas Novas'
+  },
+  '47-APARECIDA DE GOIANIA': {
+    lat: -16.8208,
+    lng: -49.2559,
+    address: 'Aparecida de Goiânia - GO',
+    label: 'Aparecida de Goiânia'
+  },
+  '15-BALNEARIO': {
+    lat: -16.6341,
+    lng: -49.2882,
+    address: 'Setor Balneário, Goiânia - GO',
+    label: 'Balneário'
+  },
+  '26-CESAR LATTES': {
+    lat: -16.7325,
+    lng: -49.3245,
+    address: 'Av. César Lattes, Goiânia - GO',
+    label: 'César Lattes'
+  },
+  '12-GAMA': {
+    lat: -15.9912,
+    lng: -48.0494,
+    address: 'Setor Leste, Gama - DF',
+    label: 'Gama (Completo)'
+  },
+  '39-GOIANESIA': {
+    lat: -15.3189,
+    lng: -49.1179,
+    address: 'Área Comercial, Goianésia - GO',
+    label: 'Goianésia (Goiênia)'
+  },
+  '64-ITUMBIARA': {
+    lat: -18.4189,
+    lng: -49.2157,
+    address: 'Vila Vitória, Itumbiara - GO',
+    label: 'Itumbiara'
+  },
+  '62-LUZIANIA 2': {
+    lat: -16.2754,
+    lng: -47.9622,
+    address: 'Luziânia Loja 2 - GO',
+    label: 'Luziânia 2 (Luciani 2)'
+  },
+  '53-RIO VERDE': {
+    lat: -17.7915,
+    lng: -50.9208,
+    address: 'Rio Verde - GO',
+    label: 'Rio Verde'
+  },
+  '04-SOBRADINHO': {
+    lat: -15.6514,
+    lng: -47.7915,
+    address: 'Sobradinho - DF',
+    label: 'Sobradinho'
+  }
+};
+
+const STORE_LOCATIONS = Object.keys(ROUTE_COORDINATES).filter(k => k !== 'CD-01' && k !== 'CD-02');
+
 interface ReverseTransferViewProps {
   onSubmit: (newLoad: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => Promise<void>;
   onUpdateLoad?: (updatedLoad: CargoLoad) => Promise<void>;
@@ -439,6 +660,16 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
     }
   };
 
+  // Pending issue / user attention criteria:
+  const isFormIncomplete = !plateCavalo || !driverName || !sealNumber || !origin || !destination;
+  const isFormDirty = !!(plateCavalo || driverName || sealNumber || plateBau || driverPhone);
+  const pendingLoadsCount = loads.filter(l => 
+    (l.cargoType === CargoType.REVERSA_CD || l.cargoType === CargoType.TRANSFERENCIA || l.cargoType === CargoType.COLETA) && 
+    l.status === CargoStatus.AWAITING
+  ).length;
+  
+  const requiresAttention = !!error || pendingLoadsCount > 0 || (showForm && isFormIncomplete && isFormDirty);
+
   return (
     <div className="space-y-6" id="reverse-transfer-view-container">
       {/* Visual Header Banner */}
@@ -455,7 +686,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
             Logística Reversa & Transferências
           </h2>
           <p className="text-slate-300 text-xs font-medium max-w-2xl leading-relaxed">
-            Painel operacional para lojas emitirem retornos de paletes, papelão, plásticos ou quebras para o CD, ou realizarem transferências oficiais de mercadorias entre filiais, com sincronização em tempo real e monitoramento ativo do Gate à Central.
+            Painel operacional para lojas emitirem retornos de paletes, papelão, plásticos ou quebras para o CD, ou realizarem transferências oficiais de mercadorias entre filiais, com sincronização em tempo real and monitoramento ativo do Gate à Central.
           </p>
         </div>
       </div>
@@ -532,7 +763,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
           <div>
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider leading-none">Loja Vinculada</p>
             <h4 className="text-sm font-black text-slate-800 mt-1.5 uppercase truncate max-w-[150px]">
-              {currentUser?.storeLocation || 'Central Geral'}
+               {currentUser?.storeLocation || 'Central Geral'}
             </h4>
             <p className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Origem Automática</p>
           </div>
@@ -543,7 +774,11 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-black px-6 py-4 rounded-xl shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 border-b-4 border-purple-800 cursor-pointer"
+          className={`w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-black px-6 py-4 rounded-xl shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 border-b-4 border-purple-800 cursor-pointer ${
+            requiresAttention 
+              ? 'animate-pulse ring-4 ring-purple-500/80 ring-offset-2 dark:ring-offset-slate-900 border-purple-500' 
+              : ''
+          }`}
         >
           <Plus className="w-5 h-5" />
           <span>REGISTRAR NOVA LOGÍSTICA REVERSA / TRANSFERÊNCIA</span>
@@ -576,7 +811,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
                   type="button"
-                  onClick={() => setOperationType('reverse_cd')}
+                  onClick={() => { setOperationType('reverse_cd'); setDestination('CD-01'); }}
                   className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
                     operationType === 'reverse_cd'
                       ? 'bg-purple-900 text-white border-purple-900 shadow-md'
@@ -596,7 +831,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setOperationType('transfer')}
+                  onClick={() => { setOperationType('transfer'); setDestination(''); }}
                   className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
                     operationType === 'transfer'
                       ? 'bg-purple-900 text-white border-purple-900 shadow-md'
@@ -616,7 +851,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setOperationType('coleta')}
+                  onClick={() => { setOperationType('coleta'); setDestination('Empresa Terceira (Retirada)'); }}
                   className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
                     operationType === 'coleta'
                       ? 'bg-purple-900 text-white border-purple-900 shadow-md'
@@ -792,12 +1027,12 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                     <select
                       value={origin}
                       onChange={(e) => setOrigin(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px] hover:border-purple-300 shadow-xs"
                       required
                     >
                       <option value="">Selecione...</option>
-                      {LOCATION_OPTIONS.map(loc => (
-                        <option key={loc} value={loc}>{loc}</option>
+                      {STORE_LOCATIONS.map(loc => (
+                        <option key={loc} value={loc}>{ROUTE_COORDINATES[loc]?.label || loc}</option>
                       ))}
                     </select>
                   </div>
@@ -808,7 +1043,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                       <select
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px] hover:border-purple-300 shadow-xs"
                         required
                       >
                         <option value="CD-01">CD-01 (Santa Maria)</option>
@@ -818,7 +1053,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                       <select
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px] hover:border-purple-300 shadow-xs"
                         required
                       >
                         <option value="Empresa Terceira (Retirada)">Empresa Terceira (Retirada)</option>
@@ -830,12 +1065,12 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                       <select
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px] hover:border-purple-300 shadow-xs"
                         required
                       >
                         <option value="">Selecione a Loja...</option>
-                        {LOCATION_OPTIONS.filter(loc => loc !== origin).map(loc => (
-                          <option key={loc} value={loc}>{loc}</option>
+                        {STORE_LOCATIONS.filter(loc => loc !== origin).map(loc => (
+                          <option key={loc} value={loc}>{ROUTE_COORDINATES[loc]?.label || loc}</option>
                         ))}
                       </select>
                     )}

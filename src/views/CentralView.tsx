@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { getDriversByPlate, DriverLink } from '../data/driversData';
 import { GoogleGenAI } from "@google/genai";
+import { ImageEnhanceZoom } from '../components/ImageEnhanceZoom';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell,
   PieChart, Pie
@@ -4272,24 +4273,11 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
 
     {/* Imagem Modal Preview */}
     {previewImage && (
-      <div 
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm shadow-2xl p-4 animate-in fade-in duration-300 select-none"
-        onClick={() => setPreviewImage(null)}
-      >
-        <div 
-          className="relative max-w-4xl max-h-[90vh] bg-slate-900 border border-white/10 p-4 rounded-3xl shadow-2xl flex flex-col items-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => setPreviewImage(null)}
-            className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-full transition-all duration-300 cursor-pointer border-0"
-            title="Fechar Visualização"
-          >
-            <XCircle className="w-5 h-5" />
-          </button>
-          <img src={previewImage} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-2xl" />
-        </div>
-      </div>
+      <ImageEnhanceZoom 
+        src={previewImage} 
+        onClose={() => setPreviewImage(null)} 
+        title="Visualização e Melhoria de Evidência (Central)" 
+      />
     )}
 
     {/* Divergent Release Confirmation Modal */}

@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray } from '../types';
 import { compressImage } from '../utils/imageCompressor';
+import { ImageEnhanceZoom } from '../components/ImageEnhanceZoom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
@@ -1129,30 +1130,11 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
       {/* Zoom Image Modal */}
       {modalImage && (
-        <div 
-          onClick={() => setModalImage(null)}
-          className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-350 cursor-zoom-out"
-        >
-          <div 
-            className="relative max-w-4xl w-full max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden p-2 flex flex-col shadow-2xl animate-in zoom-in-95 duration-250 cursor-default" 
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img src={modalImage} alt="Evidência Ampliada" className="w-full h-auto max-h-[72vh] object-contain rounded-2xl mx-auto" />
-            <div className="p-4 flex justify-between items-center text-white">
-              <span className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <Camera className="w-4 h-4 text-primary-gold" />
-                Evidência Fotográfica de Auditoria
-              </span>
-              <button 
-                onClick={() => setModalImage(null)}
-                className="bg-white/10 hover:bg-white/20 text-white rounded-xl p-2 px-3 text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
-              >
-                <X className="w-4 h-4" />
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+        <ImageEnhanceZoom 
+          src={modalImage} 
+          onClose={() => setModalImage(null)} 
+          title="Evidência Fotográfica de Auditoria" 
+        />
       )}
 
       <div className="flex flex-col md:flex-row justify-between items-end gap-4">
@@ -1736,13 +1718,23 @@ export const AuditView: React.FC<AuditViewProps> = ({
                     </div>
 
                     {/* INTERRUPTOR PRINCIPAL / COMODO TOGGLE */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl transition-all hover:bg-slate-100/50">
+                    <div 
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleToggleAutoEmail(!autoEmailEnabled);
+                        }
+                      }}
+                      className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl transition-all hover:bg-slate-100/50 focus:outline-none focus:ring-1 focus:ring-primary-gold"
+                    >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-xs font-black text-slate-800 uppercase tracking-tight">Enviar alertas automaticamente</span>
                         <span className="text-[10px] text-slate-500 font-bold leading-normal">Disparar relatório imediato para os e-mails cadastrados</span>
                       </div>
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => handleToggleAutoEmail(!autoEmailEnabled)}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoEmailEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
                       >

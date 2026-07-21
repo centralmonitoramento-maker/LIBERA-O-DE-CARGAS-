@@ -554,10 +554,20 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
   return (
     <>
       {/* Persistent Floating Trigger Button */}
-      <div className="fixed bottom-6 right-6 z-50">
+      <div 
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen(!isOpen);
+          }
+        }}
+        className="fixed bottom-6 right-6 z-50 focus:outline-none focus:ring-2 focus:ring-primary-gold rounded-full"
+      >
         <button
           id="chat-floating-trigger"
           type="button"
+          tabIndex={-1}
           onClick={() => setIsOpen(!isOpen)}
           className={`relative w-14 h-14 rounded-full bg-primary-navy text-white flex items-center justify-center shadow-2xl border-2 border-primary-gold hover:scale-105 hover:bg-slate-900 active:scale-95 transition-all cursor-pointer group`}
           title="Central de Feedback Integrado"

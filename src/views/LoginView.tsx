@@ -29,7 +29,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const normalize = (str: string) => {
+  const normalize = (str?: string) => {
+    if (!str) return '';
     return str.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   };
 
@@ -45,11 +46,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
       }
 
       const normalizedInputUsername = normalize(username);
+      const trimmedInputPassword = password.trim();
       
       const user = users.find(u => normalize(u.username) === normalizedInputUsername);
       
       if (user) {
-        if (user.password !== password) {
+        if ((user.password || '').trim() !== trimmedInputPassword) {
           setError('Senha incorreta.');
           return;
         }
@@ -62,7 +64,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
           setError('Seu cadastro foi rejeitado pela Auditoria.');
         }
       } else {
-        setError(`Usuário "${username}" não encontrado.`);
+        setError(`Usuário "${username.trim()}" não encontrado.`);
       }
     } else {
       // Register request
@@ -80,14 +82,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
       }
 
       onRegisterRequest({
-        username,
-        password,
-        fullName,
-        storeLocation,
-        jobFunction,
+        username: username.trim(),
+        password: password.trim(),
+        fullName: fullName.trim(),
+        storeLocation: storeLocation.trim(),
+        jobFunction: jobFunction.trim(),
         role: registerRole,
       });
-      setSuccess('Solicitação enviada! Aguarde a aprovação da Auditoria.');
+      setSuccess('Solicitação enviada com sucesso! Aguarde a aprovação da Auditoria.');
       setMode('login');
       setPassword('');
       setFullName('');

@@ -67,7 +67,7 @@ service cloud.firestore {
       return data.id is string && data.id.size() <= 128 &&
              data.username is string && data.username.size() <= 64 &&
              data.password is string && data.password.size() <= 64 &&
-             data.role is string && (data.role == 'expedition' || data.role == 'central' || data.role == 'audit' || data.role == 'analysis' || data.role == 'portaria') &&
+             data.role is string && (data.role == 'expedition' || data.role == 'central' || data.role == 'audit' || data.role == 'analysis' || data.role == 'portaria' || data.role == 'store_app') &&
              data.status is string && (data.status == 'pending' || data.status == 'active' || data.status == 'rejected');
     }
 
@@ -121,11 +121,12 @@ service cloud.firestore {
       allow update: if isValidId(userId) && (
         !isSignedIn() || 
         isAdmin() || 
+        isAuditor() || 
         // Allow self-update (e.g. password change or setting active statuses during migrations)
         (request.auth.uid == userId)
       );
 
-      allow delete: if !isSignedIn() || isAdmin() || (
+      allow delete: if !isSignedIn() || isAdmin() || isAuditor() || (
         // Allow migrating users to clean up/delete their previous bootstrapped mock user ID
         (userId in ['1', '2', '3', '4', 'master']) &&
         get(/databases/$(database)/documents/users/$(userId)).data.username == 

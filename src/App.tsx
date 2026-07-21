@@ -19,6 +19,7 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
+  getDoc,
   getDocs, 
   query, 
   limit, 
@@ -43,6 +44,49 @@ const generateId = (): string => {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+};
+
+const DEFAULT_USERS: User[] = [
+  { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
+  { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
+  { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+  { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
+  { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+];
+
+const normalizeUsername = (str?: string): string => {
+  if (!str) return '';
+  return str.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+};
+
+const mergeUsersList = (incoming: User[], current: User[]): User[] => {
+  const map = new Map<string, User>();
+
+  // 1. First populate default users
+  for (const defUser of DEFAULT_USERS) {
+    const key = normalizeUsername(defUser.username);
+    map.set(key, defUser);
+  }
+
+  // 2. Add current state users (preserves pending users and local updates)
+  for (const curUser of current) {
+    const key = normalizeUsername(curUser.username);
+    if (key) {
+      const existing = map.get(key);
+      map.set(key, existing ? { ...existing, ...curUser } : curUser);
+    }
+  }
+
+  // 3. Add incoming live users from Firestore
+  for (const liveUser of incoming) {
+    const key = normalizeUsername(liveUser.username);
+    if (key) {
+      const existing = map.get(key);
+      map.set(key, existing ? { ...existing, ...liveUser } : liveUser);
+    }
+  }
+
+  return Array.from(map.values());
 };
 
 // Main Application Component for CargaRadar System - v1.0.1
@@ -200,23 +244,20 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const persisted = localStorage.getItem('cargoradar_users');
+      let initialList: User[] = [];
       if (persisted) {
         const parsed = JSON.parse(persisted);
-        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          initialList = parsed;
         }
       }
-      const defaultUsers: User[] = [
-        { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
-        { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
-        { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-        { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
-        { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-      ];
-      localStorage.setItem('cargoradar_users', JSON.stringify(defaultUsers));
-      return defaultUsers;
+      const merged = mergeUsersList(initialList, []);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(merged));
+      } catch (e) { console.error(e); }
+      return merged;
     } catch {
-      return [];
+      return DEFAULT_USERS;
     }
   });
 
@@ -560,28 +601,22 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // 2. Users (subscribed when guest for login, or when administrative role is active)
+  // 2. Users (subscribed for synchronization)
   useEffect(() => {
-    const shouldSubscribe = !isAuthenticated || (loggedInUser?.systemRole === 'administrator');
-
-    if (!shouldSubscribe) {
-      setUsers([]);
-      return;
-    }
-
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const liveUsers: User[] = [];
       snapshot.forEach((docSnap) => {
         liveUsers.push(docSnap.data() as User);
       });
-      if (liveUsers.length > 0) {
-        setUsers(liveUsers);
+      setUsers(prev => {
+        const merged = mergeUsersList(liveUsers, prev);
         try {
-          localStorage.setItem('cargoradar_users', JSON.stringify(liveUsers));
+          localStorage.setItem('cargoradar_users', JSON.stringify(merged));
         } catch (err) {
           console.error('Erro ao persistir usuários no localStorage:', err);
         }
-      }
+        return merged;
+      });
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
       
@@ -592,7 +627,7 @@ const App: React.FC = () => {
                                errorMessage.toLowerCase().includes('unavailable') ||
                                errorMessage.toLowerCase().includes('quota') ||
                                errorMessage.toLowerCase().includes('limit');
-                             
+                              
       if (!isOfflineOrQuota) {
         handleFirestoreError(error, OperationType.LIST, 'users');
       }
@@ -601,7 +636,7 @@ const App: React.FC = () => {
     return () => {
       unsubUsers();
     };
-  }, [isAuthenticated, loggedInUser]);
+  }, []);
 
   // 3. System logs (subscribed only if user is logged in as administrator)
   useEffect(() => {
@@ -649,58 +684,20 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated, loggedInUser]);
 
-  // Bootstrap default users to Firestore if the users collection is empty
+  // Bootstrap missing default users to Firestore
   useEffect(() => {
     const bootstrapData = async () => {
       try {
-        const usersCol = collection(db, 'users');
-        const q = query(usersCol, limit(1));
-        console.log('Attempting to read users collection for bootstrapping...');
-        let userSnap;
-        try {
-          userSnap = await getDocs(q);
-          console.log('Successfully read users collection. Empty?', userSnap.empty);
-        } catch (readErr) {
-          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
-          const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
-                                 errMsg.toLowerCase().includes('limit') ||
-                                 errMsg.toLowerCase().includes('exhausted') ||
-                                 errMsg.toLowerCase().includes('resource');
-          
-          if (isQuotaOrLimit) {
-            console.warn('[Firebase Resiliency] Quota or limit exceeded during read check. Working in local storage fallback mode.');
-          } else {
-            console.warn('Could not read users collection during bootstrap check:', readErr);
-          }
-          return; // Skip cloud writes when read check fails
-        }
-
-        if (userSnap && userSnap.empty) {
-          console.log('Bootstrapping default users to Firestore...');
-          const defaultUsers: User[] = [
-            { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
-            { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
-            { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-            { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
-            { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-          ];
-          for (const u of defaultUsers) {
-            try {
-              console.log(`Attempting to set user: ${u.username} (${u.id})`);
-              await setDoc(doc(db, 'users', u.id), u);
-              console.log(`Successfully bootstrapped user: ${u.username}`);
-            } catch (writeErr) {
-              const errMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-              const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
-                                     errMsg.toLowerCase().includes('limit') ||
-                                     errMsg.toLowerCase().includes('exhausted') ||
-                                     errMsg.toLowerCase().includes('resource');
-              if (isQuotaOrLimit) {
-                console.warn(`[Firebase Resiliency] Quota or limit exceeded writing user doc ${u.id} (${u.username}).`);
-              } else {
-                console.warn(`Could not write user doc ${u.id} (${u.username}):`, writeErr);
-              }
+        for (const u of DEFAULT_USERS) {
+          try {
+            const userRef = doc(db, 'users', u.id);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+              console.log(`Bootstrapping missing default user to Firestore: ${u.username} (${u.id})`);
+              await setDoc(userRef, sanitizeFirestoreData(u));
             }
+          } catch (writeErr) {
+            console.warn(`Could not bootstrap user doc ${u.id} (${u.username}):`, writeErr);
           }
         }
       } catch (err) {
@@ -740,12 +737,23 @@ const App: React.FC = () => {
 
   const handleAddLoad = async (newLoadData: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => {
     const username = loggedInUser?.username || 'Sistema';
+    const isReverseOrTransferOrColeta = newLoadData.cargoType === CargoType.REVERSA_CD || newLoadData.cargoType === CargoType.TRANSFERENCIA || newLoadData.cargoType === CargoType.COLETA;
+    
     const newLoad: CargoLoad = {
       ...newLoadData,
       id: generateId(),
-      status: CargoStatus.AWAITING,
+      status: isReverseOrTransferOrColeta ? CargoStatus.RELEASED : CargoStatus.AWAITING,
       createdAt: new Date().toISOString(),
       createdBy: username,
+      ...(isReverseOrTransferOrColeta ? {
+        gateVerified: true,
+        gateVerifiedAt: new Date().toISOString(),
+        gateVerifiedBy: 'Bypass Lojas (Sem Portaria)',
+        gateStatus: 'Aprovado',
+        gateCheckedIn: true,
+        needsCentralCheckout: true,
+        tripFinished: false
+      } : {})
     };
 
     // Otimista: Salva localmente primeiro
@@ -763,8 +771,10 @@ const App: React.FC = () => {
       addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
     }
     
-    // Admins or specific roles might want to stay or move
-    if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
+    // Switch to central tab to monitor trip
+    if (isReverseOrTransferOrColeta) {
+      handleTabChange('central');
+    } else if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
        handleTabChange('central');
     }
   };
@@ -983,25 +993,40 @@ const App: React.FC = () => {
 
   const handleRegisterUser = async (user: Omit<User, 'id' | 'status' | 'createdAt'>) => {
     try {
-      const email = `${user.username.toLowerCase()}@cargarelease.com`;
+      const normalizedName = normalizeUsername(user.username);
+      const email = `${normalizedName.toLowerCase()}@cargarelease.com`;
       let uid = generateId();
       
       try {
         const credential = await createUserWithEmailAndPassword(auth, email, user.password);
         uid = credential.user.uid;
         console.log("Successfully registered user in Firebase Auth with UID:", uid);
+        await signOut(auth);
       } catch (authErr) {
         console.warn("Could not create Firebase Auth credential, using a standard ID:", authErr);
       }
 
       const newUser: User = {
         ...user,
+        username: user.username.trim(),
         id: uid,
         status: 'pending',
         systemRole: 'viewer',
         createdAt: new Date().toISOString(),
       };
 
+      // Instantly update local React state & localStorage so the pending user is guaranteed to show up for validation/Auditoria
+      setUsers(prev => {
+        const merged = mergeUsersList([newUser], prev);
+        try {
+          localStorage.setItem('cargoradar_users', JSON.stringify(merged));
+        } catch (e) {
+          console.error('Error persisting users to localStorage:', e);
+        }
+        return merged;
+      });
+
+      // Persist to Firestore
       await setDoc(doc(db, 'users', newUser.id), sanitizeFirestoreData(newUser));
       addLog('Solicitação de Cadastro', `Novo usuário ${newUser.username} (${newUser.fullName || 'S/N'}) - Loja: ${newUser.storeLocation || 'S/N'} aguardando aprovação`, 'Sistema');
     } catch (err) {
@@ -1013,21 +1038,33 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-    try {
-      let systemRole: SystemRole = user.systemRole || 'viewer';
-      if (approve) {
-        if (user.role === 'expedition' || user.role === 'portaria') {
-          systemRole = 'dispatcher';
-        } else if (user.role === 'audit') {
-          systemRole = 'auditor';
-        } else if (user.role === 'central' || user.role === 'analysis') {
-          systemRole = 'administrator';
-        } else if (user.role === 'store_app') {
-          systemRole = 'store_app';
-        }
+
+    let systemRole: SystemRole = user.systemRole || 'viewer';
+    if (approve) {
+      if (user.role === 'expedition' || user.role === 'portaria') {
+        systemRole = 'dispatcher';
+      } else if (user.role === 'audit') {
+        systemRole = 'auditor';
+      } else if (user.role === 'central' || user.role === 'analysis') {
+        systemRole = 'administrator';
+      } else if (user.role === 'store_app') {
+        systemRole = 'store_app';
       }
+    }
+
+    const newStatus = approve ? 'active' : 'rejected';
+
+    setUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, status: newStatus, systemRole } : u);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
+      } catch (e) { console.error(e); }
+      return updated;
+    });
+
+    try {
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ 
-        status: approve ? 'active' : 'rejected',
+        status: newStatus,
         systemRole: systemRole
       }), { merge: true });
       addLog('Gestão de Usuários', `Usuário ${user.username} ${approve ? 'aprovado' : 'rejeitado'} com perfil de sistema: ${systemRole} por ${username}`, username);
@@ -1040,6 +1077,15 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
+
+    setUsers(prev => {
+      const updated = prev.filter(u => u.id !== userId);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
+      } catch (e) { console.error(e); }
+      return updated;
+    });
+
     try {
       await deleteDoc(doc(db, 'users', userId));
       addLog('Gestão de Usuários', `Usuário ${user.username} excluído por ${username}`, username);
@@ -1052,6 +1098,15 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
+
+    setUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
+      } catch (e) { console.error(e); }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ password: newPassword }), { merge: true });
       addLog('Gestão de Usuários', `Senha do usuário ${user.username} alterada por ${username}`, username);
@@ -1064,6 +1119,15 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
+
+    setUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, systemRole } : u);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
+      } catch (e) { console.error(e); }
+      return updated;
+    });
+
     try {
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ systemRole }), { merge: true });
       addLog('Gestão de Usuários', `Perfil de sistema do usuário ${user.username} alterado para ${systemRole} por ${username}`, username);
@@ -1073,7 +1137,8 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = async (user: User) => {
-    const email = `${user.username.toLowerCase()}@cargarelease.com`;
+    const normalizedName = normalizeUsername(user.username);
+    const email = `${normalizedName.toLowerCase()}@cargarelease.com`;
     const authPassword = user.password;
     let finalUser = { ...user };
 
@@ -1093,7 +1158,7 @@ const App: React.FC = () => {
             console.warn("Failed to automatically register user in Firebase Auth:", createErr);
           }
         } else {
-          console.warn("Firebase Auth fallback active. Email/Password sign-in method may be disabled in the Firebase Console, but database verification worked successfully:", signInErr);
+          console.warn("Firebase Auth fallback active:", signInErr);
         }
       }
 
@@ -1107,19 +1172,25 @@ const App: React.FC = () => {
         await deleteDoc(doc(db, 'users', user.id));
         console.log(`Migration completed for user ${user.username}`);
       } else if (authUser) {
-        // Garantir que o documento do usuário existe no Firestore com os dados corretos
         await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser), { merge: true });
       }
     } catch (authErr) {
       console.error("Critical Auth migration step skipped:", authErr);
     }
 
+    setUsers(prev => {
+      const merged = mergeUsersList([finalUser], prev);
+      try {
+        localStorage.setItem('cargoradar_users', JSON.stringify(merged));
+      } catch (e) { console.error(e); }
+      return merged;
+    });
+
     setIsAuthenticated(true);
     setLoggedInUser(finalUser);
     const initialTab = (finalUser.role === 'store_app' ? 'reverse_transfer' : finalUser.role) as TabType;
     setActiveTab(initialTab);
 
-    // Salva sessão localmente no localStorage
     try {
       localStorage.setItem('cargoradar_auth', 'true');
       localStorage.setItem('cargoradar_user', JSON.stringify(finalUser));
