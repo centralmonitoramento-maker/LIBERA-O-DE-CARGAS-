@@ -82,7 +82,27 @@ const mergeUsersList = (incoming: User[], current: User[]): User[] => {
     const key = normalizeUsername(liveUser.username);
     if (key) {
       const existing = map.get(key);
-      map.set(key, existing ? { ...existing, ...liveUser } : liveUser);
+      if (!existing) {
+        map.set(key, liveUser);
+      } else {
+        // Do not revert an already approved/active or rejected status back to pending
+        const effectiveStatus = (existing.status === 'active' || existing.status === 'rejected') && liveUser.status === 'pending'
+          ? existing.status
+          : (liveUser.status || existing.status);
+
+        const mergedUser: User = {
+          ...existing,
+          ...liveUser,
+          password: liveUser.password || existing.password || '',
+          fullName: liveUser.fullName || existing.fullName || '',
+          storeLocation: liveUser.storeLocation || existing.storeLocation || '',
+          jobFunction: liveUser.jobFunction || existing.jobFunction || '',
+          role: liveUser.role || existing.role || 'expedition',
+          status: effectiveStatus,
+          systemRole: liveUser.systemRole || existing.systemRole || 'viewer'
+        };
+        map.set(key, mergedUser);
+      }
     }
   }
 
@@ -638,21 +658,14 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // 3. System logs (subscribed only if user is logged in as administrator)
+  // 3. System logs (subscribed for real-time tracking)
   useEffect(() => {
-    const isAdmin = isAuthenticated && loggedInUser?.systemRole === 'administrator';
-
-    if (!isAdmin) {
-      setLogs([]);
-      return;
-    }
-
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
       const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const liveLogs: EventLog[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as EventLog;
-        if (new Date(data.timestamp).getTime() >= resetTime) {
+        if (data && data.timestamp && new Date(data.timestamp).getTime() >= resetTime) {
           liveLogs.push(data);
         }
       });
@@ -682,7 +695,7 @@ const App: React.FC = () => {
     return () => {
       unsubLogs();
     };
-  }, [isAuthenticated, loggedInUser]);
+  }, []);
 
   // Bootstrap missing default users to Firestore
   useEffect(() => {
@@ -1054,8 +1067,14 @@ const App: React.FC = () => {
 
     const newStatus = approve ? 'active' : 'rejected';
 
+    const updatedUser: User = {
+      ...user,
+      status: newStatus,
+      systemRole: systemRole
+    };
+
     setUsers(prev => {
-      const updated = prev.map(u => u.id === userId ? { ...u, status: newStatus, systemRole } : u);
+      const updated = prev.map(u => u.id === userId ? updatedUser : u);
       try {
         localStorage.setItem('cargoradar_users', JSON.stringify(updated));
       } catch (e) { console.error(e); }
@@ -1063,10 +1082,7 @@ const App: React.FC = () => {
     });
 
     try {
-      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ 
-        status: newStatus,
-        systemRole: systemRole
-      }), { merge: true });
+      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData(updatedUser), { merge: true });
       addLog('Gestão de Usuários', `Usuário ${user.username} ${approve ? 'aprovado' : 'rejeitado'} com perfil de sistema: ${systemRole} por ${username}`, username);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'users/' + userId);

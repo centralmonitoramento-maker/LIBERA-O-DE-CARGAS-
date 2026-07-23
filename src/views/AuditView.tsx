@@ -78,13 +78,17 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'audit' | 'config'>('audit');
   const [activeConfigTab, setActiveConfigTab] = useState<'users' | 'logs'>('users');
   
+  const canManageUsers = currentUser?.systemRole === 'administrator' || 
+                         currentUser?.systemRole === 'auditor' || 
+                         currentUser?.role === 'audit' ||
+                         currentUser?.role === 'central';
   const isAdmin = currentUser?.systemRole === 'administrator';
 
   useEffect(() => {
-    if (!isAdmin && activeSubTab !== 'audit') {
+    if (!canManageUsers && activeSubTab !== 'audit') {
       setActiveSubTab('audit');
     }
-  }, [isAdmin, activeSubTab]);
+  }, [canManageUsers, activeSubTab]);
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'split' | 'side-panel'>(() => {
     if (typeof window !== 'undefined') {
@@ -1149,7 +1153,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
           >
             AUDITORIA
           </button>
-          {isAdmin && (
+          {canManageUsers && (
             <button 
               onClick={() => setActiveSubTab('config')}
               className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'config' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}

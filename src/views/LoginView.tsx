@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { Truck } from 'lucide-react';
 import { User } from '../types';
+import { db } from '../firebase';
+import { collection, query, getDocs } from 'firebase/firestore';
 
 interface LoginViewProps {
   users: User[];
@@ -28,13 +30,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
   const [jobFunction, setJobFunction] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const normalize = (str?: string) => {
     if (!str) return '';
     return str.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -45,26 +48,48 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         return;
       }
 
-      const normalizedInputUsername = normalize(username);
-      const trimmedInputPassword = password.trim();
-      
-      const user = users.find(u => normalize(u.username) === normalizedInputUsername);
-      
-      if (user) {
-        if ((user.password || '').trim() !== trimmedInputPassword) {
-          setError('Senha incorreta.');
-          return;
+      setIsSubmitting(true);
+      try {
+        const normalizedInputUsername = normalize(username);
+        const trimmedInputPassword = password.trim();
+        
+        let user = users.find(u => normalize(u.username) === normalizedInputUsername);
+        
+        // Fallback: Query Firestore directly in real time if local users array does not have the account yet
+        if (!user) {
+          try {
+            const q = query(collection(db, 'users'));
+            const querySnapshot = await getDocs(q);
+            querySnapshot.forEach((docSnap) => {
+              const u = docSnap.data() as User;
+              if (normalize(u.username) === normalizedInputUsername) {
+                user = u;
+              }
+            });
+          } catch (fsErr) {
+            console.warn("Aviso ao buscar usuário diretamente no Firestore:", fsErr);
+          }
         }
 
-        if (user.status === 'active') {
-          onLoginSuccess(user);
-        } else if (user.status === 'pending') {
-          setError('Seu cadastro ainda está aguardando aprovação da Auditoria.');
+        if (user) {
+          if ((user.password || '').trim() !== trimmedInputPassword) {
+            setError('Senha incorreta.');
+            setIsSubmitting(false);
+            return;
+          }
+
+          if (user.status === 'active') {
+            onLoginSuccess(user);
+          } else if (user.status === 'pending') {
+            setError('Seu cadastro ainda está aguardando aprovação da Auditoria.');
+          } else {
+            setError('Seu cadastro foi rejeitado pela Auditoria.');
+          }
         } else {
-          setError('Seu cadastro foi rejeitado pela Auditoria.');
+          setError(`Usuário "${username.trim()}" não encontrado.`);
         }
-      } else {
-        setError(`Usuário "${username.trim()}" não encontrado.`);
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
       // Register request
@@ -74,7 +99,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
       }
 
       const normalizedInputUsername = normalize(username);
-      const exists = users.find(u => normalize(u.username) === normalizedInputUsername);
+      let exists = users.find(u => normalize(u.username) === normalizedInputUsername);
+
+      if (!exists) {
+        try {
+          const q = query(collection(db, 'users'));
+          const querySnapshot = await getDocs(q);
+          querySnapshot.forEach((docSnap) => {
+            const u = docSnap.data() as User;
+            if (normalize(u.username) === normalizedInputUsername) {
+              exists = u;
+            }
+          });
+        } catch (fsErr) {
+          console.warn("Aviso ao checar duplicidade no Firestore:", fsErr);
+        }
+      }
       
       if (exists) {
         setError('Este nome de usuário já está em uso.');
