@@ -152,9 +152,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         <div className="relative w-28 h-28 bg-white keep-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-primary-gold overflow-hidden group hover:scale-105 transition-transform duration-500">
           <img 
             src="/logo.png" 
-            alt="Prev de Perdas" 
-            className="w-full h-full object-cover" 
-            style={{ width: '201px' }}
+            alt="Sistema CargaRadar - Prevenção de Perdas" 
+            referrerPolicy="no-referrer"
+            className="w-full h-full object-cover rounded-2xl" 
             onError={(e) => {
               e.currentTarget.style.display = 'none';
               e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');

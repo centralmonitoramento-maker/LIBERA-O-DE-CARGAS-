@@ -21,6 +21,7 @@ import {
   Search, 
   Filter, 
   ShieldCheck, 
+  ShieldAlert, 
   X, 
   FileText, 
   Calendar, 
@@ -2680,8 +2681,43 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                         {opLabel}
                       </span>
 
-                      <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full border ${statusBg}`}>
-                        {load.status === CargoStatus.AWAITING ? 'Aguardando Portaria' : load.status}
+                      {/* Status Auditoria Badge */}
+                      {load.auditedAt ? (
+                        <span className="text-[8.5px] font-black uppercase px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+                          <span>AUDITADA</span>
+                        </span>
+                      ) : (
+                        <span className="text-[8.5px] font-black uppercase px-2.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300 flex items-center gap-1 shadow-2xs animate-pulse">
+                          <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span>PENDÊNCIA AUDITORIA</span>
+                        </span>
+                      )}
+
+                      {/* Status Central Release Badge */}
+                      <span className={`text-[8.5px] font-black uppercase px-2.5 py-0.5 rounded-full border flex items-center gap-1 shadow-2xs ${
+                        load.status === CargoStatus.RELEASED 
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
+                          : load.status === CargoStatus.BLOCKED 
+                            ? 'bg-rose-50 text-rose-800 border-rose-300'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}>
+                        {load.status === CargoStatus.RELEASED ? (
+                          <>
+                            <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>LIBERADA PELA CENTRAL</span>
+                          </>
+                        ) : load.status === CargoStatus.BLOCKED ? (
+                          <>
+                            <ShieldAlert className="w-3 h-3 text-rose-600 shrink-0" />
+                            <span>BLOQUEADA</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>AGUARDANDO PORTARIA/CENTRAL</span>
+                          </>
+                        )}
                       </span>
                     </div>
 

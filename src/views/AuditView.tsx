@@ -12,6 +12,8 @@ import {
   User as UserIcon, 
   Calendar, 
   CheckCircle, 
+  CheckCircle2,
+  ShieldCheck,
   AlertTriangle,
   FileText,
   Eye,
@@ -1369,18 +1371,39 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-mono font-black text-slate-800">{load.plate}</span>
-                      <div className="flex gap-1">
-                        {load.auditedAt && (
-                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700">
-                            AUDITADO
+                      <div className="flex gap-1 flex-wrap justify-end">
+                        {load.auditedAt ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                            AUDITADA
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
+                            <Clock className="w-2.5 h-2.5 text-amber-700 shrink-0" />
+                            PENDÊNCIA AUDITORIA
                           </span>
                         )}
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                          load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-700' : 
-                          load.status === CargoStatus.BLOCKED ? 'bg-red-100 text-red-700' :
-                          'bg-slate-100 text-slate-500'
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                          load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
+                          load.status === CargoStatus.BLOCKED ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                          'bg-amber-100 text-amber-800 border border-amber-200'
                         }`}>
-                          {load.status}
+                          {load.status === CargoStatus.RELEASED ? (
+                            <>
+                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                              LIBERADA
+                            </>
+                          ) : load.status === CargoStatus.BLOCKED ? (
+                            <>
+                              <ShieldAlert className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                              BLOQUEADA
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                              PORTARIA
+                            </>
+                          )}
                         </span>
                       </div>
                     </div>

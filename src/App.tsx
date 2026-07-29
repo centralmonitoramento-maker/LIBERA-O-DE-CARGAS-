@@ -799,7 +799,6 @@ const App: React.FC = () => {
 
   const handleAddLoad = async (newLoadData: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => {
     const username = loggedInUser?.username || 'Sistema';
-    const isReverseOrTransferOrColeta = newLoadData.cargoType === CargoType.REVERSA_CD || newLoadData.cargoType === CargoType.TRANSFERENCIA || newLoadData.cargoType === CargoType.COLETA;
     
     const derivedTipoOperacao = newLoadData.tipo_operacao || (
       newLoadData.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
@@ -811,18 +810,14 @@ const App: React.FC = () => {
       ...newLoadData,
       tipo_operacao: derivedTipoOperacao,
       id: generateId(),
-      status: isReverseOrTransferOrColeta ? CargoStatus.RELEASED : CargoStatus.AWAITING,
+      status: CargoStatus.AWAITING, // Toda carga criada pela Expedição entra em AGUARDANDO CONFERÊNCIA para seguir o fluxo de Portaria -> Central
       createdAt: new Date().toISOString(),
       createdBy: username,
-      ...(isReverseOrTransferOrColeta ? {
-        gateVerified: true,
-        gateVerifiedAt: new Date().toISOString(),
-        gateVerifiedBy: 'Bypass Lojas (Sem Portaria)',
-        gateStatus: 'Aprovado',
-        gateCheckedIn: true,
-        needsCentralCheckout: true,
-        tripFinished: false
-      } : {})
+      gateVerified: false,
+      gateStatus: 'Aguardando',
+      gateCheckedIn: false,
+      needsCentralCheckout: true,
+      tripFinished: false
     };
 
     // Otimista: Salva localmente primeiro
@@ -840,10 +835,8 @@ const App: React.FC = () => {
       addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
     }
     
-    // Switch to central tab to monitor trip
-    if (isReverseOrTransferOrColeta) {
-      handleTabChange('central');
-    } else if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
+    // Switch tab according to user preference or role
+    if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
        handleTabChange('central');
     }
   };

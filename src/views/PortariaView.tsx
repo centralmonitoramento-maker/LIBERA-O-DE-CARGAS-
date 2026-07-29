@@ -76,7 +76,7 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
   const refManifestInput = useRef<HTMLInputElement>(null);
 
   const filteredForPortaria = useMemo(() => {
-    return loads.filter(l => l.cargoType !== CargoType.REVERSA_CD && l.cargoType !== CargoType.TRANSFERENCIA && l.cargoType !== CargoType.COLETA);
+    return loads;
   }, [loads]);
 
   // Computed active load
