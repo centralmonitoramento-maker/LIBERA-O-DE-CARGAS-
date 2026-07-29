@@ -117,15 +117,23 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
 
     if (dateFilter === 'TODAY') {
       result = result.filter(load => 
+        !load.gateVerified ||
+        load.status === CargoStatus.AWAITING ||
         toLocalYMD(load.createdAt) === localTodayStr || 
         (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === localTodayStr)
       );
     } else if (dateFilter === 'LAST_7_DAYS') {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      result = result.filter(load => new Date(load.createdAt) >= sevenDaysAgo);
+      result = result.filter(load => 
+        !load.gateVerified ||
+        load.status === CargoStatus.AWAITING ||
+        new Date(load.createdAt) >= sevenDaysAgo
+      );
     } else if (dateFilter === 'CUSTOM' && customDate) {
       result = result.filter(load => 
+        !load.gateVerified ||
+        load.status === CargoStatus.AWAITING ||
         toLocalYMD(load.createdAt) === customDate || 
         (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === customDate)
       );

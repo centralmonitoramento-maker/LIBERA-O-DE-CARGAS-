@@ -595,6 +595,27 @@ const App: React.FC = () => {
         }
       });
 
+      // Cache Reconciliation & Recovery: Sync any loads stored in localStorage that are not yet in Firestore
+      try {
+        const persisted = localStorage.getItem('cargoradar_loads');
+        if (persisted) {
+          const localList = JSON.parse(persisted) as CargoLoad[];
+          if (Array.isArray(localList)) {
+            const liveMap = new Map(liveLoads.map(l => [l.id, l]));
+            localList.forEach(localItem => {
+              if (localItem && localItem.id && !liveMap.has(localItem.id)) {
+                console.log(`[Cache Sync] Pushing locally cached load to Firestore: ${localItem.plate} (${localItem.id})`);
+                liveLoads.push(localItem);
+                setDoc(doc(db, 'loads', localItem.id), sanitizeFirestoreData(localItem), { merge: true })
+                  .catch(e => console.warn('Erro ao ressincronizar carga local no Firestore:', e));
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Aviso ao sincronizar cache de cargas com o Firestore:', e);
+      }
+
       // Real-time automatic migration/correction of cargo status based on validation progress
       const migrates: Promise<void>[] = [];
       const correctedLoads = liveLoads.map(load => {
