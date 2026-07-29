@@ -280,6 +280,7 @@ interface ReverseTransferViewProps {
   onDeleteLoad?: (loadId: string) => Promise<void>;
   loads: CargoLoad[];
   currentUser?: User;
+  operationMode?: 'REVERSA' | 'TRANSFERENCIA' | 'COLETA_TERCEIRO' | 'ALL';
 }
 
 export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({ 
@@ -287,10 +288,28 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   onUpdateLoad, 
   onDeleteLoad,
   loads = [], 
-  currentUser 
+  currentUser,
+  operationMode = 'ALL'
 }) => {
   const [showForm, setShowForm] = useState(false);
-  const [operationType, setOperationType] = useState<'reverse_cd' | 'transfer' | 'coleta'>('reverse_cd');
+  const [operationType, setOperationType] = useState<'reverse_cd' | 'transfer' | 'coleta'>(() => {
+    if (operationMode === 'TRANSFERENCIA') return 'transfer';
+    if (operationMode === 'COLETA_TERCEIRO') return 'coleta';
+    return 'reverse_cd';
+  });
+
+  useEffect(() => {
+    if (operationMode === 'REVERSA') {
+      setOperationType('reverse_cd');
+      setDestination('CD-01');
+    } else if (operationMode === 'TRANSFERENCIA') {
+      setOperationType('transfer');
+      setDestination('');
+    } else if (operationMode === 'COLETA_TERCEIRO') {
+      setOperationType('coleta');
+      setDestination('PORTO RECICLAGEM');
+    }
+  }, [operationMode]);
   
   // Form fields
   const [plate, setPlate] = useState('');
@@ -479,24 +498,79 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
     }
   };
 
-  // Base list of relevant loads for this view (filtered by store location if non-admin)
+  // Base list of relevant loads for this view (filtered by operationMode and user scope: Loja vs Admin/Central)
   const baseRelevantLoads = useMemo(() => {
-    let list = loads.filter(l => 
-      l.cargoType === CargoType.REVERSA_CD || 
-      l.cargoType === CargoType.TRANSFERENCIA ||
-      l.cargoType === CargoType.COLETA
-    );
+    // 1. Filter by operation mode
+    let list = loads.filter(l => {
+      const op = l.tipo_operacao;
+      const type = l.cargoType;
 
-    if (currentUser && currentUser.systemRole !== 'administrator' && currentUser.storeLocation) {
-      const userStore = currentUser.storeLocation.toUpperCase().trim();
-      list = list.filter(l => 
-        l.origin.toUpperCase().trim().includes(userStore) || 
-        l.destination.toUpperCase().trim().includes(userStore)
+      if (operationMode === 'REVERSA') {
+        return op === 'REVERSA' || (!op && type === CargoType.REVERSA_CD);
+      }
+      if (operationMode === 'TRANSFERENCIA') {
+        return op === 'TRANSFERENCIA' || (!op && type === CargoType.TRANSFERENCIA);
+      }
+      if (operationMode === 'COLETA_TERCEIRO') {
+        return op === 'COLETA_TERCEIRO' || (!op && type === CargoType.COLETA);
+      }
+
+      return (
+        type === CargoType.REVERSA_CD || 
+        type === CargoType.TRANSFERENCIA ||
+        type === CargoType.COLETA ||
+        op === 'REVERSA' ||
+        op === 'TRANSFERENCIA' ||
+        op === 'COLETA_TERCEIRO'
       );
+    });
+
+    // 2. Filter by User Scope (Loja vs Central/Admin)
+    const isCentralOrAdmin = 
+      currentUser?.systemRole === 'administrator' || 
+      currentUser?.role === 'central' || 
+      currentUser?.role === 'expedition' || 
+      currentUser?.role === 'audit' ||
+      currentUser?.role === 'analysis' ||
+      (currentUser?.role as string) === 'admin';
+
+    const isStoreUser = 
+      currentUser?.role === 'store_app' || 
+      currentUser?.systemRole === 'store_app' || 
+      (currentUser?.role as string) === 'loja' || 
+      (currentUser?.systemRole as string) === 'loja' ||
+      (!isCentralOrAdmin && !!currentUser?.storeLocation);
+
+    if (isStoreUser && currentUser?.storeLocation) {
+      const userStoreRaw = currentUser.storeLocation.toUpperCase().trim();
+      const storeParts = userStoreRaw.split(/[-_\s]+/).map(s => s.trim()).filter(Boolean);
+
+      list = list.filter(l => {
+        const originUpper = (l.origin || '').toUpperCase().trim();
+        const destUpper = (l.destination || '').toUpperCase().trim();
+        const createdByUpper = (l.createdBy || '').toUpperCase().trim();
+        const usernameUpper = (currentUser.username || '').toUpperCase().trim();
+
+        // Origin or destination matches user store location
+        if (originUpper === userStoreRaw || originUpper.includes(userStoreRaw) || userStoreRaw.includes(originUpper)) return true;
+        if (destUpper === userStoreRaw || destUpper.includes(userStoreRaw) || userStoreRaw.includes(destUpper)) return true;
+
+        // Sub-part match (e.g., "SOBRADINHO" or "04")
+        for (const part of storeParts) {
+          if (part.length > 2) {
+            if (originUpper.includes(part) || destUpper.includes(part)) return true;
+          }
+        }
+
+        // Created by current store user
+        if (createdByUpper && usernameUpper && createdByUpper === usernameUpper) return true;
+
+        return false;
+      });
     }
 
     return list;
-  }, [loads, currentUser]);
+  }, [loads, currentUser, operationMode]);
 
   // Counts for KPI Dashboard Cards
   const reversasCount = useMemo(() => {
@@ -860,6 +934,11 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
         : operationType === 'transfer' 
           ? CargoType.TRANSFERENCIA 
           : CargoType.COLETA,
+      tipo_operacao: operationType === 'reverse_cd'
+        ? 'REVERSA'
+        : operationType === 'transfer'
+          ? 'TRANSFERENCIA'
+          : 'COLETA_TERCEIRO',
       origin: origin.toUpperCase().trim(),
       destination: destination.toUpperCase().trim(),
       sealNumber: sealNumber.toUpperCase().trim(),
@@ -951,6 +1030,24 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   
   const requiresAttention = !!error || pendingLoadsCount > 0 || (showForm && isFormIncomplete && isFormDirty);
 
+  let headerTitle = "Logística Reversa & Transferências";
+  let headerSubtitle = "Painel operacional para lojas emitirem retornos de paletes, papelão, plásticos ou quebras para o CD, ou realizarem transferências oficiais de mercadorias entre filiais, com sincronização em tempo real e monitoramento ativo do Gate à Central.";
+  let registerButtonText = "REGISTRAR NOVA CARGA DE LOJA";
+
+  if (operationMode === 'REVERSA') {
+    headerTitle = "♻️ Logística Reversa CD";
+    headerSubtitle = "Painel operacional para solicitação e emissão de devolução/retorno de paletes PBR/CHEP, caixas IFCO, gaiolas e embalagens para o Centro de Distribuição.";
+    registerButtonText = "REGISTRAR NOVA LOGÍSTICA REVERSA";
+  } else if (operationMode === 'TRANSFERENCIA') {
+    headerTitle = "🔄 Transferências Entre Lojas";
+    headerSubtitle = "Painel operacional para registro e acompanhamento de transferências oficiais de produtos, ativo imobilizado e patrimônio entre filiais da rede.";
+    registerButtonText = "REGISTRAR NOVA TRANSFERÊNCIA";
+  } else if (operationMode === 'COLETA_TERCEIRO') {
+    headerTitle = "🗑️ Coletas de Terceiros & Resíduos";
+    headerSubtitle = "Painel operacional para autorização e controle de remoção/coleta de óleo, sebo, resíduos e materiais recicláveis por empresas parceiras.";
+    registerButtonText = "REGISTRAR NOVA COLETA DE TERCEIROS";
+  }
+
   return (
     <div className="space-y-6" id="reverse-transfer-view-container">
       {/* Visual Header Banner */}
@@ -964,10 +1061,10 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
             <span>Módulo de Lojas Integradas</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase leading-tight">
-            Logística Reversa & Transferências
+            {headerTitle}
           </h2>
           <p className="text-slate-300 text-xs font-medium max-w-2xl leading-relaxed">
-            Painel operacional para lojas emitirem retornos de paletes, papelão, plásticos ou quebras para o CD, ou realizarem transferências oficiais de mercadorias entre filiais, com sincronização em tempo real and monitoramento ativo do Gate à Central.
+            {headerSubtitle}
           </p>
         </div>
       </div>
@@ -1589,7 +1686,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
           }`}
         >
           <Plus className="w-5 h-5" />
-          <span>REGISTRAR NOVA LOGÍSTICA REVERSA / TRANSFERÊNCIA</span>
+          <span>{registerButtonText}</span>
         </button>
       )}
 
@@ -1600,7 +1697,12 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
             <div className="flex items-center gap-2.5">
               <ClipboardList className="w-5 h-5 text-purple-600" />
               <div>
-                <h3 className="text-xs font-black uppercase tracking-tight text-slate-800">Nova Liberação de Carga de Loja</h3>
+                <h3 className="text-xs font-black uppercase tracking-tight text-slate-800">
+                  {operationMode === 'REVERSA' && 'Nova Liberação de Logística Reversa (CD)'}
+                  {operationMode === 'TRANSFERENCIA' && 'Nova Liberação de Transferência entre Lojas'}
+                  {operationMode === 'COLETA_TERCEIRO' && 'Nova Autorização de Coleta de Terceiros'}
+                  {(!operationMode || operationMode === 'ALL') && 'Nova Liberação de Carga de Loja'}
+                </h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Preencha as informações do motorista e materiais</p>
               </div>
             </div>
@@ -1613,71 +1715,73 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
           </div>
 
           <form onSubmit={handleFormSubmit} className="p-6 space-y-6">
-            {/* Step 1: Operation Selection */}
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Tipo de Operação</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button
-                  type="button"
-                  onClick={() => { setOperationType('reverse_cd'); setDestination('CD-01'); }}
-                  className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
-                    operationType === 'reverse_cd'
-                      ? 'bg-purple-900 text-white border-purple-900 shadow-md'
-                      : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className={`p-2 rounded-xl ${operationType === 'reverse_cd' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
-                    <RotateCcw className="w-5 h-5 shrink-0" />
-                  </div>
-                  <div className="text-left">
-                    <span className="block leading-none text-xs sm:text-sm">Logística Reversa CD</span>
-                    <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'reverse_cd' ? 'text-primary-gold' : 'text-slate-400'}`}>
-                      RETORNO LOJA ➔ CD
-                    </span>
-                  </div>
-                </button>
+            {/* Step 1: Operation Selection (Only shown when operationMode is ALL) */}
+            {(!operationMode || operationMode === 'ALL') && (
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Tipo de Operação</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => { setOperationType('reverse_cd'); setDestination('CD-01'); }}
+                    className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
+                      operationType === 'reverse_cd'
+                        ? 'bg-purple-900 text-white border-purple-900 shadow-md'
+                        : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl ${operationType === 'reverse_cd' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
+                      <RotateCcw className="w-5 h-5 shrink-0" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block leading-none text-xs sm:text-sm">Logística Reversa CD</span>
+                      <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'reverse_cd' ? 'text-primary-gold' : 'text-slate-400'}`}>
+                        RETORNO LOJA ➔ CD
+                      </span>
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => { setOperationType('transfer'); setDestination(''); }}
-                  className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
-                    operationType === 'transfer'
-                      ? 'bg-purple-900 text-white border-purple-900 shadow-md'
-                      : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className={`p-2 rounded-xl ${operationType === 'transfer' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
-                    <ArrowLeftRight className="w-5 h-5 shrink-0" />
-                  </div>
-                  <div className="text-left">
-                    <span className="block leading-none text-xs sm:text-sm">Transferência</span>
-                    <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'transfer' ? 'text-primary-gold' : 'text-slate-400'}`}>
-                      MOVIMENTAÇÃO ENTRE LOJAS
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOperationType('transfer'); setDestination(''); }}
+                    className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
+                      operationType === 'transfer'
+                        ? 'bg-purple-900 text-white border-purple-900 shadow-md'
+                        : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl ${operationType === 'transfer' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
+                      <ArrowLeftRight className="w-5 h-5 shrink-0" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block leading-none text-xs sm:text-sm">Transferência</span>
+                      <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'transfer' ? 'text-primary-gold' : 'text-slate-400'}`}>
+                        MOVIMENTAÇÃO ENTRE LOJAS
+                      </span>
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => { setOperationType('coleta'); setDestination('PORTO RECICLAGEM'); }}
-                  className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
-                    operationType === 'coleta'
-                      ? 'bg-purple-900 text-white border-purple-900 shadow-md'
-                      : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className={`p-2 rounded-xl ${operationType === 'coleta' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
-                    <Recycle className="w-5 h-5 shrink-0" />
-                  </div>
-                  <div className="text-left">
-                    <span className="block leading-none text-xs sm:text-sm">Coleta (Terceiros)</span>
-                    <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'coleta' ? 'text-primary-gold' : 'text-slate-400'}`}>
-                      REMOÇÃO DE RECICLÁVEIS / RESÍDUOS
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOperationType('coleta'); setDestination('PORTO RECICLAGEM'); }}
+                    className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl border text-xs font-black transition-all cursor-pointer ${
+                      operationType === 'coleta'
+                        ? 'bg-purple-900 text-white border-purple-900 shadow-md'
+                        : 'bg-slate-50 text-slate-650 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl ${operationType === 'coleta' ? 'bg-purple-800 text-white' : 'bg-white text-purple-600 border'}`}>
+                      <Recycle className="w-5 h-5 shrink-0" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block leading-none text-xs sm:text-sm">Coleta (Terceiros)</span>
+                      <span className={`block text-[8px] font-bold uppercase mt-1 ${operationType === 'coleta' ? 'text-primary-gold' : 'text-slate-400'}`}>
+                        REMOÇÃO DE RECICLÁVEIS / RESÍDUOS
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Step 2: Vehicle & Driver Data */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-100">
@@ -2543,7 +2647,21 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
         ) : (
           <div className="divide-y divide-slate-100">
             {filteredLoads.map((load) => {
-              const isReversa = load.cargoType === CargoType.REVERSA_CD;
+              const opType = load.tipo_operacao || (
+                load.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
+                load.cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' :
+                'TRANSFERENCIA'
+              );
+
+              let opBadgeBg = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+              let opLabel = 'REVERSA (Logística Reversa)';
+              if (opType === 'TRANSFERENCIA') {
+                opBadgeBg = 'bg-sky-100 text-sky-800 border-sky-300';
+                opLabel = 'TRANSFERÊNCIA';
+              } else if (opType === 'COLETA_TERCEIRO') {
+                opBadgeBg = 'bg-amber-100 text-amber-800 border-amber-300';
+                opLabel = 'COLETA TERCEIROS';
+              }
               
               // Status Styling
               let statusBg = 'bg-slate-50 text-slate-600 border-slate-200';
@@ -2558,18 +2676,8 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{load.plate}</span>
                       
-                      <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                        load.cargoType === CargoType.REVERSA_CD 
-                          ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                          : load.cargoType === CargoType.COLETA 
-                            ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                            : 'bg-sky-50 text-sky-700 border-sky-200'
-                      }`}>
-                        {load.cargoType === CargoType.REVERSA_CD 
-                          ? 'Logística Reversa CD' 
-                          : load.cargoType === CargoType.COLETA 
-                            ? 'Coleta (Terceiros)' 
-                            : 'Transferência Lojas'}
+                      <span className={`text-[8.5px] font-black uppercase px-2.5 py-0.5 rounded-full border shadow-xs ${opBadgeBg}`}>
+                        {opLabel}
                       </span>
 
                       <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full border ${statusBg}`}>

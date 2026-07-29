@@ -35,12 +35,35 @@ export enum OccurrenceType {
   OTHER = 'Outros'
 }
 
+export type TipoOperacaoLojas = 'REVERSA' | 'TRANSFERENCIA' | 'COLETA_TERCEIRO';
+
+export type TabType = 
+  | 'expedition' 
+  | 'central' 
+  | 'audit' 
+  | 'analysis'
+  | 'portaria'
+  | 'tracking'
+  | 'occurrences' 
+  | 'performance' 
+  | 'locations' 
+  | 'reverse_transfer' 
+  | 'logistica_reversa'
+  | 'transferencias'
+  | 'coletas'
+  | 'gate' 
+  | 'users' 
+  | 'logs' 
+  | 'settings' 
+  | 'guide';
+
 export interface CargoLoad {
   id: string;
   plate: string;
   driverName: string;
   driverPhone?: string;
   cargoType: CargoType;
+  tipo_operacao: TipoOperacaoLojas;
   origin: string;
   destination: string;
   additionalDestinations?: string[];

@@ -11,8 +11,11 @@ import { PortariaView } from './views/PortariaView';
 import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
 import { ReverseTransferView } from './views/ReverseTransferView';
+import { LogisticaReversaView } from './views/LogisticaReversaView';
+import { TransferenciasView } from './views/TransferenciasView';
+import { ColetasView } from './views/ColetasView';
 import { GuideView } from './views/GuideView';
-import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
+import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole, TipoOperacaoLojas, TabType } from './types';
 import { getGmailToken, sendGmailEmail } from './utils/gmailService';
 import { 
   collection, 
@@ -31,8 +34,6 @@ import {
   createUserWithEmailAndPassword, 
   signOut 
 } from 'firebase/auth';
-
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -138,9 +139,14 @@ const App: React.FC = () => {
         const user = JSON.parse(persistedUser);
         if (user.role === 'store_app') {
           const saved = localStorage.getItem('cargoradar_tab') as TabType;
-          return (saved === 'tracking' || saved === 'reverse_transfer') ? saved : 'reverse_transfer';
+          if (saved === 'logistica_reversa' || saved === 'transferencias' || saved === 'coletas' || saved === 'tracking') {
+            return saved;
+          }
+          return 'logistica_reversa';
         }
-        return (localStorage.getItem('cargoradar_tab') as TabType) || (user.role as TabType) || 'expedition';
+        const saved = localStorage.getItem('cargoradar_tab') as TabType;
+        if (saved === 'reverse_transfer') return 'logistica_reversa';
+        return saved || (user.role as TabType) || 'expedition';
       }
       return 'expedition';
     } catch {
@@ -182,6 +188,7 @@ const App: React.FC = () => {
           origin: 'CD Atacadão Brasília',
           destination: 'Águas Claras (df-1)',
           cargoType: CargoType.SECA,
+          tipo_operacao: 'TRANSFERENCIA',
           isHighRisk: false,
           palletCount: 24,
           sealNumber: 'L34891',
@@ -197,6 +204,7 @@ const App: React.FC = () => {
           origin: 'CD Atacadão Brasília',
           destination: 'Guará II (df-7)',
           cargoType: CargoType.MISTA,
+          tipo_operacao: 'TRANSFERENCIA',
           isHighRisk: true,
           palletCount: 18,
           sealNumber: 'L99112',
@@ -212,6 +220,7 @@ const App: React.FC = () => {
           origin: 'CD Atacadão Brasília',
           destination: 'Taguatinga Sul (df-3)',
           cargoType: CargoType.PERECIVEIS,
+          tipo_operacao: 'TRANSFERENCIA',
           isHighRisk: false,
           palletCount: 12,
           sealNumber: 'L22119',
@@ -516,7 +525,16 @@ const App: React.FC = () => {
     const unsubLoads = onSnapshot(collection(db, 'loads'), (snapshot) => {
       const liveLoads: CargoLoad[] = [];
       snapshot.forEach((doc) => {
-        liveLoads.push(doc.data() as CargoLoad);
+        const raw = doc.data() as CargoLoad;
+        const tipoOp = raw.tipo_operacao || (
+          raw.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
+          raw.cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
+          raw.cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA'
+        );
+        liveLoads.push({
+          ...raw,
+          tipo_operacao: tipoOp
+        });
       });
 
       // Update offline / cache connectivity status
@@ -658,6 +676,16 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const saveLogsToLocalStorage = (logsArray: EventLog[]) => {
+    try {
+      // Keep only recent 100 logs in localStorage to prevent exceeding quota
+      const sliced = logsArray.slice(0, 100);
+      localStorage.setItem('cargoradar_logs', JSON.stringify(sliced));
+    } catch (err) {
+      console.warn('Aviso: Não foi possível salvar logs no localStorage (limite de cota excedido):', err);
+    }
+  };
+
   // 3. System logs (subscribed for real-time tracking)
   useEffect(() => {
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
@@ -671,11 +699,7 @@ const App: React.FC = () => {
       });
       liveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(liveLogs);
-      try {
-        localStorage.setItem('cargoradar_logs', JSON.stringify(liveLogs));
-      } catch (err) {
-        console.error('Erro ao persistir logs no localStorage:', err);
-      }
+      saveLogsToLocalStorage(liveLogs);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
       
@@ -733,11 +757,7 @@ const App: React.FC = () => {
     // Altera o estado local e persiste localmente imediatamente de forma otimista
     setLogs((prev) => {
       const updated = [newLog, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      try {
-        localStorage.setItem('cargoradar_logs', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao salvar logs localmente:', e);
-      }
+      saveLogsToLocalStorage(updated);
       return updated;
     });
 
@@ -752,8 +772,15 @@ const App: React.FC = () => {
     const username = loggedInUser?.username || 'Sistema';
     const isReverseOrTransferOrColeta = newLoadData.cargoType === CargoType.REVERSA_CD || newLoadData.cargoType === CargoType.TRANSFERENCIA || newLoadData.cargoType === CargoType.COLETA;
     
+    const derivedTipoOperacao = newLoadData.tipo_operacao || (
+      newLoadData.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
+      newLoadData.cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
+      newLoadData.cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA'
+    );
+
     const newLoad: CargoLoad = {
       ...newLoadData,
+      tipo_operacao: derivedTipoOperacao,
       id: generateId(),
       status: isReverseOrTransferOrColeta ? CargoStatus.RELEASED : CargoStatus.AWAITING,
       createdAt: new Date().toISOString(),
@@ -1204,7 +1231,7 @@ const App: React.FC = () => {
 
     setIsAuthenticated(true);
     setLoggedInUser(finalUser);
-    const initialTab = (finalUser.role === 'store_app' ? 'reverse_transfer' : finalUser.role) as TabType;
+    const initialTab = (finalUser.role === 'store_app' ? 'logistica_reversa' : finalUser.role) as TabType;
     setActiveTab(initialTab);
 
     try {
@@ -1318,6 +1345,36 @@ const App: React.FC = () => {
         return (
           <TrackingView 
             loads={loads}
+          />
+        );
+      case 'logistica_reversa':
+        return (
+          <LogisticaReversaView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            onDeleteLoad={handleDeleteLoad}
+            loads={loads}
+            currentUser={loggedInUser}
+          />
+        );
+      case 'transferencias':
+        return (
+          <TransferenciasView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            onDeleteLoad={handleDeleteLoad}
+            loads={loads}
+            currentUser={loggedInUser}
+          />
+        );
+      case 'coletas':
+        return (
+          <ColetasView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            onDeleteLoad={handleDeleteLoad}
+            loads={loads}
+            currentUser={loggedInUser}
           />
         );
       case 'reverse_transfer':

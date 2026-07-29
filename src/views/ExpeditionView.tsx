@@ -824,6 +824,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         driverName,
         driverPhone: driverPhone || undefined,
         cargoType,
+        tipo_operacao: cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
+          cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
+          cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : originalLoad.tipo_operacao,
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
@@ -851,6 +854,9 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         driverName,
         driverPhone: driverPhone || undefined,
         cargoType,
+        tipo_operacao: cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
+          cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
+          cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA',
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,

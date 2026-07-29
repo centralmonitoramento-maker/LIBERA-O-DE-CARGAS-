@@ -24,14 +24,15 @@ import {
   FileSpreadsheet,
   Settings,
   Menu,
-  BookOpen
+  BookOpen,
+  RotateCcw,
+  ArrowLeftRight,
+  Trash2
 } from 'lucide-react';
 
-import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
+import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray, TabType } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 import { ImageEnhanceZoom } from './ImageEnhanceZoom';
-
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -185,7 +186,9 @@ export const Layout: React.FC<LayoutProps> = ({
   const allTabs = [
     { id: 'expedition' as TabType, label: 'EXPEDIÇÃO', icon: Truck },
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
-    { id: 'reverse_transfer' as TabType, label: 'REVERSA & TRANSF.', icon: Layers },
+    { id: 'logistica_reversa' as TabType, label: 'LOGÍSTICA REVERSA', icon: RotateCcw },
+    { id: 'transferencias' as TabType, label: 'TRANSFERÊNCIAS', icon: ArrowLeftRight },
+    { id: 'coletas' as TabType, label: 'COLETAS TERCEIROS', icon: Trash2 },
     { id: 'tracking' as TabType, label: 'RASTREAMENTO', icon: Compass },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
@@ -202,13 +205,18 @@ export const Layout: React.FC<LayoutProps> = ({
     if (tab.id === 'settings' || tab.id === 'guide') return true;
     if (user.systemRole === 'administrator') return true;
     if (user.role === 'store_app' || user.systemRole === 'store_app') {
-      return tab.id === 'reverse_transfer' || tab.id === 'tracking';
+      return (
+        tab.id === 'logistica_reversa' || 
+        tab.id === 'transferencias' || 
+        tab.id === 'coletas' || 
+        tab.id === 'tracking'
+      );
     }
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }
     if (tab.id === 'tracking') return true;
-    return tab.id === user.role;
+    return (tab.id as string) === (user.role as string);
   });
 
   const blockedCount = React.useMemo(() => {
@@ -502,6 +510,9 @@ export const Layout: React.FC<LayoutProps> = ({
                     <h2 className="text-xs sm:text-xs font-black uppercase text-white tracking-widest hidden lg:block select-none mt-0.5">
                       {activeTab === 'expedition' && '📝 EXPEDIÇÃO DE CARGAS'}
                       {activeTab === 'central' && '🖥️ CENTRAL DE LOGÍSTICA'}
+                      {activeTab === 'logistica_reversa' && '♻️ LOGÍSTICA REVERSA'}
+                      {activeTab === 'transferencias' && '🔄 TRANSFERÊNCIAS'}
+                      {activeTab === 'coletas' && '🗑️ COLETAS TERCEIROS'}
                       {activeTab === 'tracking' && '🗺️ RASTREAMENTO MAPA'}
                       {activeTab === 'audit' && '🛡️ AUDITORIA & SEGURANÇA'}
                       {activeTab === 'analysis' && '📊 ANÁLISE OPERACIONAL'}
