@@ -1421,6 +1421,7 @@ const App: React.FC = () => {
           <SettingsView 
             currentUser={loggedInUser}
             loads={loads}
+            onForceFullResync={handleCheckConnection}
           />
         );
       case 'guide':

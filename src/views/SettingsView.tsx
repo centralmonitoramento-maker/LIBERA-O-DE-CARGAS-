@@ -26,7 +26,8 @@ import {
   LogOut,
   Check,
   Sparkles,
-  Loader2
+  Loader2,
+  Database
 } from 'lucide-react';
 import { User, CargoLoad } from '../types';
 import { 
@@ -42,9 +43,12 @@ import {
 interface SettingsViewProps {
   currentUser: User | null;
   loads: CargoLoad[];
+  onForceFullResync?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads, onForceFullResync }) => {
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [resyncSuccess, setResyncSuccess] = useState(false);
   // Notification State
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() => {
     if (typeof window === 'undefined') return 'default';
@@ -339,6 +343,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
     setTimeout(() => setTicketSuccess(false), 5000);
   };
 
+  const handleForceResync = async () => {
+    setIsResyncing(true);
+    setResyncSuccess(false);
+    try {
+      // Clear localStorage cached load & log data
+      localStorage.removeItem('cargoradar_loads');
+      localStorage.removeItem('cargoradar_logs');
+      localStorage.removeItem('cargoradar_last_sync');
+
+      if (onForceFullResync) {
+        onForceFullResync();
+      } else {
+        window.location.reload();
+      }
+
+      setResyncSuccess(true);
+      setTimeout(() => setResyncSuccess(false), 5000);
+    } catch (err) {
+      console.error('Erro ao forçar ressincronização:', err);
+    } finally {
+      setIsResyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-16">
       {/* Title */}
@@ -374,6 +402,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
               Seções de Ajustes
             </h3>
             <div className="space-y-1">
+              <a href="#data-sync" className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-xs font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
+                <Database className="w-4 h-4 text-cyan-500" />
+                <span>Cache & Banco Local</span>
+              </a>
               <a href="#notifications" className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-xs font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
                 <Bell className="w-4 h-4 text-amber-500" />
                 <span>Notificações</span>
@@ -422,6 +454,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
         {/* Right column detailed panels */}
         <div className="md:col-span-9 space-y-8">
           
+          {/* SEC 0: DATA SYNC & LOCAL CACHE */}
+          <section id="data-sync" className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Database className="w-5 h-5 text-cyan-500" />
+                <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                  Gerenciamento de Cache Local & Sincronização
+                </h3>
+              </div>
+              <span className="bg-cyan-500/10 text-cyan-500 text-[10px] px-2.5 py-1 rounded-full font-bold uppercase">
+                Firestore DB
+              </span>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-1.5 text-center md:text-left">
+                <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 flex items-center justify-center md:justify-start gap-2">
+                  <RefreshCw className="w-4 h-4 text-cyan-500" />
+                  Forçar Ressincronização Completa
+                </h4>
+                <p className="text-[11px] text-slate-500 max-w-lg leading-relaxed">
+                  Limpa os caches locais salvos no seu navegador (cargas, auditorias e histórico), forçando uma nova subscrição em tempo real (<code>onSnapshot</code>) a partir do banco do Firestore. Útil caso note dados desatualizados ou inconsistência local.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleForceResync}
+                disabled={isResyncing}
+                className="px-6 py-3.5 bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase text-xs tracking-wider rounded-2xl shadow-md flex items-center gap-2 cursor-pointer transition-all shrink-0 disabled:opacity-50 active:scale-95 border border-cyan-400"
+              >
+                <RefreshCw className={`w-4 h-4 ${isResyncing ? 'animate-spin' : ''}`} />
+                <span>{isResyncing ? 'Ressincronizando...' : 'Forçar Ressincronização Completa'}</span>
+              </button>
+            </div>
+
+            {resyncSuccess && (
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center gap-3 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                <span>Cache local de cargas limpo com sucesso! Uma nova subscrição direta com o Firestore foi iniciada.</span>
+              </div>
+            )}
+          </section>
+
           {/* SEC 1: NOTIFICATIONS */}
           <section id="notifications" className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
