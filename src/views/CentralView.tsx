@@ -1628,7 +1628,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <button
                 type="button"
                 onClick={() => setFilterStatus(CargoStatus.BLOCKED)}
-                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 border ${
+                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-red-500/20 active:scale-95 cursor-pointer flex items-center gap-1.5 border ${
                   filterStatus === CargoStatus.BLOCKED
                     ? 'bg-red-600 border-red-600 text-white shadow-lg'
                     : 'bg-red-50/50 border-red-105 text-red-700 hover:bg-rose-100'
@@ -1641,7 +1641,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
               <button
                 type="button"
                 onClick={() => setFilterStatus('ALL')}
-                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border ${
+                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 transform hover:scale-105 hover:shadow-md active:scale-95 cursor-pointer border ${
                   filterStatus === 'ALL'
                     ? 'bg-slate-800 border-slate-800 text-white shadow-lg'
                     : 'bg-slate-100 border-slate-200 text-slate-650 hover:bg-slate-200'
