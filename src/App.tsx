@@ -850,10 +850,11 @@ const App: React.FC = () => {
 
     try {
       await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
-      addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
-    } catch (err) {
-      console.warn('Conexão instável. Carga mantida localmente e log registrado localmente.', err);
-      addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
+      addLog('Criação de Carga', `Carga ${newLoad.plate} criada com sucesso no Firebase por ${username}`, username, newLoad.id);
+    } catch (err: any) {
+      console.error('Erro de gravação no Firebase ao criar carga:', err);
+      addLog('Criação de Carga (Erro Firebase)', `Falha ao sincronizar carga ${newLoad.plate} no Firebase: ${err?.message || err}`, username, newLoad.id);
+      alert(`⚠️ ERRO DE GRAVAÇÃO NO SERVIDOR (FIREBASE):\n\nA carga da placa "${newLoad.plate}" NÃO PÔDE SER SALVA NO SERVIDOR REMOTO!\n\nMotivo da Rejeição: ${err?.message || String(err)}\n\nO registro está salvo apenas no cache deste aparelho e não aparecerá para outros usuários até ser sincronizado.`);
     }
     
     // Switch tab according to user preference or role
@@ -977,9 +978,10 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
-    } catch (err) {
-      console.warn('Conexão instável. Modificação do status mantida localmente.', err);
-      addLog('Atualização de Status (Local)', `Carga ${load.plate} alterada para ${newStatus} offline por ${username}`, username, id);
+    } catch (err: any) {
+      console.error('Conexão instável ou erro no Firebase ao atualizar status:', err);
+      addLog('Atualização de Status (Erro Firebase)', `Carga ${load.plate} alterada para ${newStatus} com falha no Firebase: ${err?.message || err}`, username, id);
+      alert(`⚠️ ERRO AO ATUALIZAR STATUS NO SERVIDOR (FIREBASE):\n\nA alteração para "${newStatus}" na carga "${load.plate}" falhou ao ser salva remotamente.\n\nDetalhes: ${err?.message || String(err)}`);
     }
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
@@ -1024,9 +1026,10 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
-    } catch (err) {
-      console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
-      addLog('Auditoria de Carga (Local)', `Auditoria offline na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
+    } catch (err: any) {
+      console.error('Erro ao salvar ocorrência no Firebase:', err);
+      addLog('Auditoria de Carga (Erro Firebase)', `Auditoria na carga ${load.plate} falhou no Firebase: ${err?.message || err}`, username, id);
+      alert(`⚠️ ERRO AO SALVAR OCORRÊNCIA NO SERVIDOR (FIREBASE):\n\nA ocorrência na carga "${load.plate}" falhou ao ser gravada no Firebase.\n\nDetalhes: ${err?.message || String(err)}`);
     }
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
@@ -1047,9 +1050,10 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
-    } catch (err) {
-      console.warn('Conexão instável. Carga atualizada localmente.', err);
-      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} updated offline por ${username}`, username, updatedLoad.id);
+    } catch (err: any) {
+      console.error('Conexão/Gravação instável no Firebase ao atualizar carga:', err);
+      addLog('Atualização de Carga (Erro Firebase)', `Carga ${updatedLoad.plate} falhou ao atualizar no Firebase: ${err?.message || err}`, username, updatedLoad.id);
+      alert(`⚠️ ERRO AO ATUALIZAR NO SERVIDOR (FIREBASE):\n\nA alteração da carga "${updatedLoad.plate}" não foi sincronizada no servidor remoto.\n\nDetalhes: ${err?.message || String(err)}`);
     }
   };
 
