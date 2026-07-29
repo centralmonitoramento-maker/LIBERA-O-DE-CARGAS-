@@ -44,6 +44,7 @@ interface LayoutProps {
   loads?: CargoLoad[];
   isOffline?: boolean;
   lastSyncTime?: string | null;
+  onReconnect?: () => void;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -55,7 +56,8 @@ export const Layout: React.FC<LayoutProps> = ({
   user,
   loads = [],
   isOffline = false,
-  lastSyncTime = null
+  lastSyncTime = null,
+  onReconnect
 }) => {
   const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
@@ -638,14 +640,15 @@ export const Layout: React.FC<LayoutProps> = ({
                 {isAuthenticated && (
                   <>
                     {isOffline ? (
-                      <div 
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 border border-amber-500/30 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider animate-pulse cursor-help"
-                        title={`Modo Local (Offline). Última sincronização bem-sucedida: ${lastSyncTime || 'Nenhuma recente nesta sessão'}`}
+                      <button 
+                        onClick={onReconnect}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 hover:bg-amber-600/20 border border-amber-500/30 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider animate-pulse cursor-pointer transition-all"
+                        title={`Modo Local (Offline). Clique para reconectar ao servidor. Última sincronização: ${lastSyncTime || 'Nenhuma recente'}`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                        <span className="hidden sm:inline">MODO LOCAL</span>
+                        <span className="hidden sm:inline">MODO LOCAL (RECONECTAR)</span>
                         <span className="sm:hidden">LOCAL</span>
-                      </div>
+                      </button>
                     ) : (
                       <div 
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 border border-emerald-500/30 text-emerald-500 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-help"

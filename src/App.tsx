@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
-import { Keyboard, HelpCircle, X, Sparkles, CloudOff } from 'lucide-react';
+import { Keyboard, HelpCircle, X, Sparkles, CloudOff, RefreshCw } from 'lucide-react';
 import { ExpeditionView } from './views/ExpeditionView';
 import { CentralView } from './views/CentralView';
 import { AuditView } from './views/AuditView';
@@ -416,6 +416,19 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const handleCheckConnection = () => {
+    if (typeof window !== 'undefined' && navigator.onLine) {
+      setIsOffline(false);
+      const nowStr = new Date().toLocaleString('pt-BR');
+      setLastSyncTime(nowStr);
+      try {
+        localStorage.setItem('cargoradar_last_sync', nowStr);
+      } catch (e) {
+        console.warn('Erro ao salvar timestamp da sincronização:', e);
+      }
+    }
+  };
+
   // Restores active Firebase Auth session automatically on reload/boot if cached in localStorage
   useEffect(() => {
     if (isAuthenticated && loggedInUser && !auth.currentUser) {
@@ -539,16 +552,18 @@ const App: React.FC = () => {
 
       // Update offline / cache connectivity status
       const isFromCache = snapshot.metadata.fromCache;
-      if (!isFromCache && navigator.onLine) {
+      if (typeof window !== 'undefined' && navigator.onLine) {
         setIsOffline(false);
-        const nowStr = new Date().toLocaleString('pt-BR');
-        setLastSyncTime(nowStr);
-        try {
-          localStorage.setItem('cargoradar_last_sync', nowStr);
-        } catch (e) {
-          console.warn('Erro ao salvar timestamp da sincronização:', e);
+        if (!isFromCache) {
+          const nowStr = new Date().toLocaleString('pt-BR');
+          setLastSyncTime(nowStr);
+          try {
+            localStorage.setItem('cargoradar_last_sync', nowStr);
+          } catch (e) {
+            console.warn('Erro ao salvar timestamp da sincronização:', e);
+          }
         }
-      } else if (!navigator.onLine) {
+      } else if (typeof window !== 'undefined' && !navigator.onLine) {
         setIsOffline(true);
       }
 
@@ -619,7 +634,9 @@ const App: React.FC = () => {
       saveLoadsToLocalStorage(correctedLoads);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
-      setIsOffline(true);
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        setIsOffline(true);
+      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -642,6 +659,9 @@ const App: React.FC = () => {
   // 2. Users (subscribed for synchronization)
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (typeof window !== 'undefined' && navigator.onLine) {
+        setIsOffline(false);
+      }
       const liveUsers: User[] = [];
       snapshot.forEach((docSnap) => {
         liveUsers.push(docSnap.data() as User);
@@ -657,6 +677,9 @@ const App: React.FC = () => {
       });
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        setIsOffline(true);
+      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -689,6 +712,9 @@ const App: React.FC = () => {
   // 3. System logs (subscribed for real-time tracking)
   useEffect(() => {
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+      if (typeof window !== 'undefined' && navigator.onLine) {
+        setIsOffline(false);
+      }
       const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const liveLogs: EventLog[] = [];
       snapshot.forEach((docSnap) => {
@@ -702,6 +728,9 @@ const App: React.FC = () => {
       saveLogsToLocalStorage(liveLogs);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        setIsOffline(true);
+      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -1411,6 +1440,7 @@ const App: React.FC = () => {
       loads={loads}
       isOffline={isOffline}
       lastSyncTime={lastSyncTime}
+      onReconnect={handleCheckConnection}
     >
       {/* Persistent Offline Banner Toast */}
       {isOffline && isAuthenticated && (
@@ -1447,9 +1477,14 @@ const App: React.FC = () => {
                   {lastSyncTime ? lastSyncTime : 'Nenhuma recente nesta sessão'}
                 </span>
               </div>
-              <div className="w-3.5 h-3.5 rounded-full bg-amber-500/40 dark:bg-amber-500/20 flex items-center justify-center border border-amber-500/35 flex-shrink-0">
-                <div className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 animate-ping" />
-              </div>
+              <button
+                onClick={handleCheckConnection}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9.5px] uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0 border border-amber-400 active:scale-95"
+                title="Verificar conexão e reconectar ao servidor"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Reconectar Agora</span>
+              </button>
             </div>
           </div>
         </div>
