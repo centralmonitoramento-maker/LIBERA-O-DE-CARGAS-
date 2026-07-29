@@ -33,6 +33,7 @@ import {
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray, TabType } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 import { ImageEnhanceZoom } from './ImageEnhanceZoom';
+import logoImg from '../assets/images/logo.png';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -229,7 +230,7 @@ export const Layout: React.FC<LayoutProps> = ({
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col lg:flex-row font-sans relative overflow-x-hidden text-slate-800 dark:text-slate-100">
       {/* Watermark Logo */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.015] z-0 flex items-center justify-center overflow-hidden">
-        <img src="/logo.png" alt="" className="w-full max-w-4xl transform scale-150 grayscale select-none" />
+        <img src={logoImg} alt="" className="w-full max-w-4xl transform scale-150 grayscale select-none" />
       </div>
 
       {/* PERSISTENT LEFT SIDEBAR FOR DESKTOP */}
@@ -238,7 +239,7 @@ export const Layout: React.FC<LayoutProps> = ({
           {/* Top Branding Header */}
           <div className="flex items-center gap-3 px-6 py-6 border-b border-[#1f1b40] bg-[#080714]/50">
             <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg border border-primary-gold overflow-hidden flex-shrink-0">
-              <img src="/logo.png" alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
+              <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
             </div>
             <div>
               <h1 className="text-sm font-black tracking-tighter leading-none text-white uppercase">CARGARADAR</h1>
@@ -363,7 +364,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <div className="flex items-center justify-between border-b border-[#1f1b40] pb-4 border-opacity-70">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-primary-gold overflow-hidden">
-                  <img src="/logo.png" alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <h1 className="text-sm font-black leading-none text-white">CARGARADAR</h1>
@@ -506,7 +507,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 {/* Branding or Section Indicator */}
                 <div className="flex items-center gap-2">
                   <div className="lg:hidden relative w-9 h-9 bg-white keep-white rounded-xl flex items-center justify-center shadow-md overflow-hidden">
-                    <img src="/logo.png" alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h2 className="text-xs sm:text-xs font-black uppercase text-white tracking-widest hidden lg:block select-none mt-0.5">

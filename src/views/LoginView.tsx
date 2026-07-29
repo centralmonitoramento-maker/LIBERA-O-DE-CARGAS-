@@ -4,6 +4,7 @@ import { Truck } from 'lucide-react';
 import { User } from '../types';
 import { db } from '../firebase';
 import { collection, query, getDocs } from 'firebase/firestore';
+import logoImg from '../assets/images/logo.png';
 
 interface LoginViewProps {
   users: User[];
@@ -142,7 +143,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
     <div className="max-w-md mx-auto mt-20 bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-500 relative">
       {/* Subtle background watermark */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.02] flex items-center justify-center z-0">
-        <img src="/logo.png" alt="" className="w-full transform scale-125 rotate-12" />
+        <img src={logoImg} alt="" className="w-full transform scale-125 rotate-12" />
       </div>
 
       <div className="bg-primary-navy p-10 text-center relative z-10">
@@ -151,7 +152,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         </div>
         <div className="relative w-28 h-28 bg-white keep-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-primary-gold overflow-hidden group hover:scale-105 transition-transform duration-500">
           <img 
-            src="/logo.png" 
+            src={logoImg} 
             alt="Sistema CargaRadar - Prevenção de Perdas" 
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover rounded-2xl" 
