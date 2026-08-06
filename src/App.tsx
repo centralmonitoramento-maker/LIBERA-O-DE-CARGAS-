@@ -171,103 +171,19 @@ const App: React.FC = () => {
     }
   });
 
-  const [loads, setLoads] = useState<CargoLoad[]>(() => {
+  const [loads, setLoads] = useState<CargoLoad[]>([]);
+
+  // Clear obsolete loads cache from localStorage if present
+  useEffect(() => {
     try {
-      const persisted = localStorage.getItem('cargoradar_loads');
-      if (persisted) {
-        const parsed = JSON.parse(persisted);
-        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-      const defaultLoads: CargoLoad[] = [
-        {
-          id: 'initial-1',
-          plate: 'BWU-8171',
-          driverName: 'Raimundo Silveira',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Águas Claras (df-1)',
-          cargoType: CargoType.SECA,
-          tipo_operacao: 'TRANSFERENCIA',
-          isHighRisk: false,
-          palletCount: 24,
-          sealNumber: 'L34891',
-          status: CargoStatus.RELEASED,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD',
-          auditedAt: new Date().toISOString()
-        },
-        {
-          id: 'initial-2',
-          plate: 'BWH-4H66',
-          driverName: 'Valdir Brandão',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Guará II (df-7)',
-          cargoType: CargoType.MISTA,
-          tipo_operacao: 'TRANSFERENCIA',
-          isHighRisk: true,
-          palletCount: 18,
-          sealNumber: 'L99112',
-          status: CargoStatus.RELEASED,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD',
-          auditedAt: new Date().toISOString()
-        },
-        {
-          id: 'initial-3',
-          plate: 'KJG-5512',
-          driverName: 'Carlos Eduardo',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Taguatinga Sul (df-3)',
-          cargoType: CargoType.PERECIVEIS,
-          tipo_operacao: 'TRANSFERENCIA',
-          isHighRisk: false,
-          palletCount: 12,
-          sealNumber: 'L22119',
-          status: CargoStatus.AWAITING,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD'
-        }
-      ];
-      localStorage.setItem('cargoradar_loads', JSON.stringify(defaultLoads));
-      return defaultLoads;
+      localStorage.removeItem('cargoradar_loads');
     } catch {
-      return [];
+      // Ignore
     }
-  });
+  }, []);
 
-  const saveLoadsToLocalStorage = (loadsArray: CargoLoad[]) => {
-    try {
-      const cleaned = loadsArray.map((load) => {
-        const {
-          photoPlate,
-          photoSeal,
-          photoManifest,
-          occurrencePhoto,
-          gatePhotoPlate,
-          gatePhotoSeal,
-          gatePhotoManifest,
-          ...rest
-        } = load;
-
-        let cleanedHistory = undefined;
-        if (load.occurrenceHistory) {
-          cleanedHistory = load.occurrenceHistory.map(occ => {
-            const { photo, ...occRest } = occ;
-            return occRest;
-          });
-        }
-
-        return {
-          ...rest,
-          ...(cleanedHistory !== undefined ? { occurrenceHistory: cleanedHistory } : {})
-        };
-      });
-
-      localStorage.setItem('cargoradar_loads', JSON.stringify(cleaned));
-    } catch (err) {
-      console.warn('Falha segura ao persistir cargas no local storage (limite excedido):', err);
-    }
+  const saveLoadsToLocalStorage = (_loadsArray: CargoLoad[]) => {
+    // Disabled to prevent local cache isolation across devices/users
   };
 
   const [users, setUsers] = useState<User[]>(() => {
@@ -821,20 +737,16 @@ const App: React.FC = () => {
       tripFinished: false
     };
 
-    // Otimista: Salva localmente primeiro
-    setLoads((prev) => {
-      const updated = [newLoad, ...prev];
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
+    // Sincronização direta com Firestore:
     try {
       await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
       addLog('Criação de Carga', `Carga ${newLoad.plate} criada com sucesso no Firebase por ${username}`, username, newLoad.id);
     } catch (err: any) {
       console.error('Erro de gravação no Firebase ao criar carga:', err);
+      // Remove da memória se o servidor rejeitou a gravação
+      setLoads((prev) => prev.filter(l => l.id !== newLoad.id));
       addLog('Criação de Carga (Erro Firebase)', `Falha ao sincronizar carga ${newLoad.plate} no Firebase: ${err?.message || err}`, username, newLoad.id);
-      alert(`⚠️ ERRO DE GRAVAÇÃO NO SERVIDOR (FIREBASE):\n\nA carga da placa "${newLoad.plate}" NÃO PÔDE SER SALVA NO SERVIDOR REMOTO!\n\nMotivo da Rejeição: ${err?.message || String(err)}\n\nO registro está salvo apenas no cache deste aparelho e não aparecerá para outros usuários até ser sincronizado.`);
+      alert(`⚠️ ERRO DE GRAVAÇÃO NO SERVIDOR (FIREBASE):\n\nA carga da placa "${newLoad.plate}" NÃO PÔDE SER SALVA NO SERVIDOR REMOTO!\n\nMotivo da Rejeição: ${err?.message || String(err)}\n\nPor favor, tente novamente.`);
     }
     
     // Switch tab according to user preference or role
