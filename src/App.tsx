@@ -171,6 +171,71 @@ const App: React.FC = () => {
     }
   });
 
+  const INITIAL_DEFAULT_LOADS: CargoLoad[] = [
+    {
+      id: 'initial-1',
+      plate: 'BWU-8171',
+      driverName: 'Raimundo Silveira',
+      origin: 'CD Atacadão Brasília',
+      destination: 'Águas Claras (df-1)',
+      cargoType: CargoType.SECA,
+      tipo_operacao: 'TRANSFERENCIA',
+      isHighRisk: false,
+      palletCount: 24,
+      sealNumber: 'L34891',
+      status: CargoStatus.RELEASED,
+      createdAt: new Date().toISOString(),
+      createdBy: 'CARGADD',
+      auditedAt: new Date().toISOString(),
+      gateVerified: true,
+      gateStatus: 'Aprovado',
+      gateCheckedIn: true,
+      needsCentralCheckout: false,
+      tripFinished: false
+    },
+    {
+      id: 'initial-2',
+      plate: 'BWH-4H66',
+      driverName: 'Valdir Brandão',
+      origin: 'CD Atacadão Brasília',
+      destination: 'Guará II (df-7)',
+      cargoType: CargoType.MISTA,
+      tipo_operacao: 'TRANSFERENCIA',
+      isHighRisk: true,
+      palletCount: 18,
+      sealNumber: 'L99112',
+      status: CargoStatus.RELEASED,
+      createdAt: new Date().toISOString(),
+      createdBy: 'CARGADD',
+      auditedAt: new Date().toISOString(),
+      gateVerified: true,
+      gateStatus: 'Aprovado',
+      gateCheckedIn: true,
+      needsCentralCheckout: false,
+      tripFinished: false
+    },
+    {
+      id: 'initial-3',
+      plate: 'KJG-5512',
+      driverName: 'Carlos Eduardo',
+      origin: 'CD Atacadão Brasília',
+      destination: 'Taguatinga Sul (df-3)',
+      cargoType: CargoType.PERECIVEIS,
+      tipo_operacao: 'TRANSFERENCIA',
+      isHighRisk: false,
+      palletCount: 12,
+      sealNumber: 'L22119',
+      status: CargoStatus.AWAITING,
+      createdAt: new Date().toISOString(),
+      createdBy: 'CARGADD',
+      gateVerified: false,
+      gateStatus: 'Aguardando',
+      gateCheckedIn: false,
+      needsCentralCheckout: true,
+      tripFinished: false
+    }
+  ];
+
   const [loads, setLoads] = useState<CargoLoad[]>([]);
 
   // Clear obsolete loads cache from localStorage if present
@@ -451,7 +516,19 @@ const App: React.FC = () => {
   // Set up real-time onSnapshot listeners
   // 1. Cargo Loads (always subscribed)
   useEffect(() => {
+    let hasSeededEmpty = false;
     const unsubLoads = onSnapshot(collection(db, 'loads'), (snapshot) => {
+      if (snapshot.empty && !hasSeededEmpty) {
+        hasSeededEmpty = true;
+        console.log('Coleção de cargas no Firestore está vazia. Semeando dados iniciais no banco de dados remoto...');
+        INITIAL_DEFAULT_LOADS.forEach((seedLoad) => {
+          setDoc(doc(db, 'loads', seedLoad.id), sanitizeFirestoreData(seedLoad)).catch(e => {
+            console.error('Erro ao semear carga inicial no Firestore:', e);
+          });
+        });
+        return;
+      }
+
       const liveLoads: CargoLoad[] = [];
       snapshot.forEach((doc) => {
         const raw = doc.data() as CargoLoad;
