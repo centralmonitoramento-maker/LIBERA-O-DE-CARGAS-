@@ -737,7 +737,10 @@ const App: React.FC = () => {
       tripFinished: false
     };
 
-    // Sincronização direta com Firestore:
+    // Atualização otimista no estado local
+    setLoads((prev) => [newLoad, ...prev.filter(l => l.id !== newLoad.id)]);
+
+    // Sincronização com Firestore:
     try {
       await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
       addLog('Criação de Carga', `Carga ${newLoad.plate} criada com sucesso no Firebase por ${username}`, username, newLoad.id);
