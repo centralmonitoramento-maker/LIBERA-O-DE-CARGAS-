@@ -539,10 +539,11 @@ const App: React.FC = () => {
       const liveLoads: CargoLoad[] = [];
       snapshot.forEach((doc) => {
         const raw = doc.data() as CargoLoad;
+        const rawCargoType = String(raw.cargoType || '').toUpperCase();
         const tipoOp = raw.tipo_operacao || (
-          raw.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
-          raw.cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
-          raw.cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA'
+          rawCargoType.includes('REVERSA') ? 'REVERSA' :
+          rawCargoType.includes('COLETA') ? 'COLETA_TERCEIRO' :
+          rawCargoType.includes('TRANSFERENCIA') ? 'TRANSFERENCIA' : 'TRANSFERENCIA'
         );
         liveLoads.push({
           ...raw,
@@ -594,27 +595,6 @@ const App: React.FC = () => {
           }
         }
       });
-
-      // Cache Reconciliation & Recovery: Sync any loads stored in localStorage that are not yet in Firestore
-      try {
-        const persisted = localStorage.getItem('cargoradar_loads');
-        if (persisted) {
-          const localList = JSON.parse(persisted) as CargoLoad[];
-          if (Array.isArray(localList)) {
-            const liveMap = new Map(liveLoads.map(l => [l.id, l]));
-            localList.forEach(localItem => {
-              if (localItem && localItem.id && !liveMap.has(localItem.id)) {
-                console.log(`[Cache Sync] Pushing locally cached load to Firestore: ${localItem.plate} (${localItem.id})`);
-                liveLoads.push(localItem);
-                setDoc(doc(db, 'loads', localItem.id), sanitizeFirestoreData(localItem), { merge: true })
-                  .catch(e => console.warn('Erro ao ressincronizar carga local no Firestore:', e));
-              }
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Aviso ao sincronizar cache de cargas com o Firestore:', e);
-      }
 
       // Real-time automatic migration/correction of cargo status based on validation progress
       const migrates: Promise<void>[] = [];

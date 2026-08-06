@@ -503,26 +503,44 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   const baseRelevantLoads = useMemo(() => {
     // 1. Filter by operation mode
     let list = loads.filter(l => {
-      const op = l.tipo_operacao;
-      const type = l.cargoType;
+      const op = (l.tipo_operacao || '').toUpperCase();
+      const type = (l.cargoType || '').toUpperCase();
 
       if (operationMode === 'REVERSA') {
-        return op === 'REVERSA' || (!op && type === CargoType.REVERSA_CD);
+        return (
+          op === 'REVERSA' || 
+          op === 'REVERSA_CD' || 
+          op === 'LOGISTICA_REVERSA' ||
+          type === CargoType.REVERSA_CD.toUpperCase() ||
+          type === 'REVERSA' ||
+          type === 'LOGISTICA_REVERSA'
+        );
       }
       if (operationMode === 'TRANSFERENCIA') {
-        return op === 'TRANSFERENCIA' || (!op && type === CargoType.TRANSFERENCIA);
+        return (
+          op === 'TRANSFERENCIA' || 
+          type === CargoType.TRANSFERENCIA.toUpperCase() ||
+          type === 'TRANSFERENCIA'
+        );
       }
       if (operationMode === 'COLETA_TERCEIRO') {
-        return op === 'COLETA_TERCEIRO' || (!op && type === CargoType.COLETA);
+        return (
+          op === 'COLETA_TERCEIRO' || 
+          op === 'COLETA' || 
+          type === CargoType.COLETA.toUpperCase() ||
+          type === 'COLETA'
+        );
       }
 
       return (
-        type === CargoType.REVERSA_CD || 
-        type === CargoType.TRANSFERENCIA ||
-        type === CargoType.COLETA ||
+        type === CargoType.REVERSA_CD.toUpperCase() || 
+        type === CargoType.TRANSFERENCIA.toUpperCase() ||
+        type === CargoType.COLETA.toUpperCase() ||
         op === 'REVERSA' ||
+        op === 'REVERSA_CD' ||
         op === 'TRANSFERENCIA' ||
-        op === 'COLETA_TERCEIRO'
+        op === 'COLETA_TERCEIRO' ||
+        op === 'COLETA'
       );
     });
 
