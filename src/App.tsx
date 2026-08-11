@@ -14,6 +14,7 @@ import { ReverseTransferView } from './views/ReverseTransferView';
 import { GuideView } from './views/GuideView';
 import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { getGmailToken, sendGmailEmail } from './utils/gmailService';
+import { capLoadDocumentSize } from './utils/imageCompressor';
 import { 
   collection, 
   doc, 
@@ -473,13 +474,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubLoads = onSnapshot(collection(db, 'loads'), { includeMetadataChanges: true }, (snapshot) => {
       const liveLoads: CargoLoad[] = [];
-      snapshot.forEach((doc) => {
-        liveLoads.push(doc.data() as CargoLoad);
+      snapshot.forEach((docSnap) => {
+        liveLoads.push(docSnap.data() as CargoLoad);
       });
 
       // Update offline / cache connectivity status
-      const isFromCache = snapshot.metadata.fromCache;
-      if (!isFromCache && navigator.onLine) {
+      if (navigator.onLine) {
         setIsOffline(false);
         const nowStr = new Date().toLocaleString('pt-BR');
         setLastSyncTime(nowStr);
@@ -488,19 +488,8 @@ const App: React.FC = () => {
         } catch (e) {
           console.warn('Erro ao salvar timestamp da sincronização:', e);
         }
-      } else if (!navigator.onLine) {
-        setIsOffline(true);
       } else {
-        // Online and loaded from cache; test connection once in background to verify server availability
-        getDocs(query(collection(db, 'loads'), limit(1)))
-          .then(() => {
-            setIsOffline(false);
-            const nowStr = new Date().toLocaleString('pt-BR');
-            setLastSyncTime(nowStr);
-          })
-          .catch(() => {
-            // Keep current offline state if network test fails
-          });
+        setIsOffline(true);
       }
 
       // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
@@ -555,7 +544,7 @@ const App: React.FC = () => {
             ...load,
             status: newStatus
           };
-          migrates.push(setDoc(doc(db, 'loads', load.id), sanitizeFirestoreData(updated), { merge: true }));
+          migrates.push(setDoc(doc(db, 'loads', load.id), sanitizeFirestoreData(capLoadDocumentSize(updated)), { merge: true }));
           return updated;
         }
         return load;
@@ -566,11 +555,44 @@ const App: React.FC = () => {
       }
 
       isFirstLoad.current = false;
-      setLoads(correctedLoads);
-      saveLoadsToLocalStorage(correctedLoads);
+
+      // Merge with any unpushed local loads so information created locally is pushed to Firestore for all users
+      setLoads((currentLoads) => {
+        const liveMap = new Map<string, CargoLoad>();
+        correctedLoads.forEach(l => liveMap.set(l.id, l));
+
+        const unpushedLoads: CargoLoad[] = [];
+        currentLoads.forEach(localLoad => {
+          if (!liveMap.has(localLoad.id)) {
+            unpushedLoads.push(localLoad);
+          }
+        });
+
+        if (unpushedLoads.length > 0 && navigator.onLine) {
+          unpushedLoads.forEach(async (unpushed) => {
+            try {
+              const safeDoc = sanitizeFirestoreData(capLoadDocumentSize(unpushed));
+              await setDoc(doc(db, 'loads', unpushed.id), safeDoc, { merge: true });
+            } catch (e) {
+              console.warn('Falha na sincronização em segundo plano de carga pendente:', e);
+            }
+          });
+        }
+
+        const combined = [...correctedLoads];
+        unpushedLoads.forEach(u => {
+          if (!liveMap.has(u.id)) combined.push(u);
+        });
+
+        combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        saveLoadsToLocalStorage(combined);
+        return combined;
+      });
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
-      setIsOffline(true);
+      if (!navigator.onLine) {
+        setIsOffline(true);
+      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -789,7 +811,7 @@ const App: React.FC = () => {
     });
 
     try {
-      await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
+      await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(capLoadDocumentSize(newLoad)));
       addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
     } catch (err) {
       console.warn('Conexão instável. Carga mantida localmente e log registrado localmente.', err);
@@ -915,7 +937,7 @@ const App: React.FC = () => {
     });
 
     try {
-      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
+      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
       addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
     } catch (err) {
       console.warn('Conexão instável. Modificação do status mantida localmente.', err);
@@ -962,7 +984,7 @@ const App: React.FC = () => {
     });
 
     try {
-      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
+      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
       addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
     } catch (err) {
       console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
@@ -985,7 +1007,7 @@ const App: React.FC = () => {
     });
 
     try {
-      await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
+      await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
       addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
     } catch (err) {
       console.warn('Conexão instável. Carga atualizada localmente.', err);
@@ -1225,7 +1247,7 @@ const App: React.FC = () => {
               });
 
               try {
-                await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
+                await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
                 addLog('Atualização da Rota', `Carga ${updatedLoad.plate} atualizada no processo de rota por ${username}`, username, updatedLoad.id);
               } catch (err) {
                 console.warn('Conexão instável. Rota atualizada localmente.', err);
