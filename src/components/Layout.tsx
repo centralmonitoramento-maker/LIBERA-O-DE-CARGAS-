@@ -24,16 +24,14 @@ import {
   FileSpreadsheet,
   Settings,
   Menu,
-  BookOpen,
-  RotateCcw,
-  ArrowLeftRight,
-  Trash2
+  BookOpen
 } from 'lucide-react';
 
-import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray, TabType } from '../types';
+import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 import { ImageEnhanceZoom } from './ImageEnhanceZoom';
-import logoImg from '../assets/images/logo.png';
+
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -45,7 +43,6 @@ interface LayoutProps {
   loads?: CargoLoad[];
   isOffline?: boolean;
   lastSyncTime?: string | null;
-  onReconnect?: () => void;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -57,8 +54,7 @@ export const Layout: React.FC<LayoutProps> = ({
   user,
   loads = [],
   isOffline = false,
-  lastSyncTime = null,
-  onReconnect
+  lastSyncTime = null
 }) => {
   const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
@@ -189,9 +185,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const allTabs = [
     { id: 'expedition' as TabType, label: 'EXPEDIÇÃO', icon: Truck },
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
-    { id: 'logistica_reversa' as TabType, label: 'LOGÍSTICA REVERSA', icon: RotateCcw },
-    { id: 'transferencias' as TabType, label: 'TRANSFERÊNCIAS', icon: ArrowLeftRight },
-    { id: 'coletas' as TabType, label: 'COLETAS TERCEIROS', icon: Trash2 },
+    { id: 'reverse_transfer' as TabType, label: 'REVERSA & TRANSF.', icon: Layers },
     { id: 'tracking' as TabType, label: 'RASTREAMENTO', icon: Compass },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
@@ -208,18 +202,13 @@ export const Layout: React.FC<LayoutProps> = ({
     if (tab.id === 'settings' || tab.id === 'guide') return true;
     if (user.systemRole === 'administrator') return true;
     if (user.role === 'store_app' || user.systemRole === 'store_app') {
-      return (
-        tab.id === 'logistica_reversa' || 
-        tab.id === 'transferencias' || 
-        tab.id === 'coletas' || 
-        tab.id === 'tracking'
-      );
+      return tab.id === 'reverse_transfer' || tab.id === 'tracking';
     }
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }
     if (tab.id === 'tracking') return true;
-    return (tab.id as string) === (user.role as string);
+    return tab.id === user.role;
   });
 
   const blockedCount = React.useMemo(() => {
@@ -230,7 +219,7 @@ export const Layout: React.FC<LayoutProps> = ({
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col lg:flex-row font-sans relative overflow-x-hidden text-slate-800 dark:text-slate-100">
       {/* Watermark Logo */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.015] z-0 flex items-center justify-center overflow-hidden">
-        <img src={logoImg} alt="" className="w-full max-w-4xl transform scale-150 grayscale select-none" />
+        <img src="/logo.png" alt="" className="w-full max-w-4xl transform scale-150 grayscale select-none" />
       </div>
 
       {/* PERSISTENT LEFT SIDEBAR FOR DESKTOP */}
@@ -239,7 +228,7 @@ export const Layout: React.FC<LayoutProps> = ({
           {/* Top Branding Header */}
           <div className="flex items-center gap-3 px-6 py-6 border-b border-[#1f1b40] bg-[#080714]/50">
             <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg border border-primary-gold overflow-hidden flex-shrink-0">
-              <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
+              <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover animate-in fade-in zoom-in-50 duration-500" />
             </div>
             <div>
               <h1 className="text-sm font-black tracking-tighter leading-none text-white uppercase">CARGARADAR</h1>
@@ -364,7 +353,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <div className="flex items-center justify-between border-b border-[#1f1b40] pb-4 border-opacity-70">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border-2 border-primary-gold overflow-hidden">
-                  <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <h1 className="text-sm font-black leading-none text-white">CARGARADAR</h1>
@@ -507,15 +496,12 @@ export const Layout: React.FC<LayoutProps> = ({
                 {/* Branding or Section Indicator */}
                 <div className="flex items-center gap-2">
                   <div className="lg:hidden relative w-9 h-9 bg-white keep-white rounded-xl flex items-center justify-center shadow-md overflow-hidden">
-                    <img src={logoImg} alt="Prevenção de Perdas CargaRadar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src="/logo.png" alt="Prev de Perdas" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h2 className="text-xs sm:text-xs font-black uppercase text-white tracking-widest hidden lg:block select-none mt-0.5">
                       {activeTab === 'expedition' && '📝 EXPEDIÇÃO DE CARGAS'}
                       {activeTab === 'central' && '🖥️ CENTRAL DE LOGÍSTICA'}
-                      {activeTab === 'logistica_reversa' && '♻️ LOGÍSTICA REVERSA'}
-                      {activeTab === 'transferencias' && '🔄 TRANSFERÊNCIAS'}
-                      {activeTab === 'coletas' && '🗑️ COLETAS TERCEIROS'}
                       {activeTab === 'tracking' && '🗺️ RASTREAMENTO MAPA'}
                       {activeTab === 'audit' && '🛡️ AUDITORIA & SEGURANÇA'}
                       {activeTab === 'analysis' && '📊 ANÁLISE OPERACIONAL'}
@@ -641,15 +627,14 @@ export const Layout: React.FC<LayoutProps> = ({
                 {isAuthenticated && (
                   <>
                     {isOffline ? (
-                      <button 
-                        onClick={onReconnect}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 hover:bg-amber-600/20 border border-amber-500/30 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider animate-pulse cursor-pointer transition-all"
-                        title={`Modo Local (Offline). Clique para reconectar ao servidor. Última sincronização: ${lastSyncTime || 'Nenhuma recente'}`}
+                      <div 
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 border border-amber-500/30 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider animate-pulse cursor-help"
+                        title={`Modo Local (Offline). Última sincronização bem-sucedida: ${lastSyncTime || 'Nenhuma recente nesta sessão'}`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                        <span className="hidden sm:inline">MODO LOCAL (RECONECTAR)</span>
+                        <span className="hidden sm:inline">MODO LOCAL</span>
                         <span className="sm:hidden">LOCAL</span>
-                      </button>
+                      </div>
                     ) : (
                       <div 
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 border border-emerald-500/30 text-emerald-500 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-help"

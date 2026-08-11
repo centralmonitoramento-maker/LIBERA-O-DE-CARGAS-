@@ -11,18 +11,14 @@ import { PortariaView } from './views/PortariaView';
 import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
 import { ReverseTransferView } from './views/ReverseTransferView';
-import { LogisticaReversaView } from './views/LogisticaReversaView';
-import { TransferenciasView } from './views/TransferenciasView';
-import { ColetasView } from './views/ColetasView';
 import { GuideView } from './views/GuideView';
-import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole, TipoOperacaoLojas, TabType } from './types';
+import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { getGmailToken, sendGmailEmail } from './utils/gmailService';
 import { 
   collection, 
   doc, 
   setDoc, 
   deleteDoc, 
-  getDoc,
   getDocs, 
   query, 
   limit, 
@@ -35,6 +31,8 @@ import {
   signOut 
 } from 'firebase/auth';
 
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
+
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
   if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -45,69 +43,6 @@ const generateId = (): string => {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-};
-
-const DEFAULT_USERS: User[] = [
-  { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
-  { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
-  { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-  { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
-  { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-];
-
-const normalizeUsername = (str?: string): string => {
-  if (!str) return '';
-  return str.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-};
-
-const mergeUsersList = (incoming: User[], current: User[]): User[] => {
-  const map = new Map<string, User>();
-
-  // 1. First populate default users
-  for (const defUser of DEFAULT_USERS) {
-    const key = normalizeUsername(defUser.username);
-    map.set(key, defUser);
-  }
-
-  // 2. Add current state users (preserves pending users and local updates)
-  for (const curUser of current) {
-    const key = normalizeUsername(curUser.username);
-    if (key) {
-      const existing = map.get(key);
-      map.set(key, existing ? { ...existing, ...curUser } : curUser);
-    }
-  }
-
-  // 3. Add incoming live users from Firestore
-  for (const liveUser of incoming) {
-    const key = normalizeUsername(liveUser.username);
-    if (key) {
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, liveUser);
-      } else {
-        // Do not revert an already approved/active or rejected status back to pending
-        const effectiveStatus = (existing.status === 'active' || existing.status === 'rejected') && liveUser.status === 'pending'
-          ? existing.status
-          : (liveUser.status || existing.status);
-
-        const mergedUser: User = {
-          ...existing,
-          ...liveUser,
-          password: liveUser.password || existing.password || '',
-          fullName: liveUser.fullName || existing.fullName || '',
-          storeLocation: liveUser.storeLocation || existing.storeLocation || '',
-          jobFunction: liveUser.jobFunction || existing.jobFunction || '',
-          role: liveUser.role || existing.role || 'expedition',
-          status: effectiveStatus,
-          systemRole: liveUser.systemRole || existing.systemRole || 'viewer'
-        };
-        map.set(key, mergedUser);
-      }
-    }
-  }
-
-  return Array.from(map.values());
 };
 
 // Main Application Component for CargaRadar System - v1.0.1
@@ -139,14 +74,9 @@ const App: React.FC = () => {
         const user = JSON.parse(persistedUser);
         if (user.role === 'store_app') {
           const saved = localStorage.getItem('cargoradar_tab') as TabType;
-          if (saved === 'logistica_reversa' || saved === 'transferencias' || saved === 'coletas' || saved === 'tracking') {
-            return saved;
-          }
-          return 'logistica_reversa';
+          return (saved === 'tracking' || saved === 'reverse_transfer') ? saved : 'reverse_transfer';
         }
-        const saved = localStorage.getItem('cargoradar_tab') as TabType;
-        if (saved === 'reverse_transfer') return 'logistica_reversa';
-        return saved || (user.role as TabType) || 'expedition';
+        return (localStorage.getItem('cargoradar_tab') as TabType) || (user.role as TabType) || 'expedition';
       }
       return 'expedition';
     } catch {
@@ -171,103 +101,122 @@ const App: React.FC = () => {
     }
   });
 
-  const INITIAL_DEFAULT_LOADS: CargoLoad[] = [
-    {
-      id: 'initial-1',
-      plate: 'BWU-8171',
-      driverName: 'Raimundo Silveira',
-      origin: 'CD Atacadão Brasília',
-      destination: 'Águas Claras (df-1)',
-      cargoType: CargoType.SECA,
-      tipo_operacao: 'TRANSFERENCIA',
-      isHighRisk: false,
-      palletCount: 24,
-      sealNumber: 'L34891',
-      status: CargoStatus.RELEASED,
-      createdAt: new Date().toISOString(),
-      createdBy: 'CARGADD',
-      auditedAt: new Date().toISOString(),
-      gateVerified: true,
-      gateStatus: 'Aprovado',
-      gateCheckedIn: true,
-      needsCentralCheckout: false,
-      tripFinished: false
-    },
-    {
-      id: 'initial-2',
-      plate: 'BWH-4H66',
-      driverName: 'Valdir Brandão',
-      origin: 'CD Atacadão Brasília',
-      destination: 'Guará II (df-7)',
-      cargoType: CargoType.MISTA,
-      tipo_operacao: 'TRANSFERENCIA',
-      isHighRisk: true,
-      palletCount: 18,
-      sealNumber: 'L99112',
-      status: CargoStatus.RELEASED,
-      createdAt: new Date().toISOString(),
-      createdBy: 'CARGADD',
-      auditedAt: new Date().toISOString(),
-      gateVerified: true,
-      gateStatus: 'Aprovado',
-      gateCheckedIn: true,
-      needsCentralCheckout: false,
-      tripFinished: false
-    },
-    {
-      id: 'initial-3',
-      plate: 'KJG-5512',
-      driverName: 'Carlos Eduardo',
-      origin: 'CD Atacadão Brasília',
-      destination: 'Taguatinga Sul (df-3)',
-      cargoType: CargoType.PERECIVEIS,
-      tipo_operacao: 'TRANSFERENCIA',
-      isHighRisk: false,
-      palletCount: 12,
-      sealNumber: 'L22119',
-      status: CargoStatus.AWAITING,
-      createdAt: new Date().toISOString(),
-      createdBy: 'CARGADD',
-      gateVerified: false,
-      gateStatus: 'Aguardando',
-      gateCheckedIn: false,
-      needsCentralCheckout: true,
-      tripFinished: false
-    }
-  ];
-
-  const [loads, setLoads] = useState<CargoLoad[]>([]);
-
-  // Clear obsolete loads cache from localStorage if present
-  useEffect(() => {
+  const [loads, setLoads] = useState<CargoLoad[]>(() => {
     try {
-      localStorage.removeItem('cargoradar_loads');
+      const persisted = localStorage.getItem('cargoradar_loads');
+      if (persisted) {
+        const parsed = JSON.parse(persisted);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      const defaultLoads: CargoLoad[] = [
+        {
+          id: 'initial-1',
+          plate: 'BWU-8171',
+          driverName: 'Raimundo Silveira',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Águas Claras (df-1)',
+          cargoType: CargoType.SECA,
+          isHighRisk: false,
+          palletCount: 24,
+          sealNumber: 'L34891',
+          status: CargoStatus.RELEASED,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD',
+          auditedAt: new Date().toISOString()
+        },
+        {
+          id: 'initial-2',
+          plate: 'BWH-4H66',
+          driverName: 'Valdir Brandão',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Guará II (df-7)',
+          cargoType: CargoType.MISTA,
+          isHighRisk: true,
+          palletCount: 18,
+          sealNumber: 'L99112',
+          status: CargoStatus.RELEASED,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD',
+          auditedAt: new Date().toISOString()
+        },
+        {
+          id: 'initial-3',
+          plate: 'KJG-5512',
+          driverName: 'Carlos Eduardo',
+          origin: 'CD Atacadão Brasília',
+          destination: 'Taguatinga Sul (df-3)',
+          cargoType: CargoType.PERECIVEIS,
+          isHighRisk: false,
+          palletCount: 12,
+          sealNumber: 'L22119',
+          status: CargoStatus.AWAITING,
+          createdAt: new Date().toISOString(),
+          createdBy: 'CARGADD'
+        }
+      ];
+      localStorage.setItem('cargoradar_loads', JSON.stringify(defaultLoads));
+      return defaultLoads;
     } catch {
-      // Ignore
+      return [];
     }
-  }, []);
+  });
 
-  const saveLoadsToLocalStorage = (_loadsArray: CargoLoad[]) => {
-    // Disabled to prevent local cache isolation across devices/users
+  const saveLoadsToLocalStorage = (loadsArray: CargoLoad[]) => {
+    try {
+      const cleaned = loadsArray.map((load) => {
+        const {
+          photoPlate,
+          photoSeal,
+          photoManifest,
+          occurrencePhoto,
+          gatePhotoPlate,
+          gatePhotoSeal,
+          gatePhotoManifest,
+          ...rest
+        } = load;
+
+        let cleanedHistory = undefined;
+        if (load.occurrenceHistory) {
+          cleanedHistory = load.occurrenceHistory.map(occ => {
+            const { photo, ...occRest } = occ;
+            return occRest;
+          });
+        }
+
+        return {
+          ...rest,
+          ...(cleanedHistory !== undefined ? { occurrenceHistory: cleanedHistory } : {})
+        };
+      });
+
+      localStorage.setItem('cargoradar_loads', JSON.stringify(cleaned));
+    } catch (err) {
+      console.warn('Falha segura ao persistir cargas no local storage (limite excedido):', err);
+    }
   };
 
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const persisted = localStorage.getItem('cargoradar_users');
-      let initialList: User[] = [];
       if (persisted) {
         const parsed = JSON.parse(persisted);
-        if (parsed && Array.isArray(parsed)) {
-          initialList = parsed;
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
         }
       }
-      const merged = mergeUsersList(initialList, []);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(merged));
-      } catch (e) { console.error(e); }
-      return merged;
+      const defaultUsers: User[] = [
+        { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
+        { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
+        { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+        { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
+        { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+      ];
+      localStorage.setItem('cargoradar_users', JSON.stringify(defaultUsers));
+      return defaultUsers;
     } catch {
-      return DEFAULT_USERS;
+      return [];
     }
   });
 
@@ -397,19 +346,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleCheckConnection = () => {
-    if (typeof window !== 'undefined' && navigator.onLine) {
-      setIsOffline(false);
-      const nowStr = new Date().toLocaleString('pt-BR');
-      setLastSyncTime(nowStr);
-      try {
-        localStorage.setItem('cargoradar_last_sync', nowStr);
-      } catch (e) {
-        console.warn('Erro ao salvar timestamp da sincronização:', e);
-      }
-    }
-  };
-
   // Restores active Firebase Auth session automatically on reload/boot if cached in localStorage
   useEffect(() => {
     if (isAuthenticated && loggedInUser && !auth.currentUser) {
@@ -513,52 +449,58 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRetryConnection = async () => {
+    try {
+      const q = query(collection(db, 'loads'), limit(1));
+      await getDocs(q);
+      setIsOffline(false);
+      const nowStr = new Date().toLocaleString('pt-BR');
+      setLastSyncTime(nowStr);
+      try {
+        localStorage.setItem('cargoradar_last_sync', nowStr);
+      } catch (e) {
+        console.warn('Erro ao salvar timestamp da sincronização:', e);
+      }
+      setShortcutFeedback('Conexão com o banco restabelecida com sucesso!');
+    } catch (err) {
+      console.warn('Tentativa de reconexão falhou:', err);
+      setShortcutFeedback('Tentativa de conexão falhou. Modo local permanece ativo.');
+    }
+  };
+
   // Set up real-time onSnapshot listeners
   // 1. Cargo Loads (always subscribed)
   useEffect(() => {
-    let hasSeededEmpty = false;
-    const unsubLoads = onSnapshot(collection(db, 'loads'), (snapshot) => {
-      if (snapshot.empty && !hasSeededEmpty) {
-        hasSeededEmpty = true;
-        console.log('Coleção de cargas no Firestore está vazia. Semeando dados iniciais no banco de dados remoto...');
-        INITIAL_DEFAULT_LOADS.forEach((seedLoad) => {
-          setDoc(doc(db, 'loads', seedLoad.id), sanitizeFirestoreData(seedLoad)).catch(e => {
-            console.error('Erro ao semear carga inicial no Firestore:', e);
-          });
-        });
-        return;
-      }
-
+    const unsubLoads = onSnapshot(collection(db, 'loads'), { includeMetadataChanges: true }, (snapshot) => {
       const liveLoads: CargoLoad[] = [];
       snapshot.forEach((doc) => {
-        const raw = doc.data() as CargoLoad;
-        const rawCargoType = String(raw.cargoType || '').toUpperCase();
-        const tipoOp = raw.tipo_operacao || (
-          rawCargoType.includes('REVERSA') ? 'REVERSA' :
-          rawCargoType.includes('COLETA') ? 'COLETA_TERCEIRO' :
-          rawCargoType.includes('TRANSFERENCIA') ? 'TRANSFERENCIA' : 'TRANSFERENCIA'
-        );
-        liveLoads.push({
-          ...raw,
-          tipo_operacao: tipoOp
-        });
+        liveLoads.push(doc.data() as CargoLoad);
       });
 
       // Update offline / cache connectivity status
       const isFromCache = snapshot.metadata.fromCache;
-      if (typeof window !== 'undefined' && navigator.onLine) {
+      if (!isFromCache && navigator.onLine) {
         setIsOffline(false);
-        if (!isFromCache) {
-          const nowStr = new Date().toLocaleString('pt-BR');
-          setLastSyncTime(nowStr);
-          try {
-            localStorage.setItem('cargoradar_last_sync', nowStr);
-          } catch (e) {
-            console.warn('Erro ao salvar timestamp da sincronização:', e);
-          }
+        const nowStr = new Date().toLocaleString('pt-BR');
+        setLastSyncTime(nowStr);
+        try {
+          localStorage.setItem('cargoradar_last_sync', nowStr);
+        } catch (e) {
+          console.warn('Erro ao salvar timestamp da sincronização:', e);
         }
-      } else if (typeof window !== 'undefined' && !navigator.onLine) {
+      } else if (!navigator.onLine) {
         setIsOffline(true);
+      } else {
+        // Online and loaded from cache; test connection once in background to verify server availability
+        getDocs(query(collection(db, 'loads'), limit(1)))
+          .then(() => {
+            setIsOffline(false);
+            const nowStr = new Date().toLocaleString('pt-BR');
+            setLastSyncTime(nowStr);
+          })
+          .catch(() => {
+            // Keep current offline state if network test fails
+          });
       }
 
       // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
@@ -628,9 +570,7 @@ const App: React.FC = () => {
       saveLoadsToLocalStorage(correctedLoads);
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        setIsOffline(true);
-      }
+      setIsOffline(true);
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -650,30 +590,33 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // 2. Users (subscribed for synchronization)
+  // 2. Users (subscribed when guest for login, or when administrative/audit role is active)
   useEffect(() => {
+    const shouldSubscribe = !isAuthenticated || 
+                            loggedInUser?.systemRole === 'administrator' || 
+                            loggedInUser?.systemRole === 'auditor' || 
+                            loggedInUser?.role === 'audit';
+
+    if (!shouldSubscribe) {
+      setUsers([]);
+      return;
+    }
+
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        setIsOffline(false);
-      }
       const liveUsers: User[] = [];
       snapshot.forEach((docSnap) => {
         liveUsers.push(docSnap.data() as User);
       });
-      setUsers(prev => {
-        const merged = mergeUsersList(liveUsers, prev);
+      if (liveUsers.length > 0) {
+        setUsers(liveUsers);
         try {
-          localStorage.setItem('cargoradar_users', JSON.stringify(merged));
+          localStorage.setItem('cargoradar_users', JSON.stringify(liveUsers));
         } catch (err) {
           console.error('Erro ao persistir usuários no localStorage:', err);
         }
-        return merged;
-      });
+      }
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        setIsOffline(true);
-      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -682,7 +625,7 @@ const App: React.FC = () => {
                                errorMessage.toLowerCase().includes('unavailable') ||
                                errorMessage.toLowerCase().includes('quota') ||
                                errorMessage.toLowerCase().includes('limit');
-                              
+                             
       if (!isOfflineOrQuota) {
         handleFirestoreError(error, OperationType.LIST, 'users');
       }
@@ -691,40 +634,35 @@ const App: React.FC = () => {
     return () => {
       unsubUsers();
     };
-  }, []);
+  }, [isAuthenticated, loggedInUser]);
 
-  const saveLogsToLocalStorage = (logsArray: EventLog[]) => {
-    try {
-      // Keep only recent 100 logs in localStorage to prevent exceeding quota
-      const sliced = logsArray.slice(0, 100);
-      localStorage.setItem('cargoradar_logs', JSON.stringify(sliced));
-    } catch (err) {
-      console.warn('Aviso: Não foi possível salvar logs no localStorage (limite de cota excedido):', err);
-    }
-  };
-
-  // 3. System logs (subscribed for real-time tracking)
+  // 3. System logs (subscribed only if user is logged in as administrator)
   useEffect(() => {
+    const isAdmin = isAuthenticated && loggedInUser?.systemRole === 'administrator';
+
+    if (!isAdmin) {
+      setLogs([]);
+      return;
+    }
+
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        setIsOffline(false);
-      }
       const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const liveLogs: EventLog[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as EventLog;
-        if (data && data.timestamp && new Date(data.timestamp).getTime() >= resetTime) {
+        if (new Date(data.timestamp).getTime() >= resetTime) {
           liveLogs.push(data);
         }
       });
       liveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(liveLogs);
-      saveLogsToLocalStorage(liveLogs);
+      try {
+        localStorage.setItem('cargoradar_logs', JSON.stringify(liveLogs));
+      } catch (err) {
+        console.error('Erro ao persistir logs no localStorage:', err);
+      }
     }, (error) => {
       console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        setIsOffline(true);
-      }
       
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
@@ -742,22 +680,60 @@ const App: React.FC = () => {
     return () => {
       unsubLogs();
     };
-  }, []);
+  }, [isAuthenticated, loggedInUser]);
 
-  // Bootstrap missing default users to Firestore
+  // Bootstrap default users to Firestore if the users collection is empty
   useEffect(() => {
     const bootstrapData = async () => {
       try {
-        for (const u of DEFAULT_USERS) {
-          try {
-            const userRef = doc(db, 'users', u.id);
-            const userSnap = await getDoc(userRef);
-            if (!userSnap.exists()) {
-              console.log(`Bootstrapping missing default user to Firestore: ${u.username} (${u.id})`);
-              await setDoc(userRef, sanitizeFirestoreData(u));
+        const usersCol = collection(db, 'users');
+        const q = query(usersCol, limit(1));
+        console.log('Attempting to read users collection for bootstrapping...');
+        let userSnap;
+        try {
+          userSnap = await getDocs(q);
+          console.log('Successfully read users collection. Empty?', userSnap.empty);
+        } catch (readErr) {
+          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
+          const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
+                                 errMsg.toLowerCase().includes('limit') ||
+                                 errMsg.toLowerCase().includes('exhausted') ||
+                                 errMsg.toLowerCase().includes('resource');
+          
+          if (isQuotaOrLimit) {
+            console.warn('[Firebase Resiliency] Quota or limit exceeded during read check. Working in local storage fallback mode.');
+          } else {
+            console.warn('Could not read users collection during bootstrap check:', readErr);
+          }
+          return; // Skip cloud writes when read check fails
+        }
+
+        if (userSnap && userSnap.empty) {
+          console.log('Bootstrapping default users to Firestore...');
+          const defaultUsers: User[] = [
+            { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
+            { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
+            { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+            { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
+            { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
+          ];
+          for (const u of defaultUsers) {
+            try {
+              console.log(`Attempting to set user: ${u.username} (${u.id})`);
+              await setDoc(doc(db, 'users', u.id), u);
+              console.log(`Successfully bootstrapped user: ${u.username}`);
+            } catch (writeErr) {
+              const errMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+              const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
+                                     errMsg.toLowerCase().includes('limit') ||
+                                     errMsg.toLowerCase().includes('exhausted') ||
+                                     errMsg.toLowerCase().includes('resource');
+              if (isQuotaOrLimit) {
+                console.warn(`[Firebase Resiliency] Quota or limit exceeded writing user doc ${u.id} (${u.username}).`);
+              } else {
+                console.warn(`Could not write user doc ${u.id} (${u.username}):`, writeErr);
+              }
             }
-          } catch (writeErr) {
-            console.warn(`Could not bootstrap user doc ${u.id} (${u.username}):`, writeErr);
           }
         }
       } catch (err) {
@@ -780,7 +756,11 @@ const App: React.FC = () => {
     // Altera o estado local e persiste localmente imediatamente de forma otimista
     setLogs((prev) => {
       const updated = [newLog, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      saveLogsToLocalStorage(updated);
+      try {
+        localStorage.setItem('cargoradar_logs', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Erro ao salvar logs localmente:', e);
+      }
       return updated;
     });
 
@@ -793,43 +773,30 @@ const App: React.FC = () => {
 
   const handleAddLoad = async (newLoadData: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => {
     const username = loggedInUser?.username || 'Sistema';
-    
-    const derivedTipoOperacao = newLoadData.tipo_operacao || (
-      newLoadData.cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
-      newLoadData.cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
-      newLoadData.cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA'
-    );
-
     const newLoad: CargoLoad = {
       ...newLoadData,
-      tipo_operacao: derivedTipoOperacao,
       id: generateId(),
-      status: CargoStatus.AWAITING, // Toda carga criada pela Expedição entra em AGUARDANDO CONFERÊNCIA para seguir o fluxo de Portaria -> Central
+      status: CargoStatus.AWAITING,
       createdAt: new Date().toISOString(),
       createdBy: username,
-      gateVerified: false,
-      gateStatus: 'Aguardando',
-      gateCheckedIn: false,
-      needsCentralCheckout: true,
-      tripFinished: false
     };
 
-    // Atualização otimista no estado local
-    setLoads((prev) => [newLoad, ...prev.filter(l => l.id !== newLoad.id)]);
+    // Otimista: Salva localmente primeiro
+    setLoads((prev) => {
+      const updated = [newLoad, ...prev];
+      saveLoadsToLocalStorage(updated);
+      return updated;
+    });
 
-    // Sincronização com Firestore:
     try {
       await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(newLoad));
-      addLog('Criação de Carga', `Carga ${newLoad.plate} criada com sucesso no Firebase por ${username}`, username, newLoad.id);
-    } catch (err: any) {
-      console.error('Erro de gravação no Firebase ao criar carga:', err);
-      // Remove da memória se o servidor rejeitou a gravação
-      setLoads((prev) => prev.filter(l => l.id !== newLoad.id));
-      addLog('Criação de Carga (Erro Firebase)', `Falha ao sincronizar carga ${newLoad.plate} no Firebase: ${err?.message || err}`, username, newLoad.id);
-      alert(`⚠️ ERRO DE GRAVAÇÃO NO SERVIDOR (FIREBASE):\n\nA carga da placa "${newLoad.plate}" NÃO PÔDE SER SALVA NO SERVIDOR REMOTO!\n\nMotivo da Rejeição: ${err?.message || String(err)}\n\nPor favor, tente novamente.`);
+      addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
+    } catch (err) {
+      console.warn('Conexão instável. Carga mantida localmente e log registrado localmente.', err);
+      addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
     }
     
-    // Switch tab according to user preference or role
+    // Admins or specific roles might want to stay or move
     if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
        handleTabChange('central');
     }
@@ -950,10 +917,9 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
-    } catch (err: any) {
-      console.error('Conexão instável ou erro no Firebase ao atualizar status:', err);
-      addLog('Atualização de Status (Erro Firebase)', `Carga ${load.plate} alterada para ${newStatus} com falha no Firebase: ${err?.message || err}`, username, id);
-      alert(`⚠️ ERRO AO ATUALIZAR STATUS NO SERVIDOR (FIREBASE):\n\nA alteração para "${newStatus}" na carga "${load.plate}" falhou ao ser salva remotamente.\n\nDetalhes: ${err?.message || String(err)}`);
+    } catch (err) {
+      console.warn('Conexão instável. Modificação do status mantida localmente.', err);
+      addLog('Atualização de Status (Local)', `Carga ${load.plate} alterada para ${newStatus} offline por ${username}`, username, id);
     }
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
@@ -998,10 +964,9 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
-    } catch (err: any) {
-      console.error('Erro ao salvar ocorrência no Firebase:', err);
-      addLog('Auditoria de Carga (Erro Firebase)', `Auditoria na carga ${load.plate} falhou no Firebase: ${err?.message || err}`, username, id);
-      alert(`⚠️ ERRO AO SALVAR OCORRÊNCIA NO SERVIDOR (FIREBASE):\n\nA ocorrência na carga "${load.plate}" falhou ao ser gravada no Firebase.\n\nDetalhes: ${err?.message || String(err)}`);
+    } catch (err) {
+      console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
+      addLog('Auditoria de Carga (Local)', `Auditoria offline na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
     }
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
@@ -1022,10 +987,9 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(updatedLoad), { merge: true });
       addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
-    } catch (err: any) {
-      console.error('Conexão/Gravação instável no Firebase ao atualizar carga:', err);
-      addLog('Atualização de Carga (Erro Firebase)', `Carga ${updatedLoad.plate} falhou ao atualizar no Firebase: ${err?.message || err}`, username, updatedLoad.id);
-      alert(`⚠️ ERRO AO ATUALIZAR NO SERVIDOR (FIREBASE):\n\nA alteração da carga "${updatedLoad.plate}" não foi sincronizada no servidor remoto.\n\nDetalhes: ${err?.message || String(err)}`);
+    } catch (err) {
+      console.warn('Conexão instável. Carga atualizada localmente.', err);
+      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} updated offline por ${username}`, username, updatedLoad.id);
     }
   };
 
@@ -1052,40 +1016,25 @@ const App: React.FC = () => {
 
   const handleRegisterUser = async (user: Omit<User, 'id' | 'status' | 'createdAt'>) => {
     try {
-      const normalizedName = normalizeUsername(user.username);
-      const email = `${normalizedName.toLowerCase()}@cargarelease.com`;
+      const email = `${user.username.toLowerCase()}@cargarelease.com`;
       let uid = generateId();
       
       try {
         const credential = await createUserWithEmailAndPassword(auth, email, user.password);
         uid = credential.user.uid;
         console.log("Successfully registered user in Firebase Auth with UID:", uid);
-        await signOut(auth);
       } catch (authErr) {
         console.warn("Could not create Firebase Auth credential, using a standard ID:", authErr);
       }
 
       const newUser: User = {
         ...user,
-        username: user.username.trim(),
         id: uid,
         status: 'pending',
         systemRole: 'viewer',
         createdAt: new Date().toISOString(),
       };
 
-      // Instantly update local React state & localStorage so the pending user is guaranteed to show up for validation/Auditoria
-      setUsers(prev => {
-        const merged = mergeUsersList([newUser], prev);
-        try {
-          localStorage.setItem('cargoradar_users', JSON.stringify(merged));
-        } catch (e) {
-          console.error('Error persisting users to localStorage:', e);
-        }
-        return merged;
-      });
-
-      // Persist to Firestore
       await setDoc(doc(db, 'users', newUser.id), sanitizeFirestoreData(newUser));
       addLog('Solicitação de Cadastro', `Novo usuário ${newUser.username} (${newUser.fullName || 'S/N'}) - Loja: ${newUser.storeLocation || 'S/N'} aguardando aprovação`, 'Sistema');
     } catch (err) {
@@ -1097,38 +1046,23 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-
-    let systemRole: SystemRole = user.systemRole || 'viewer';
-    if (approve) {
-      if (user.role === 'expedition' || user.role === 'portaria') {
-        systemRole = 'dispatcher';
-      } else if (user.role === 'audit') {
-        systemRole = 'auditor';
-      } else if (user.role === 'central' || user.role === 'analysis') {
-        systemRole = 'administrator';
-      } else if (user.role === 'store_app') {
-        systemRole = 'store_app';
-      }
-    }
-
-    const newStatus = approve ? 'active' : 'rejected';
-
-    const updatedUser: User = {
-      ...user,
-      status: newStatus,
-      systemRole: systemRole
-    };
-
-    setUsers(prev => {
-      const updated = prev.map(u => u.id === userId ? updatedUser : u);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
-      } catch (e) { console.error(e); }
-      return updated;
-    });
-
     try {
-      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData(updatedUser), { merge: true });
+      let systemRole: SystemRole = user.systemRole || 'viewer';
+      if (approve) {
+        if (user.role === 'expedition' || user.role === 'portaria') {
+          systemRole = 'dispatcher';
+        } else if (user.role === 'audit') {
+          systemRole = 'auditor';
+        } else if (user.role === 'central' || user.role === 'analysis') {
+          systemRole = 'administrator';
+        } else if (user.role === 'store_app') {
+          systemRole = 'store_app';
+        }
+      }
+      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ 
+        status: approve ? 'active' : 'rejected',
+        systemRole: systemRole
+      }), { merge: true });
       addLog('Gestão de Usuários', `Usuário ${user.username} ${approve ? 'aprovado' : 'rejeitado'} com perfil de sistema: ${systemRole} por ${username}`, username);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'users/' + userId);
@@ -1139,15 +1073,6 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-
-    setUsers(prev => {
-      const updated = prev.filter(u => u.id !== userId);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
-      } catch (e) { console.error(e); }
-      return updated;
-    });
-
     try {
       await deleteDoc(doc(db, 'users', userId));
       addLog('Gestão de Usuários', `Usuário ${user.username} excluído por ${username}`, username);
@@ -1160,15 +1085,6 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-
-    setUsers(prev => {
-      const updated = prev.map(u => u.id === userId ? { ...u, password: newPassword } : u);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
-      } catch (e) { console.error(e); }
-      return updated;
-    });
-
     try {
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ password: newPassword }), { merge: true });
       addLog('Gestão de Usuários', `Senha do usuário ${user.username} alterada por ${username}`, username);
@@ -1181,15 +1097,6 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-
-    setUsers(prev => {
-      const updated = prev.map(u => u.id === userId ? { ...u, systemRole } : u);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(updated));
-      } catch (e) { console.error(e); }
-      return updated;
-    });
-
     try {
       await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ systemRole }), { merge: true });
       addLog('Gestão de Usuários', `Perfil de sistema do usuário ${user.username} alterado para ${systemRole} por ${username}`, username);
@@ -1199,8 +1106,7 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = async (user: User) => {
-    const normalizedName = normalizeUsername(user.username);
-    const email = `${normalizedName.toLowerCase()}@cargarelease.com`;
+    const email = `${user.username.toLowerCase()}@cargarelease.com`;
     const authPassword = user.password;
     let finalUser = { ...user };
 
@@ -1220,7 +1126,7 @@ const App: React.FC = () => {
             console.warn("Failed to automatically register user in Firebase Auth:", createErr);
           }
         } else {
-          console.warn("Firebase Auth fallback active:", signInErr);
+          console.warn("Firebase Auth fallback active. Email/Password sign-in method may be disabled in the Firebase Console, but database verification worked successfully:", signInErr);
         }
       }
 
@@ -1234,25 +1140,19 @@ const App: React.FC = () => {
         await deleteDoc(doc(db, 'users', user.id));
         console.log(`Migration completed for user ${user.username}`);
       } else if (authUser) {
+        // Garantir que o documento do usuário existe no Firestore com os dados corretos
         await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser), { merge: true });
       }
     } catch (authErr) {
       console.error("Critical Auth migration step skipped:", authErr);
     }
 
-    setUsers(prev => {
-      const merged = mergeUsersList([finalUser], prev);
-      try {
-        localStorage.setItem('cargoradar_users', JSON.stringify(merged));
-      } catch (e) { console.error(e); }
-      return merged;
-    });
-
     setIsAuthenticated(true);
     setLoggedInUser(finalUser);
-    const initialTab = (finalUser.role === 'store_app' ? 'logistica_reversa' : finalUser.role) as TabType;
+    const initialTab = (finalUser.role === 'store_app' ? 'reverse_transfer' : finalUser.role) as TabType;
     setActiveTab(initialTab);
 
+    // Salva sessão localmente no localStorage
     try {
       localStorage.setItem('cargoradar_auth', 'true');
       localStorage.setItem('cargoradar_user', JSON.stringify(finalUser));
@@ -1366,36 +1266,6 @@ const App: React.FC = () => {
             loads={loads}
           />
         );
-      case 'logistica_reversa':
-        return (
-          <LogisticaReversaView 
-            onSubmit={handleAddLoad} 
-            onUpdateLoad={handleUpdateLoad}
-            onDeleteLoad={handleDeleteLoad}
-            loads={loads}
-            currentUser={loggedInUser}
-          />
-        );
-      case 'transferencias':
-        return (
-          <TransferenciasView 
-            onSubmit={handleAddLoad} 
-            onUpdateLoad={handleUpdateLoad}
-            onDeleteLoad={handleDeleteLoad}
-            loads={loads}
-            currentUser={loggedInUser}
-          />
-        );
-      case 'coletas':
-        return (
-          <ColetasView 
-            onSubmit={handleAddLoad} 
-            onUpdateLoad={handleUpdateLoad}
-            onDeleteLoad={handleDeleteLoad}
-            loads={loads}
-            currentUser={loggedInUser}
-          />
-        );
       case 'reverse_transfer':
         return (
           <ReverseTransferView 
@@ -1411,7 +1281,6 @@ const App: React.FC = () => {
           <SettingsView 
             currentUser={loggedInUser}
             loads={loads}
-            onForceFullResync={handleCheckConnection}
           />
         );
       case 'guide':
@@ -1431,7 +1300,6 @@ const App: React.FC = () => {
       loads={loads}
       isOffline={isOffline}
       lastSyncTime={lastSyncTime}
-      onReconnect={handleCheckConnection}
     >
       {/* Persistent Offline Banner Toast */}
       {isOffline && isAuthenticated && (
@@ -1459,23 +1327,29 @@ const App: React.FC = () => {
               </div>
             </div>
             
-            <div className="flex items-center gap-3 w-full md:w-auto border-t md:border-t-0 border-amber-500/20 pt-3 md:pt-0 shrink-0 justify-between md:justify-end">
-              <div className="flex flex-col items-start md:items-end">
-                <span className="text-[8.5px] font-black uppercase tracking-widest text-amber-500/80 dark:text-amber-505">
-                  Última sincronização bem-sucedida
-                </span>
-                <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-300 mt-0.5">
-                  {lastSyncTime ? lastSyncTime : 'Nenhuma recente nesta sessão'}
-                </span>
-              </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto border-t md:border-t-0 border-amber-500/20 pt-3 md:pt-0 shrink-0 justify-between md:justify-end">
               <button
-                onClick={handleCheckConnection}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9.5px] uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0 border border-amber-400 active:scale-95"
-                title="Verificar conexão e reconectar ao servidor"
+                onClick={handleRetryConnection}
+                className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 border border-amber-500/40 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow"
+                title="Sincronizar com o banco de dados agora"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Reconectar Agora</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Tentar Reconectar</span>
               </button>
+
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col items-start md:items-end">
+                  <span className="text-[8.5px] font-black uppercase tracking-widest text-amber-500/80 dark:text-amber-505">
+                    Última sincronização bem-sucedida
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-300 mt-0.5">
+                    {lastSyncTime ? lastSyncTime : 'Nenhuma recente nesta sessão'}
+                  </span>
+                </div>
+                <div className="w-3.5 h-3.5 rounded-full bg-amber-500/40 dark:bg-amber-500/20 flex items-center justify-center border border-amber-500/35 flex-shrink-0">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 animate-ping" />
+                </div>
+              </div>
             </div>
           </div>
         </div>

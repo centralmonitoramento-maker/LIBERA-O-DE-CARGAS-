@@ -17,7 +17,7 @@ import {
   ClipboardCheck, 
   Info 
 } from 'lucide-react';
-import { CargoLoad, CargoStatus, User, EventLog, getPhotosArray, CargoType } from '../types';
+import { CargoLoad, CargoStatus, User, EventLog, getPhotosArray } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { ImageEnhanceZoom } from '../components/ImageEnhanceZoom';
 
@@ -75,27 +75,23 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
   const refSealInput = useRef<HTMLInputElement>(null);
   const refManifestInput = useRef<HTMLInputElement>(null);
 
-  const filteredForPortaria = useMemo(() => {
-    return loads;
-  }, [loads]);
-
   // Computed active load
   const selectedLoad = useMemo(() => {
-    return filteredForPortaria.find(l => l.id === selectedLoadId) || null;
-  }, [filteredForPortaria, selectedLoadId]);
+    return loads.find(l => l.id === selectedLoadId) || null;
+  }, [loads, selectedLoadId]);
 
   // Compute Overall Stats for the Portaria Dashboard
   const stats = useMemo(() => {
-    const total = filteredForPortaria.length;
-    const pending = filteredForPortaria.filter(l => !l.gateVerified).length;
-    const approved = filteredForPortaria.filter(l => l.gateStatus === 'Aprovado').length;
-    const divergent = filteredForPortaria.filter(l => l.gateStatus === 'Divergente').length;
+    const total = loads.length;
+    const pending = loads.filter(l => !l.gateVerified).length;
+    const approved = loads.filter(l => l.gateStatus === 'Aprovado').length;
+    const divergent = loads.filter(l => l.gateStatus === 'Divergente').length;
     return { total, pending, approved, divergent };
-  }, [filteredForPortaria]);
+  }, [loads]);
 
   // Filter loads by search and DATE, giving priority to the most recent elements (descending sort order)
   const filteredLoads = useMemo(() => {
-    let result = [...filteredForPortaria];
+    let result = [...loads];
 
     const toLocalYMD = (dateString: string) => {
       if (!dateString) return '';
@@ -117,23 +113,15 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
 
     if (dateFilter === 'TODAY') {
       result = result.filter(load => 
-        !load.gateVerified ||
-        load.status === CargoStatus.AWAITING ||
         toLocalYMD(load.createdAt) === localTodayStr || 
         (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === localTodayStr)
       );
     } else if (dateFilter === 'LAST_7_DAYS') {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      result = result.filter(load => 
-        !load.gateVerified ||
-        load.status === CargoStatus.AWAITING ||
-        new Date(load.createdAt) >= sevenDaysAgo
-      );
+      result = result.filter(load => new Date(load.createdAt) >= sevenDaysAgo);
     } else if (dateFilter === 'CUSTOM' && customDate) {
       result = result.filter(load => 
-        !load.gateVerified ||
-        load.status === CargoStatus.AWAITING ||
         toLocalYMD(load.createdAt) === customDate || 
         (load.gateVerifiedAt && toLocalYMD(load.gateVerifiedAt) === customDate)
       );

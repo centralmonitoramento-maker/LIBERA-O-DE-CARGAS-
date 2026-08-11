@@ -5,8 +5,8 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+  experimentalAutoDetectLongPolling: true,
+}, (firebaseConfig as any).firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
 
 export enum OperationType {
@@ -92,11 +92,10 @@ export function sanitizeFirestoreData<T extends Record<string, any>>(data: T): T
 
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Read a permitted path to check connectivity without permission errors
+    await getDocFromServer(doc(db, 'settings', 'connectivity'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Conexão inicial com o Firestore offline ou em andamento. Isso é normal no ambiente de preview.");
-    }
+    // Ignore transient or permission check errors gracefully
   }
 }
 

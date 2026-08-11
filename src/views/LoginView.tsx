@@ -2,9 +2,6 @@
 import React, { useState } from 'react';
 import { Truck } from 'lucide-react';
 import { User } from '../types';
-import { db } from '../firebase';
-import { collection, query, getDocs } from 'firebase/firestore';
-import logoImg from '../assets/images/logo.png';
 
 interface LoginViewProps {
   users: User[];
@@ -31,14 +28,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
   const [jobFunction, setJobFunction] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const normalize = (str?: string) => {
-    if (!str) return '';
+  const normalize = (str: string) => {
     return str.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -49,48 +44,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         return;
       }
 
-      setIsSubmitting(true);
-      try {
-        const normalizedInputUsername = normalize(username);
-        const trimmedInputPassword = password.trim();
-        
-        let user = users.find(u => normalize(u.username) === normalizedInputUsername);
-        
-        // Fallback: Query Firestore directly in real time if local users array does not have the account yet
-        if (!user) {
-          try {
-            const q = query(collection(db, 'users'));
-            const querySnapshot = await getDocs(q);
-            querySnapshot.forEach((docSnap) => {
-              const u = docSnap.data() as User;
-              if (normalize(u.username) === normalizedInputUsername) {
-                user = u;
-              }
-            });
-          } catch (fsErr) {
-            console.warn("Aviso ao buscar usuário diretamente no Firestore:", fsErr);
-          }
+      const normalizedInputUsername = normalize(username);
+      
+      const user = users.find(u => normalize(u.username) === normalizedInputUsername);
+      
+      if (user) {
+        if (user.password !== password) {
+          setError('Senha incorreta.');
+          return;
         }
 
-        if (user) {
-          if ((user.password || '').trim() !== trimmedInputPassword) {
-            setError('Senha incorreta.');
-            setIsSubmitting(false);
-            return;
-          }
-
-          if (user.status === 'active') {
-            onLoginSuccess(user);
-          } else if (user.status === 'pending') {
-            setError('Seu cadastro ainda está aguardando aprovação da Auditoria.');
-          } else {
-            setError('Seu cadastro foi rejeitado pela Auditoria.');
-          }
+        if (user.status === 'active') {
+          onLoginSuccess(user);
+        } else if (user.status === 'pending') {
+          setError('Seu cadastro ainda está aguardando aprovação da Auditoria.');
         } else {
-          setError(`Usuário "${username.trim()}" não encontrado.`);
+          setError('Seu cadastro foi rejeitado pela Auditoria.');
         }
-      } finally {
-        setIsSubmitting(false);
+      } else {
+        setError(`Usuário "${username}" não encontrado.`);
       }
     } else {
       // Register request
@@ -100,22 +72,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
       }
 
       const normalizedInputUsername = normalize(username);
-      let exists = users.find(u => normalize(u.username) === normalizedInputUsername);
-
-      if (!exists) {
-        try {
-          const q = query(collection(db, 'users'));
-          const querySnapshot = await getDocs(q);
-          querySnapshot.forEach((docSnap) => {
-            const u = docSnap.data() as User;
-            if (normalize(u.username) === normalizedInputUsername) {
-              exists = u;
-            }
-          });
-        } catch (fsErr) {
-          console.warn("Aviso ao checar duplicidade no Firestore:", fsErr);
-        }
-      }
+      const exists = users.find(u => normalize(u.username) === normalizedInputUsername);
       
       if (exists) {
         setError('Este nome de usuário já está em uso.');
@@ -123,14 +80,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
       }
 
       onRegisterRequest({
-        username: username.trim(),
-        password: password.trim(),
-        fullName: fullName.trim(),
-        storeLocation: storeLocation.trim(),
-        jobFunction: jobFunction.trim(),
+        username,
+        password,
+        fullName,
+        storeLocation,
+        jobFunction,
         role: registerRole,
       });
-      setSuccess('Solicitação enviada com sucesso! Aguarde a aprovação da Auditoria.');
+      setSuccess('Solicitação enviada! Aguarde a aprovação da Auditoria.');
       setMode('login');
       setPassword('');
       setFullName('');
@@ -143,7 +100,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
     <div className="max-w-md mx-auto mt-20 bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-500 relative">
       {/* Subtle background watermark */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.02] flex items-center justify-center z-0">
-        <img src={logoImg} alt="" className="w-full transform scale-125 rotate-12" />
+        <img src="/logo.png" alt="" className="w-full transform scale-125 rotate-12" />
       </div>
 
       <div className="bg-primary-navy p-10 text-center relative z-10">
@@ -152,10 +109,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
         </div>
         <div className="relative w-28 h-28 bg-white keep-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl border-4 border-primary-gold overflow-hidden group hover:scale-105 transition-transform duration-500">
           <img 
-            src={logoImg} 
-            alt="Sistema CargaRadar - Prevenção de Perdas" 
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover rounded-2xl" 
+            src="/logo.png" 
+            alt="Prev de Perdas" 
+            className="w-full h-full object-cover" 
+            style={{ width: '201px' }}
             onError={(e) => {
               e.currentTarget.style.display = 'none';
               e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');

@@ -9,8 +9,6 @@ import {
   Package, 
   MapPin, 
   ShieldCheck, 
-  ShieldAlert,
-  CheckCircle2,
   AlertCircle, 
   XCircle, 
   Compass, 
@@ -826,9 +824,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         driverName,
         driverPhone: driverPhone || undefined,
         cargoType,
-        tipo_operacao: cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
-          cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
-          cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : originalLoad.tipo_operacao,
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
@@ -856,9 +851,6 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
         driverName,
         driverPhone: driverPhone || undefined,
         cargoType,
-        tipo_operacao: cargoType === CargoType.REVERSA_CD ? 'REVERSA' :
-          cargoType === CargoType.TRANSFERENCIA ? 'TRANSFERENCIA' :
-          cargoType === CargoType.COLETA ? 'COLETA_TERCEIRO' : 'TRANSFERENCIA',
         origin,
         destination,
         additionalDestinations: cargoType === CargoType.COMPARTILHADA ? additionalDestinations : undefined,
@@ -1849,44 +1841,8 @@ export const ExpeditionView: React.FC<ExpeditionViewProps> = ({ onSubmit, onUpda
                               <span className="text-xs font-mono font-black tracking-widest text-primary-navy uppercase bg-slate-100 px-2 py-0.5 rounded border border-slate-200 group-hover:bg-primary-gold/10 group-hover:border-primary-gold/30 transition-colors">
                                 {load.plate}
                               </span>
-
-                              {/* Status Auditoria Badge */}
-                              {load.auditedAt ? (
-                                <span className="text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1">
-                                  <CheckCircle2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                                  <span>AUDITADA</span>
-                                </span>
-                              ) : (
-                                <span className="text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300 flex items-center gap-1 animate-pulse">
-                                  <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                  <span>PENDÊNCIA AUDITORIA</span>
-                                </span>
-                              )}
-
-                              {/* Status Central Release Badge */}
-                              <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border flex items-center gap-1 ${
-                                load.status === CargoStatus.RELEASED 
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
-                                  : load.status === CargoStatus.BLOCKED 
-                                    ? 'bg-rose-50 text-rose-800 border-rose-300' 
-                                    : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}>
-                                {load.status === CargoStatus.RELEASED ? (
-                                  <>
-                                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                                    <span>LIBERADA PELA CENTRAL</span>
-                                  </>
-                                ) : load.status === CargoStatus.BLOCKED ? (
-                                  <>
-                                    <ShieldAlert className="w-2.5 h-2.5 text-rose-600 shrink-0" />
-                                    <span>BLOQUEADA</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                    <span>PORTARIA</span>
-                                  </>
-                                )}
+                              <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${statusBg}`}>
+                                {load.status.split(' ')[1] || load.status}
                               </span>
                               {(() => {
                                 const isReversa = load.cargoType.startsWith('Reversa CD') || load.cargoType === CargoType.REVERSA_CD;

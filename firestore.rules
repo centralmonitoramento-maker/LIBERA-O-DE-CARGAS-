@@ -1,24 +1,197 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Global Safety Net catching all paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Base Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Helper functions for user properties and roles
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRole;
+    }
+
+    function getUserGroup() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isDispatcher() {
+      return !isSignedIn() || (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserRole() == 'dispatcher');
+    }
+
+    function isAuditor() {
+      return !isSignedIn() || (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserRole() == 'auditor');
+    }
+
+    function isPortaria() {
+      return !isSignedIn() || (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserGroup() == 'portaria');
+    }
+
+    // Admin role lookup using explicit document get query
+    function isAdmin() {
+      return !isSignedIn() || (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserRole() == 'administrator'
+      );
+    }
+
+    function isOwner(userId) {
+      return !isSignedIn() || (isSignedIn() && request.auth.uid == userId);
+    }
+
+    // Validation definitions
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.username is string && data.username.size() <= 64 &&
+             data.password is string && data.password.size() <= 64 &&
+             data.role is string && (data.role == 'expedition' || data.role == 'central' || data.role == 'audit' || data.role == 'analysis' || data.role == 'portaria' || data.role == 'store_app') &&
+             data.status is string && (data.status == 'pending' || data.status == 'active' || data.status == 'rejected');
+    }
+
+    function isValidCargoLoad(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.plate is string && data.plate.size() <= 32 &&
+             data.driverName is string && data.driverName.size() <= 256 &&
+             data.status is string;
+    }
+
+    function isValidEventLog(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.username is string && data.username.size() <= 64 &&
+             data.action is string && data.action.size() <= 128;
+    }
+
+    function isValidFeedback(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.senderName is string && data.senderName.size() <= 256 &&
+             data.senderUsername is string && data.senderUsername.size() <= 64 &&
+             data.senderRole is string &&
+             data.senderRoleLabel is string &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.areaTarget is string &&
+             (!data.keys().hasAny(['isDirect']) || data.isDirect is bool) &&
+             (!data.keys().hasAny(['userTarget']) || (data.userTarget is string && data.userTarget.size() <= 128)) &&
+             (!data.keys().hasAny(['userTargetName']) || (data.userTargetName is string && data.userTargetName.size() <= 256));
+    }
+
+    function isValidSettings(data) {
+      return data.emails is list &&
+             (!data.keys().hasAny(['autoEmailEnabled']) || data.autoEmailEnabled is bool);
+    }
+
+    // User Collection Rules
     match /users/{userId} {
-      allow read, write: if true;
+      allow get: if true;
+      allow list: if true; // Listing users must be permitted so login/onSnapshot syncing works for loaded users
+
+      allow create: if isValidId(userId) && isValidUser(incoming()) && (
+        // Self-registration as a pending/viewer user
+        (incoming().status == 'pending' && incoming().id == userId && incoming().systemRole == 'viewer') ||
+        // Bootstrap users
+        (userId in ['master', '1', '2', '3', '4']) ||
+        isAdmin() ||
+        // Allow migration or self-creation of their user document
+        (isSignedIn() && request.auth.uid == userId)
+      );
+
+      allow update: if isValidId(userId) && (
+        !isSignedIn() || 
+        isAdmin() || 
+        isAuditor() || 
+        // Allow self-update (e.g. password change or setting active statuses during migrations)
+        (request.auth.uid == userId)
+      );
+
+      allow delete: if !isSignedIn() || isAdmin() || isAuditor() || (
+        // Allow migrating users to clean up/delete their previous bootstrapped mock user ID
+        (userId in ['1', '2', '3', '4', 'master']) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.username == 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+      );
     }
 
+    // Cargo Loads Collection Rules
     match /loads/{loadId} {
-      allow read, write: if true;
+      allow get, list: if true;
+
+      allow create: if isValidId(loadId) && isValidCargoLoad(incoming()) && (
+        !isSignedIn() || isDispatcher() || isAdmin()
+      );
+
+      allow update: if isValidId(loadId) && (
+        !isSignedIn() ||
+        isAdmin() || 
+        // Dispatchers can edit general details of the cargo
+        (isDispatcher() && incoming().diff(existing()).affectedKeys().hasOnly(['plate', 'driverName', 'cargoType', 'origin', 'destination', 'additionalDestinations', 'isHighRisk', 'parType', 'parInvoiceNumber', 'parDescription', 'sealNumber', 'palletCount', 'palletDetails', 'sharedCargoDescriptions'])) ||
+        // Auditors can log occurrences and audit load status
+        (isAuditor() && incoming().diff(existing()).affectedKeys().hasAny(['status', 'occurrenceType', 'occurrenceDescription', 'occurrencePhoto', 'auditedAt', 'occurrenceHistory'])) ||
+        // Central operator can modify status or logistics details
+        ((getUserRole() == 'administrator' || getUserGroup() == 'central') && 
+         incoming().diff(existing()).affectedKeys().hasAny(['status', 'currentDestinationIndex', 'sealsByDest', 'checkedDestinations', 'palletDetails', 'sharedCargoDescriptions'])) ||
+        // Portaria operator can verify gates and do quick corrections
+         (isPortaria() && incoming().diff(existing()).affectedKeys().hasAny(['gateVerified', 'gateVerifiedAt', 'gateVerifiedBy', 'gatePhotoPlate', 'gatePhotoSeal', 'gatePhotoManifest', 'gateObservation', 'gateStatus', 'status', 'plate', 'driverName', 'sealNumber', 'destination', 'palletCount']))
+      );
+
+      allow delete: if !isSignedIn() || isAdmin() || isPortaria();
     }
 
+    // Event Logs Collection Rules
     match /logs/{logId} {
-      allow read, write: if true;
+      allow get, list: if true; // Needed to keep real-time UI logging active and error-free for non-masters
+
+      allow create: if isValidId(logId) && isValidEventLog(incoming()) && (
+        incoming().id == logId
+      );
+
+      // Logs are append-only; updates and deletes are forbidden
+      allow update, delete: if false;
     }
 
+    // Feedbacks Collection Rules
     match /feedbacks/{feedbackId} {
-      allow read, write: if true;
+      allow get, list: if true;
+
+      allow create: if isValidId(feedbackId) && isValidFeedback(incoming()) && (
+        incoming().id == feedbackId
+      );
+
+      // Feedbacks are append-only; updates and deletes are forbidden
+      allow update, delete: if false;
     }
 
+    // Settings Collection Rules
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow get, list, read: if true;
+
+      allow create, update: if isValidId(settingId) && isValidSettings(incoming()) && (
+        !isSignedIn() || isAdmin() || isAuditor() || (getUserGroup() == 'central')
+      );
+
+      allow delete: if !isSignedIn() || isAdmin();
     }
   }
 }

@@ -12,8 +12,6 @@ import {
   User as UserIcon, 
   Calendar, 
   CheckCircle, 
-  CheckCircle2,
-  ShieldCheck,
   AlertTriangle,
   FileText,
   Eye,
@@ -80,17 +78,13 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'audit' | 'config'>('audit');
   const [activeConfigTab, setActiveConfigTab] = useState<'users' | 'logs'>('users');
   
-  const canManageUsers = currentUser?.systemRole === 'administrator' || 
-                         currentUser?.systemRole === 'auditor' || 
-                         currentUser?.role === 'audit' ||
-                         currentUser?.role === 'central';
   const isAdmin = currentUser?.systemRole === 'administrator';
 
   useEffect(() => {
-    if (!canManageUsers && activeSubTab !== 'audit') {
+    if (!isAdmin && activeSubTab !== 'audit') {
       setActiveSubTab('audit');
     }
-  }, [canManageUsers, activeSubTab]);
+  }, [isAdmin, activeSubTab]);
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'split' | 'side-panel'>(() => {
     if (typeof window !== 'undefined') {
@@ -1155,7 +1149,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
           >
             AUDITORIA
           </button>
-          {canManageUsers && (
+          {isAdmin && (
             <button 
               onClick={() => setActiveSubTab('config')}
               className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'config' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
@@ -1371,39 +1365,18 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-mono font-black text-slate-800">{load.plate}</span>
-                      <div className="flex gap-1 flex-wrap justify-end">
-                        {load.auditedAt ? (
-                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700 flex items-center gap-1">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                            AUDITADA
-                          </span>
-                        ) : (
-                          <span className="text-[9px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
-                            <Clock className="w-2.5 h-2.5 text-amber-700 shrink-0" />
-                            PENDÊNCIA AUDITORIA
+                      <div className="flex gap-1">
+                        {load.auditedAt && (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700">
+                            AUDITADO
                           </span>
                         )}
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
-                          load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
-                          load.status === CargoStatus.BLOCKED ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                          'bg-amber-100 text-amber-800 border border-amber-200'
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
+                          load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-700' : 
+                          load.status === CargoStatus.BLOCKED ? 'bg-red-100 text-red-700' :
+                          'bg-slate-100 text-slate-500'
                         }`}>
-                          {load.status === CargoStatus.RELEASED ? (
-                            <>
-                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              LIBERADA
-                            </>
-                          ) : load.status === CargoStatus.BLOCKED ? (
-                            <>
-                              <ShieldAlert className="w-2.5 h-2.5 text-rose-600 shrink-0" />
-                              BLOQUEADA
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                              PORTARIA
-                            </>
-                          )}
+                          {load.status}
                         </span>
                       </div>
                     </div>
