@@ -23,6 +23,7 @@ import {
   getDocs, 
   query, 
   limit, 
+  orderBy,
   onSnapshot 
 } from 'firebase/firestore';
 import { db, auth, OperationType, handleFirestoreError, sanitizeFirestoreData } from './firebase';
@@ -470,9 +471,10 @@ const App: React.FC = () => {
   };
 
   // Set up real-time onSnapshot listeners
-  // 1. Cargo Loads (always subscribed)
+  // 1. Cargo Loads (always subscribed with optimized memory limit)
   useEffect(() => {
-    const unsubLoads = onSnapshot(collection(db, 'loads'), { includeMetadataChanges: true }, (snapshot) => {
+    const loadsQuery = query(collection(db, 'loads'), orderBy('createdAt', 'desc'), limit(250));
+    const unsubLoads = onSnapshot(loadsQuery, { includeMetadataChanges: true }, (snapshot) => {
       const liveLoads: CargoLoad[] = [];
       snapshot.forEach((docSnap) => {
         liveLoads.push(docSnap.data() as CargoLoad);
@@ -563,7 +565,7 @@ const App: React.FC = () => {
 
         const unpushedLoads: CargoLoad[] = [];
         currentLoads.forEach(localLoad => {
-          if (!liveMap.has(localLoad.id)) {
+          if (!liveMap.has(localLoad.id) && !localLoad.id.startsWith('initial-')) {
             unpushedLoads.push(localLoad);
           }
         });
@@ -667,7 +669,8 @@ const App: React.FC = () => {
       return;
     }
 
-    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+    const logsQuery = query(collection(db, 'logs'), limit(150));
+    const unsubLogs = onSnapshot(logsQuery, (snapshot) => {
       const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
       const liveLogs: EventLog[] = [];
       snapshot.forEach((docSnap) => {
