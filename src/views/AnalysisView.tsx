@@ -243,7 +243,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ loads }) => {
       cargoTypeStats[load.cargoType].totalLoads++;
 
       // Pallet stats
-      totalPallets += load.palletCount;
+      totalPallets += (load.palletCount || 0);
       if (load.palletDetails) {
         load.palletDetails.forEach(p => {
           palletStats[p.type] = (palletStats[p.type] || 0) + p.quantity;

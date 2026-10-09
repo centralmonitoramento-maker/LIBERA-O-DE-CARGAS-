@@ -109,57 +109,11 @@ const App: React.FC = () => {
       if (persisted) {
         const parsed = JSON.parse(persisted);
         if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          const filtered = parsed.filter((l: any) => l && l.id && !l.id.startsWith('initial-'));
+          return filtered;
         }
       }
-      const defaultLoads: CargoLoad[] = [
-        {
-          id: 'initial-1',
-          plate: 'BWU-8171',
-          driverName: 'Raimundo Silveira',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Águas Claras (df-1)',
-          cargoType: CargoType.SECA,
-          isHighRisk: false,
-          palletCount: 24,
-          sealNumber: 'L34891',
-          status: CargoStatus.RELEASED,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD',
-          auditedAt: new Date().toISOString()
-        },
-        {
-          id: 'initial-2',
-          plate: 'BWH-4H66',
-          driverName: 'Valdir Brandão',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Guará II (df-7)',
-          cargoType: CargoType.MISTA,
-          isHighRisk: true,
-          palletCount: 18,
-          sealNumber: 'L99112',
-          status: CargoStatus.RELEASED,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD',
-          auditedAt: new Date().toISOString()
-        },
-        {
-          id: 'initial-3',
-          plate: 'KJG-5512',
-          driverName: 'Carlos Eduardo',
-          origin: 'CD Atacadão Brasília',
-          destination: 'Taguatinga Sul (df-3)',
-          cargoType: CargoType.PERECIVEIS,
-          isHighRisk: false,
-          palletCount: 12,
-          sealNumber: 'L22119',
-          status: CargoStatus.AWAITING,
-          createdAt: new Date().toISOString(),
-          createdBy: 'CARGADD'
-        }
-      ];
-      localStorage.setItem('cargoradar_loads', JSON.stringify(defaultLoads));
-      return defaultLoads;
+      return [];
     } catch {
       return [];
     }

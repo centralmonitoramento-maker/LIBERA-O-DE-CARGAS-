@@ -1023,7 +1023,7 @@ export const CentralView: React.FC<CentralViewProps> = ({ loads, onUpdateStatus,
           pct: 0
         }
       },
-      totalPallets: dateFilteredLoads.reduce((acc, l) => acc + l.palletCount, 0),
+      totalPallets: dateFilteredLoads.reduce((acc, l) => acc + (l.palletCount || 0), 0),
       riskCount: dateFilteredLoads.filter(l => l.isHighRisk).length,
       releasedCount: releasedLoads.length,
       blockedCount: dateFilteredLoads.filter(l => l.status === CargoStatus.BLOCKED).length

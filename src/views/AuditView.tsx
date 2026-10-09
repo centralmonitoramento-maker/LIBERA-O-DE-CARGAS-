@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray } from '../types';
+import { CargoLoad, OccurrenceType, CargoStatus, User, EventLog, SystemRole, getPhotosArray, STORE_LOCATIONS_BY_REGION } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { ImageEnhanceZoom } from '../components/ImageEnhanceZoom';
 import jsPDF from 'jspdf';
@@ -108,6 +108,14 @@ export const AuditView: React.FC<AuditViewProps> = ({
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
+
+  const handleUpdateUserStore = async (userId: string, store: string) => {
+    try {
+      await setDoc(doc(db, 'users', userId), { storeLocation: store }, { merge: true });
+    } catch (e) {
+      console.error('Erro ao atualizar loja do usuário:', e);
+    }
+  };
 
   // User Filtering States and Selector
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -2083,9 +2091,27 @@ export const AuditView: React.FC<AuditViewProps> = ({
                       <span className="text-[9px] font-black text-slate-400 uppercase">Usuário:</span>
                       <span className="text-[9px] font-bold text-slate-700">{user.username}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-[9px] font-black text-slate-400 uppercase">Loja:</span>
-                      <span className="text-[9px] font-bold text-slate-700">{user.storeLocation || 'N/A'}</span>
+                    <div className="flex flex-col gap-1 border-t border-slate-100/50 pt-1.5 mt-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase">Loja / Unidade:</span>
+                      <select
+                        className="text-[9px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-primary-gold cursor-pointer"
+                        value={user.storeLocation || ''}
+                        onChange={(e) => handleUpdateUserStore(user.id, e.target.value)}
+                        disabled={!isAdmin}
+                        title={isAdmin ? "Vincular ou alterar loja da unidade" : "Somente administradores podem alterar a loja"}
+                      >
+                        <option value="">Não Vinculada (Central / S/N)</option>
+                        {user.storeLocation && !STORE_LOCATIONS_BY_REGION.some(g => g.stores.includes(user.storeLocation!)) && (
+                          <option value={user.storeLocation}>{user.storeLocation}</option>
+                        )}
+                        {STORE_LOCATIONS_BY_REGION.map(group => (
+                          <optgroup key={group.region} label={group.region}>
+                            {group.stores.map(store => (
+                              <option key={store} value={store}>{store}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[9px] font-black text-slate-400 uppercase">Função:</span>

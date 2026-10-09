@@ -63,8 +63,8 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Date Filters
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'CUSTOM'>('ALL');
+  // Date Filters - Default to TODAY so Portaria starts clean for current date
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'CUSTOM'>('TODAY');
   const [customDate, setCustomDate] = useState('');
 
   // Modal Open State (Overlay)
@@ -80,17 +80,8 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     return loads.find(l => l.id === selectedLoadId) || null;
   }, [loads, selectedLoadId]);
 
-  // Compute Overall Stats for the Portaria Dashboard
-  const stats = useMemo(() => {
-    const total = loads.length;
-    const pending = loads.filter(l => !l.gateVerified).length;
-    const approved = loads.filter(l => l.gateStatus === 'Aprovado').length;
-    const divergent = loads.filter(l => l.gateStatus === 'Divergente').length;
-    return { total, pending, approved, divergent };
-  }, [loads]);
-
-  // Filter loads by search and DATE, giving priority to the most recent elements (descending sort order)
-  const filteredLoads = useMemo(() => {
+  // 1. Filter loads by selected date range
+  const loadsByDate = useMemo(() => {
     let result = [...loads];
 
     const toLocalYMD = (dateString: string) => {
@@ -107,7 +98,6 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       }
     };
 
-    // 1. Filter by selected date range
     const d = new Date();
     const localTodayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -119,7 +109,13 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
     } else if (dateFilter === 'LAST_7_DAYS') {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      result = result.filter(load => new Date(load.createdAt) >= sevenDaysAgo);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      result = result.filter(load => {
+        const cDate = new Date(load.createdAt);
+        const vDate = load.gateVerifiedAt ? new Date(load.gateVerifiedAt) : null;
+        return (!isNaN(cDate.getTime()) && cDate >= sevenDaysAgo) || 
+               (vDate && !isNaN(vDate.getTime()) && vDate >= sevenDaysAgo);
+      });
     } else if (dateFilter === 'CUSTOM' && customDate) {
       result = result.filter(load => 
         toLocalYMD(load.createdAt) === customDate || 
@@ -127,7 +123,22 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       );
     }
 
-    // 2. Search query filter (plate, driver name, destination, seal number)
+    return result;
+  }, [loads, dateFilter, customDate]);
+
+  // 2. Compute Overall Stats for the Portaria Dashboard based on date-filtered loads
+  const stats = useMemo(() => {
+    const total = loadsByDate.length;
+    const pending = loadsByDate.filter(l => !l.gateVerified).length;
+    const approved = loadsByDate.filter(l => l.gateStatus === 'Aprovado').length;
+    const divergent = loadsByDate.filter(l => l.gateStatus === 'Divergente').length;
+    return { total, pending, approved, divergent };
+  }, [loadsByDate]);
+
+  // 3. Filter loadsByDate further by search query and sort
+  const filteredLoads = useMemo(() => {
+    let result = [...loadsByDate];
+
     const q = searchQuery.toLowerCase().trim();
     if (q) {
       result = result.filter(load => 
@@ -138,13 +149,14 @@ export const PortariaView: React.FC<PortariaViewProps> = ({
       );
     }
 
-    // 3. Sort by most recent first (dará prioridade para os lançamentos mais recentes)
     result.sort((a, b) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      return timeB - timeA;
     });
 
     return result;
-  }, [loads, searchQuery, dateFilter, customDate]);
+  }, [loadsByDate, searchQuery]);
 
   // Handle selecting a load and triggering the popup modal
   const handleSelectLoad = (load: CargoLoad) => {

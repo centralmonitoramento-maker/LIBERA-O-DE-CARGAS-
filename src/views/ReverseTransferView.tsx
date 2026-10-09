@@ -28,9 +28,10 @@ import {
   UserCheck,
   Recycle
 } from 'lucide-react';
-import { CargoLoad, CargoType, CargoStatus, User, LOCATION_OPTIONS } from '../types';
+import { CargoLoad, CargoType, CargoStatus, User, LOCATION_OPTIONS, STORE_LOCATIONS_BY_REGION } from '../types';
 import { getUniquePlatesRaw, getUniquePlatesNormalized } from '../data/telemetryData';
 import { getDriversByPlate, getAllPlatesWithDrivers, DriverLink } from '../data/driversData';
+import { ReverseAnalyticsDashboard } from '../components/ReverseAnalyticsDashboard';
 
 interface ReverseTransferViewProps {
   onSubmit: (newLoad: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => Promise<void>;
@@ -57,7 +58,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('CD-01');
+  const [destination, setDestination] = useState('CD-01 - Centro de Distribuição 01');
   const [sealNumber, setSealNumber] = useState('');
   const [palletCount, setPalletCount] = useState<number>(0);
   
@@ -121,7 +122,13 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   // Pre-fill origin with store location of logged-in user if available
   useEffect(() => {
     if (currentUser?.storeLocation) {
-      setOrigin(currentUser.storeLocation.toUpperCase());
+      const userStoreTrimmed = currentUser.storeLocation.trim();
+      const matched = LOCATION_OPTIONS.find(loc => 
+        loc.toLowerCase() === userStoreTrimmed.toLowerCase() ||
+        loc.toLowerCase().includes(userStoreTrimmed.toLowerCase()) ||
+        userStoreTrimmed.toLowerCase().includes(loc.toLowerCase())
+      );
+      setOrigin(matched || currentUser.storeLocation);
     } else {
       setOrigin('');
     }
@@ -130,7 +137,7 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
   // Handle operation type changes to reset default destination
   useEffect(() => {
     if (operationType === 'reverse_cd') {
-      setDestination('CD-01');
+      setDestination('CD-01 - Centro de Distribuição 01');
     } else if (operationType === 'coleta') {
       setDestination('Empresa Terceira (Retirada)');
     } else {
@@ -244,10 +251,16 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
     // If user is not admin, only show loads matching their store location as origin or destination
     if (currentUser && currentUser.systemRole !== 'administrator' && currentUser.storeLocation) {
       const userStore = currentUser.storeLocation.toUpperCase().trim();
-      list = list.filter(l => 
-        l.origin.toUpperCase().trim().includes(userStore) || 
-        l.destination.toUpperCase().trim().includes(userStore)
-      );
+      const unitCode = userStore.split('-')[0].trim();
+      list = list.filter(l => {
+        const orig = (l.origin || '').toUpperCase().trim();
+        const dest = (l.destination || '').toUpperCase().trim();
+        return orig.includes(userStore) || 
+               dest.includes(userStore) ||
+               userStore.includes(orig) ||
+               userStore.includes(dest) ||
+               (unitCode.length >= 3 && (orig.includes(unitCode) || dest.includes(unitCode)));
+      });
     }
 
     // Filter by type
@@ -539,6 +552,9 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
         </div>
       </div>
 
+      {/* Analytical Dashboard for Reverse Logistics & Transfers */}
+      <ReverseAnalyticsDashboard loads={loads} currentUser={currentUser} />
+
       {/* Primary Action Button */}
       {!showForm && (
         <button
@@ -795,9 +811,16 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                       className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
                       required
                     >
-                      <option value="">Selecione...</option>
-                      {LOCATION_OPTIONS.map(loc => (
-                        <option key={loc} value={loc}>{loc}</option>
+                      <option value="">Selecione a Loja de Origem...</option>
+                      {origin && !LOCATION_OPTIONS.includes(origin) && (
+                        <option value={origin}>{origin}</option>
+                      )}
+                      {STORE_LOCATIONS_BY_REGION.map(group => (
+                        <optgroup key={group.region} label={group.region}>
+                          {group.stores.map(loc => (
+                            <option key={loc} value={loc}>{loc}</option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>
@@ -811,8 +834,11 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                         className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
                         required
                       >
-                        <option value="CD-01">CD-01 (Santa Maria)</option>
-                        <option value="CD-02">CD-02 (Santa Maria)</option>
+                        <option value="CD-01 - Centro de Distribuição 01">CD-01 - Centro de Distribuição 01</option>
+                        <option value="CD-02 - Centro de Distribuição 02">CD-02 - Centro de Distribuição 02</option>
+                        {destination && destination !== 'CD-01 - Centro de Distribuição 01' && destination !== 'CD-02 - Centro de Distribuição 02' && (
+                          <option value={destination}>{destination}</option>
+                        )}
                       </select>
                     ) : operationType === 'coleta' ? (
                       <select
@@ -833,9 +859,16 @@ export const ReverseTransferView: React.FC<ReverseTransferViewProps> = ({
                         className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all cursor-pointer h-[38px]"
                         required
                       >
-                        <option value="">Selecione a Loja...</option>
-                        {LOCATION_OPTIONS.filter(loc => loc !== origin).map(loc => (
-                          <option key={loc} value={loc}>{loc}</option>
+                        <option value="">Selecione a Loja de Destino...</option>
+                        {destination && !LOCATION_OPTIONS.includes(destination) && (
+                          <option value={destination}>{destination}</option>
+                        )}
+                        {STORE_LOCATIONS_BY_REGION.map(group => (
+                          <optgroup key={group.region} label={group.region}>
+                            {group.stores.filter(loc => loc !== origin).map(loc => (
+                              <option key={loc} value={loc}>{loc}</option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                     )}

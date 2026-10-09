@@ -124,12 +124,74 @@ export interface VerificationResult {
   message: string;
 }
 
-export const LOCATION_OPTIONS = [
-  'SIA', 'SOF SUL', 'SOF NORTE', 'TAGUATINGA', 'CEILANDIA', 'SAMAMBAIA', 
-  'RECANTO DAS EMAS', 'GAMA', 'SANTA MARIA', 'PLANALTINA', 'SOBRADINHO', 
-  'LAGO SUL', 'LAGO NORTE', 'ASA SUL', 'ASA NORTE', 'SUDOESTE', 'GUARA', 
-  'VICENTE PIRES', 'AGUAS CLARAS', 'NUCLEO BANDEIRANTE'
+export interface StoreLocationGroup {
+  region: string;
+  stores: string[];
+}
+
+export const STORE_LOCATIONS_BY_REGION: StoreLocationGroup[] = [
+  {
+    region: 'Distrito Federal (DF) — 23 Unidades',
+    stores: [
+      '1001 - Ceilândia',
+      '0701004 - Sobradinho',
+      '1007 - SIA',
+      '1008 - Taguatinga',
+      '1012 - Gama',
+      '1021 - P Sul',
+      '1028 - Águas Claras',
+      '1029 - Guará II',
+      '1032 - Ceilândia Centro',
+      '1033 - Planaltina DF',
+      '1034 - Samambaia',
+      '1037 - VCP Rua 12 (Vicente Pires)',
+      '1038 - VCP Rua 04 (Vicente Pires)',
+      '1042 - Jardim Botânico',
+      "1050 - Mestre D'armas",
+      '1052 - Riacho Fundo',
+      '1055 - Recanto das Emas',
+      '1058 - EPTG',
+      '1060 - Samambaia Furnas',
+      '1065 - Cei Norte (Ceilândia Norte)',
+      'CD-01 - Centro de Distribuição 01',
+      'CD-02 - Centro de Distribuição 02',
+      'Sobradinho 2 - Filial Sobradinho II',
+    ]
+  },
+  {
+    region: 'Goiás (GO) — 14 Unidades',
+    stores: [
+      '1013 - Luziânia',
+      '1015 - Balneário',
+      '1016 - SAD (Santo Antônio do Descoberto)',
+      '1018 - Águas Lindas',
+      '1019 - Caldas Novas',
+      '1025 - Novo Gama',
+      '1026 - César Lattes',
+      '1027 - Planaltina GO',
+      '1039 - Goianésia',
+      '1047 - Aparecida',
+      '1053 - Rio Verde',
+      '1062 - Luziânia II',
+      '1063 - Formosa',
+      '1064 - Itumbiara',
+    ]
+  },
+  {
+    region: 'Bahia (BA) — 1 Unidade',
+    stores: [
+      '1030 - LEM (Luís Eduardo Magalhães)',
+    ]
+  },
+  {
+    region: 'Tocantins (TO) — 1 Unidade',
+    stores: [
+      '1040 - Gurupi',
+    ]
+  }
 ];
+
+export const LOCATION_OPTIONS = STORE_LOCATIONS_BY_REGION.flatMap(group => group.stores);
 
 const mapsKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 
                 process.env.GOOGLE_MAPS_API_KEY || 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Truck } from 'lucide-react';
-import { User } from '../types';
+import { User, STORE_LOCATIONS_BY_REGION } from '../types';
 
 interface LoginViewProps {
   users: User[];
@@ -174,15 +174,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onR
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Loja Locado</label>
-              <input
-                type="text"
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">
+                {registerRole === 'store_app' ? 'Loja Vinculada (Perfil App Loja)' : 'Loja / Unidade Locado'}
+              </label>
+              <select
                 value={storeLocation}
                 onChange={(e) => setStoreLocation(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary-gold outline-none transition-all placeholder:font-normal placeholder:opacity-50"
-                placeholder="Ex: Loja 07 SIA"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-primary-gold outline-none transition-all cursor-pointer"
                 required
-              />
+              >
+                <option value="">Selecione a Unidade / Loja...</option>
+                {STORE_LOCATIONS_BY_REGION.map(group => (
+                  <optgroup key={group.region} label={group.region}>
+                    {group.stores.map(store => (
+                      <option key={store} value={store}>{store}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
 
             <div className="space-y-2">
