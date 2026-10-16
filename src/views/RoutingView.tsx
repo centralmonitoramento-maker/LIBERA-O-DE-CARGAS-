@@ -8,13 +8,10 @@ import {
   Locate, 
   ExternalLink, 
   Map as MapIcon, 
-  Check, 
   Search, 
   ArrowRight, 
   Compass, 
-  SlidersHorizontal,
   RefreshCw,
-  AlertCircle,
   Maximize2,
   Minimize2,
   GripVertical,
@@ -82,9 +79,6 @@ export const RoutingView: React.FC<RoutingViewProps> = ({ onLogRoute }) => {
   const [gpsLatitude, setGpsLatitude] = useState<number>(-15.7953); // Default to CD-01 SIA
   const [gpsLongitude, setGpsLongitude] = useState<number>(-47.9622);
   const [startName, setStartName] = useState<string>('CD-01 (SIA) - Centro de Distribuição');
-  const [isLocating, setIsLocating] = useState<boolean>(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [locationSuccess, setLocationSuccess] = useState<boolean>(false);
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -216,53 +210,13 @@ export const RoutingView: React.FC<RoutingViewProps> = ({ onLogRoute }) => {
 
   const truckPos = getTruckPosition(truckProgress);
 
-  // Auto trigger GPS detection on mount
-  useEffect(() => {
-    detectGpsLocation();
-  }, []);
-
-  const detectGpsLocation = () => {
-    setIsLocating(true);
-    setLocationError(null);
-    setLocationSuccess(false);
-
-    if (!navigator.geolocation) {
-      setLocationError('Navegador não suporta geolocalização por GPS.');
-      setIsLocating(false);
-      return;
+  const resetToDefaultOrigin = () => {
+    setGpsLatitude(-15.7953);
+    setGpsLongitude(-47.9622);
+    setStartName('CD-01 (SIA) - Centro de Distribuição');
+    if (isCalculated) {
+      calculateOptimizedRoute(-15.7953, -47.9622);
     }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setGpsLatitude(latitude);
-        setGpsLongitude(longitude);
-        setStartName('Minha Localização GPS Atual');
-        setLocationSuccess(true);
-        setIsLocating(false);
-        
-        // If route is already calculated, recalculate starting from new GPS coords
-        if (isCalculated) {
-          calculateOptimizedRoute(latitude, longitude);
-        }
-      },
-      (error) => {
-        let msg = 'Erro ao obter GPS.';
-        if (error.code === error.PERMISSION_DENIED) {
-          msg = 'Permissão de GPS bloqueada pelo usuário.';
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          msg = 'Sinal de GPS indisponível.';
-        } else if (error.code === error.TIMEOUT) {
-          msg = 'Tempo limite de GPS excedido.';
-        }
-        setLocationError(msg + ' Usando CD-01 SIA como padrão.');
-        setGpsLatitude(-15.7953); // Fallback to CD-01 SIA
-        setGpsLongitude(-47.9622);
-        setStartName('CD-01 (SIA) - Padrão de Partida');
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
   };
 
   // Toggle store selection
@@ -462,7 +416,7 @@ export const RoutingView: React.FC<RoutingViewProps> = ({ onLogRoute }) => {
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
             <Locate className="w-4 h-4 text-primary-navy" />
-            Ponto de Partida (GPS)
+            Ponto de Partida Operacional
           </h3>
           
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col gap-3">
@@ -475,36 +429,13 @@ export const RoutingView: React.FC<RoutingViewProps> = ({ onLogRoute }) => {
                 </p>
               </div>
               <button
-                onClick={detectGpsLocation}
-                disabled={isLocating}
+                onClick={resetToDefaultOrigin}
                 className="p-2.5 bg-primary-navy hover:bg-primary-gold hover:text-white text-primary-gold rounded-xl border border-primary-gold/20 transition-all flex items-center justify-center cursor-pointer"
-                title="Detectar localização real via GPS"
+                title="Redefinir ponto de partida para CD-01"
               >
-                <RefreshCw className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
-
-            {/* Geolocation visual cues */}
-            {isLocating && (
-              <div className="flex items-center gap-2 text-blue-600 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100/50 text-[10px] font-bold animate-pulse">
-                <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-ping"></span>
-                Solicitando autorização de GPS ao navegador...
-              </div>
-            )}
-
-            {locationError && (
-              <div className="text-[10px] font-bold text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-100 flex items-start gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{locationError}</span>
-              </div>
-            )}
-
-            {locationSuccess && (
-              <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 flex items-center gap-1.5 animate-in fade-in duration-300">
-                <Check className="w-3.5 h-3.5 text-emerald-600 bg-emerald-100 p-0.5 rounded-full" />
-                <span>Coordenadas de GPS capturadas com sucesso!</span>
-              </div>
-            )}
           </div>
         </div>
 

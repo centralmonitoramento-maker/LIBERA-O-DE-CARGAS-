@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { 
@@ -7,10 +6,8 @@ import {
   MapPin, 
   Truck, 
   Play, 
-  Pause, 
   RefreshCw, 
   Search, 
-  Navigation, 
   Clock, 
   Maximize2, 
   Activity, 
@@ -18,11 +15,9 @@ import {
   MapPinOff,
   User as UserIcon,
   Sparkles,
-  ShieldAlert,
   Locate,
   Settings,
   AlertTriangle,
-  RotateCcw,
   ArrowUpDown,
   Filter,
   X,
@@ -38,7 +33,6 @@ import {
   Zap,
   Battery,
   Send,
-  Grid,
   History,
   Check,
   Eye,
@@ -378,98 +372,19 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
   const routePolylineRef = useRef<L.Polyline | null>(null);
 
   // States
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedPlaca, setSelectedPlaca] = useState<string | null>(null);
   const [trucks, setTrucks] = useState<TruckData[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [sidebarTab, setSidebarTab] = useState<'trucks' | 'loads' | 'geofence'>('trucks');
+  const [sidebarTab, setSidebarTab] = useState<'trucks' | 'loads'>('trucks');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [hideOtherVehicles, setHideOtherVehicles] = useState<boolean>(false);
 
-  const [geofenceEnabled, setGeofenceEnabled] = useState<boolean>(true);
-  const [geofenceCenter, setGeofenceCenter] = useState<[number, number]>([-16.048231, -47.971867]);
-  const [geofenceRadius, setGeofenceRadius] = useState<number>(3000);
-  const [isSettingCenter, setIsSettingCenter] = useState<boolean>(false);
-
-  // Leaflet Geofence drawings
-  const geofenceCircleRef = useRef<L.Circle | null>(null);
-  const geofenceCenterMarkerRef = useRef<L.Marker | null>(null);
-
   const cdSiaCoordinates: [number, number] = [-15.7953, -47.9622];
   const cdSantaMariaCoordinates: [number, number] = [-16.048231, -47.971867];
 
-  // Store Coordinates for 500m geofencing - now mapped to our full list of route coordinates
-  const ROUTE_STORE_COORDINATES = ROUTE_COORDINATES;
-
-  interface FenceAlert {
-    id: string;
-    type: 'exit_cd' | 'enter_store' | 'route_deviation';
-    placa: string;
-    driverName: string;
-    message: string;
-    timestamp: string;
-    loadId?: string;
-    storeName?: string;
-    deviationKm?: number;
-  }
-
-  const [fenceAlerts, setFenceAlerts] = useState<FenceAlert[]>([]);
-  const storeCirclesRef = useRef<(L.Circle | L.Marker)[]>([]);
-
-  // Route Deviation states and refs
-  const [routeDeviationEnabled, setRouteDeviationEnabled] = useState<boolean>(true);
-  const [deviationThreshold, setDeviationThreshold] = useState<number>(500); // meters (500 m)
-  const [forcedDeviatedPlacas, setForcedDeviatedPlacas] = useState<Record<string, boolean>>({});
-  
-  const previousInsideCDRef = useRef<Record<string, boolean>>({});
-  const previousStatusRef = useRef<Record<string, CargoStatus | undefined>>({});
-  const previousInsideStoreRef = useRef<Record<string, Record<string, boolean>>>({});
-  const previousDeviatedRef = useRef<Record<string, boolean>>({});
-  const isFirstLoadRef = useRef(true);
   const fetchedRoutesRef = useRef<Set<string>>(new Set());
-
-  const playDeviationSiren = () => {
-    try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const audioCtx = new AudioContextClass();
-      
-      const playTone = (freq: number, start: number, duration: number, type: 'sine' | 'sawtooth' | 'triangle' | 'square' = 'sine') => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0, start);
-        gain.gain.linearRampToValueAtTime(0.04, start + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(start);
-        osc.stop(start + duration);
-      };
-
-      const now = audioCtx.currentTime;
-      // High-pitched warning alarm tone alternating: 980Hz and 650Hz
-      playTone(980, now, 0.22, 'sawtooth');
-      playTone(650, now + 0.25, 0.22, 'sawtooth');
-    } catch (err) {
-      console.warn('Alerta sonoro falhou no navegador:', err);
-    }
-  };
-
-  const addFenceAlert = (newAlert: FenceAlert) => {
-    setFenceAlerts(prev => {
-      const isDup = prev.some(x => x.placa === newAlert.placa && x.type === newAlert.type && Math.abs(Date.now() - parseFloat(x.id.split('-').pop() || '0')) < 6000);
-      if (isDup) return prev;
-      return [newAlert, ...prev].slice(0, 5);
-    });
-    // Auto dismiss after 8 seconds
-    setTimeout(() => {
-      setFenceAlerts(prev => prev.filter(a => a.id !== newAlert.id));
-    }, 8000);
-  };
 
   // Helper: Get origin coordinates for a truck based on its associated cargo load
   const getOriginCoordinates = (truck: TruckData): [number, number] => {
@@ -651,56 +566,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     return [lat, lng];
   };
 
-  // Helper: Calculate short distance from coordinate point to a route segment line ab
-  const distanceToSegment = (p: L.LatLng, a: L.LatLng, b: L.LatLng): number => {
-    const l2 = Math.pow(a.lat - b.lat, 2) + Math.pow(a.lng - b.lng, 2);
-    if (l2 === 0) return p.distanceTo(a);
-    let t = ((p.lat - a.lat) * (b.lat - a.lat) + (p.lng - a.lng) * (b.lng - a.lng)) / l2;
-    t = Math.max(0, Math.min(1, t));
-    const projection = L.latLng(
-      a.lat + t * (b.lat - a.lat),
-      a.lng + t * (b.lng - a.lng)
-    );
-    return p.distanceTo(projection);
-  };
-
-  // Helper: Get closest point projection on segment
-  const getClosestPointOnSegment = (p: L.LatLng, a: L.LatLng, b: L.LatLng): L.LatLng => {
-    const l2 = Math.pow(a.lat - b.lat, 2) + Math.pow(a.lng - b.lng, 2);
-    if (l2 === 0) return a;
-    let t = ((p.lat - a.lat) * (b.lat - a.lat) + (p.lng - a.lng) * (b.lng - a.lng)) / l2;
-    t = Math.max(0, Math.min(1, t));
-    return L.latLng(
-      a.lat + t * (b.lat - a.lat),
-      a.lng + t * (b.lng - a.lng)
-    );
-  };
-
-  // Helper: Get minimum distance from point to all expected route segments
-  const getMinDistanceToRoute = (truckCoords: [number, number], routePoints: [number, number][]): number => {
-    if (routePoints.length === 0) return 0;
-    let minDistance = Infinity;
-
-    const p = L.latLng(truckCoords[0], truckCoords[1]);
-    for (let i = 0; i < routePoints.length - 1; i++) {
-      const a = L.latLng(routePoints[i][0], routePoints[i][1]);
-      const b = L.latLng(routePoints[i + 1][0], routePoints[i + 1][1]);
-      
-      const dist = distanceToSegment(p, a, b);
-      if (dist < minDistance) {
-        minDistance = dist;
-      }
-    }
-    return minDistance === Infinity ? 0 : minDistance;
-  };
-
-  // Helper: Calculate how far a truck is from its planned route path
-  const getTruckDeviation = (truck: TruckData): number => {
-    const waypoints = getTruckRoutePoints(truck);
-    const truckCoords: [number, number] = [parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude)];
-    return getMinDistanceToRoute(truckCoords, waypoints);
-  };
-
   // Visual/Interactive GIS States
   const [mapStyle, setMapStyle] = useState<'osm' | 'dark' | 'satellite'>('osm');
   const [mapLabelToggle, setMapLabelToggle] = useState<boolean>(true);
@@ -727,25 +592,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     return resolveDestinationCoords(destName);
   };
 
-  // Helper: Distance
-  const getTruckDistance = (truck: TruckData): number => {
-    try {
-      const lat = parseFloat(truck.ras_eve_latitude);
-      const lng = parseFloat(truck.ras_eve_longitude);
-      if (isNaN(lat) || isNaN(lng)) return 0;
-      return L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
-    } catch (err) {
-      return 0;
-    }
-  };
-
-  const outOfGeofenceTrucks = geofenceEnabled
-    ? trucks.filter(truck => {
-        const hasLoad = loads.some(l => platesMatch(l.plate, truck.ras_vei_placa));
-        return hasLoad && getTruckDistance(truck) > geofenceRadius;
-      })
-    : [];
-
   // Sync trucks from telemetry and Firestore loads
   useEffect(() => {
     const baseTrucks: TruckData[] = TELEMETRY_DATA.map(t => {
@@ -767,20 +613,14 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       };
 
       const routePts = getTruckRoutePoints(tempTruck);
-      const isDeviated = forcedDeviatedPlacas[t.ras_vei_placa];
 
       let initialLat = t.ras_eve_latitude;
       let initialLng = t.ras_eve_longitude;
 
       if (matchedLoad?.status === CargoStatus.RELEASED) {
         const normalPos = getTruckPositionOnRoutePoints(routePts, baselineProgress);
-        if (isDeviated) {
-          initialLat = String(normalPos[0] + 0.038);
-          initialLng = String(normalPos[1] - 0.038);
-        } else {
-          initialLat = String(normalPos[0]);
-          initialLng = String(normalPos[1]);
-        }
+        initialLat = String(normalPos[0]);
+        initialLng = String(normalPos[1]);
       }
 
       return {
@@ -808,7 +648,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       l => l.plate && !TELEMETRY_DATA.some(t => platesMatch(t.ras_vei_placa, l.plate))
     );
 
-    const customMapped: TruckData[] = customLoads.map((load, idx) => {
+    const customMapped: TruckData[] = customLoads.map((load) => {
       const destinationName = load.destination || '';
       const tempTruck: TruckData = {
         ras_vei_placa: load.plate ? load.plate.toUpperCase() : "PLA-0000",
@@ -820,7 +660,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       };
 
       const routePts = getTruckRoutePoints(tempTruck);
-      const isDeviated = load.plate ? forcedDeviatedPlacas[load.plate.toUpperCase()] : false;
 
       const existingTruck = trucks.find(x => platesMatch(x.ras_vei_placa, load.plate));
       const baselineProgress = existingTruck?.progressPercent !== undefined
@@ -832,13 +671,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
       if (load.status === CargoStatus.RELEASED) {
         const normalPos = getTruckPositionOnRoutePoints(routePts, baselineProgress);
-        if (isDeviated) {
-          initialLat = String(normalPos[0] + 0.038);
-          initialLng = String(normalPos[1] - 0.038);
-        } else {
-          initialLat = String(normalPos[0]);
-          initialLng = String(normalPos[1]);
-        }
+        initialLat = String(normalPos[0]);
+        initialLng = String(normalPos[1]);
       } else {
         const originCoords = getOriginCoordinates(tempTruck);
         initialLat = existingTruck?.ras_eve_latitude || String(originCoords[0]);
@@ -890,126 +724,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     setTraces(seeded);
   }, [trucks.length]);
 
-  // Initialize refs on first load to prevent notification spam on mount
-  useEffect(() => {
-    if (trucks.length > 0 && isFirstLoadRef.current) {
-      trucks.forEach(truck => {
-        const placa = truck.ras_vei_placa;
-        const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
-        const distance = getTruckDistance(truck);
-        previousInsideCDRef.current[placa] = distance <= geofenceRadius;
-        previousStatusRef.current[placa] = matchedLoad?.status || truck.status;
-        
-        const deviation = getTruckDeviation(truck);
-        previousDeviatedRef.current[placa] = deviation > deviationThreshold && matchedLoad?.status === CargoStatus.RELEASED;
 
-        previousInsideStoreRef.current[placa] = {};
-        Object.entries(ROUTE_STORE_COORDINATES).forEach(([storeKey, store]) => {
-          const storeDist = L.latLng(parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude))
-            .distanceTo(L.latLng(store.lat, store.lng));
-          previousInsideStoreRef.current[placa][storeKey] = storeDist <= 500;
-        });
-      });
-      isFirstLoadRef.current = false;
-    }
-  }, [trucks, loads, geofenceRadius, deviationThreshold]);
-
-  // Transition listener for Geofence Exits and Entrance alerts
-  useEffect(() => {
-    if (trucks.length === 0 || isFirstLoadRef.current) return;
-
-    trucks.forEach(truck => {
-      const placa = truck.ras_vei_placa;
-      const matchedLoad = loads.find(l => platesMatch(l.plate, placa));
-      const distance = getTruckDistance(truck);
-      const isInsideCD = distance <= geofenceRadius;
-      
-      const prevInsideCD = previousInsideCDRef.current[placa];
-      const prevStatus = previousStatusRef.current[placa];
-      const currentStatus = matchedLoad?.status || truck.status;
-
-      // 1. CD Geofence Exit Alert
-      if (currentStatus === CargoStatus.RELEASED) {
-        // Trigger alert if:
-        // - They were inside and are now outside
-        // - OR status changed to RELEASED and they are already outside
-        const hasExited = (prevInsideCD === true && !isInsideCD) || 
-                          (prevStatus !== CargoStatus.RELEASED && !isInsideCD && prevStatus !== undefined);
-        
-        if (hasExited) {
-          const time = new Date().toLocaleTimeString();
-          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
-          addFenceAlert({
-            id: `exit-${placa}-${Date.now()}`,
-            type: 'exit_cd',
-            placa,
-            driverName: driver,
-            message: `Veículo ${placa} (${driver}) mudou o status para EM TRÂNSITO e SAIU da Cerca Virtual do CD!`,
-            timestamp: time,
-            loadId: matchedLoad?.id || truck.realLoadId
-          });
-        }
-      }
-
-      // 2. Store Geofence Entrance Alert (500 meters of any store)
-      Object.entries(ROUTE_STORE_COORDINATES).forEach(([storeKey, store]) => {
-        const storeDist = L.latLng(parseFloat(truck.ras_eve_latitude), parseFloat(truck.ras_eve_longitude))
-          .distanceTo(L.latLng(store.lat, store.lng));
-        const isInsideStore = storeDist <= 500;
-
-        if (!previousInsideStoreRef.current[placa]) {
-          previousInsideStoreRef.current[placa] = {};
-        }
-        const prevInsideStore = previousInsideStoreRef.current[placa][storeKey];
-        const hasEnteredStore = (prevInsideStore === false && isInsideStore);
-
-        if (hasEnteredStore) {
-          const time = new Date().toLocaleTimeString();
-          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
-          addFenceAlert({
-            id: `enter-${placa}-${storeKey}-${Date.now()}`,
-            type: 'enter_store',
-            placa,
-            driverName: driver,
-            message: `Veículo ${placa} (${driver}) ENTROU na cerca de 500m do destino: ${store.label}!`,
-            timestamp: time,
-            storeName: store.label,
-            loadId: matchedLoad?.id || truck.realLoadId
-          });
-        }
-
-        previousInsideStoreRef.current[placa][storeKey] = isInsideStore;
-      });
-
-      // 3. Route Deviation Alert (deviation > deviationThreshold)
-      if (routeDeviationEnabled && currentStatus === CargoStatus.RELEASED) {
-        const deviation = getTruckDeviation(truck);
-        const isCurrentlyDeviated = deviation > deviationThreshold;
-        const prevDeviated = previousDeviatedRef.current[placa];
-
-        if (isCurrentlyDeviated && !prevDeviated) {
-          const time = new Date().toLocaleTimeString();
-          const driver = matchedLoad?.driverName || truck.driverName || 'Motorista Não Identificado';
-          addFenceAlert({
-            id: `deviation-${placa}-${Date.now()}`,
-            type: 'route_deviation',
-            placa,
-            driverName: driver,
-            message: `⚠️ ALERTA DE ROTA: O veículo ${placa} (${driver}) desviou-se ${Math.round(deviation)} metros da rota planejada!`,
-            timestamp: time,
-            loadId: matchedLoad?.id || truck.realLoadId,
-            deviationKm: parseFloat((deviation / 1000).toFixed(2))
-          });
-          playDeviationSiren();
-        }
-        previousDeviatedRef.current[placa] = isCurrentlyDeviated;
-      }
-
-      // Update refs for next interval evaluation
-      previousInsideCDRef.current[placa] = isInsideCD;
-      previousStatusRef.current[placa] = currentStatus;
-    });
-  }, [trucks, loads, geofenceRadius, deviationThreshold, routeDeviationEnabled]);
 
   // Reactive OSRM Route Fetching Effect
   useEffect(() => {
@@ -1177,21 +892,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     };
   }, [selectedPlaca, sidebarTab, isFullscreen]);
 
-  // Map Click handler (for target geofencing)
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    const handleMapClick = (e: L.LeafletMouseEvent) => {
-      if (isSettingCenter) {
-        setGeofenceCenter([e.latlng.lat, e.latlng.lng]);
-        setIsSettingCenter(false);
-      }
-    };
-    map.on('click', handleMapClick);
-    return () => {
-      map.off('click', handleMapClick);
-    };
-  }, [isSettingCenter]);
+
 
   // Dynamic Tile Layer Swapping
   useEffect(() => {
@@ -1224,133 +925,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
     tileLayerRef.current = layer;
   }, [mapStyle]);
 
-  // Geofence Circle overlay adjustments
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
 
-    if (geofenceCircleRef.current) {
-      geofenceCircleRef.current.remove();
-      geofenceCircleRef.current = null;
-    }
-    if (geofenceCenterMarkerRef.current) {
-      geofenceCenterMarkerRef.current.remove();
-      geofenceCenterMarkerRef.current = null;
-    }
-
-    // Clear previous store circles & markers
-    storeCirclesRef.current.forEach(item => item.remove());
-    storeCirclesRef.current = [];
-
-    if (geofenceEnabled) {
-      const circle = L.circle(geofenceCenter, {
-        color: '#334155',
-        fillColor: '#0ea5e9',
-        fillOpacity: 0.1,
-        radius: geofenceRadius,
-        weight: 1.5,
-        dashArray: '5, 8'
-      }).addTo(map);
-
-      circle.bindPopup(`
-        <div class="p-1 px-2 font-sans text-center">
-          <strong class="text-xs uppercase text-slate-800">Cerca Virtual</strong>
-          <p class="text-[9px] text-slate-500 font-bold mt-1">Raio: ${(geofenceRadius / 1000).toFixed(1)} km</p>
-        </div>
-      `);
-      geofenceCircleRef.current = circle;
-
-      const hubIconHtml = `
-        <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-900 border-2 border-primary-gold shadow-2xl animate-pulse">
-          <svg class="w-4 h-4 text-primary-gold" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-        </div>
-      `;
-
-      const hubIcon = L.divIcon({
-        html: hubIconHtml,
-        className: 'custom-hub-icon',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -10]
-      });
-
-      const isSantaMariaCenter = L.latLng(geofenceCenter[0], geofenceCenter[1]).distanceTo(L.latLng(cdSantaMariaCoordinates[0], cdSantaMariaCoordinates[1])) < 500;
-
-      let centerLabel = "Cerca Customizada";
-      let centerSub = "Ponto Central Definido";
-      let centerAddress = `${geofenceCenter[0].toFixed(4)}, ${geofenceCenter[1].toFixed(4)}`;
-
-      if (isSantaMariaCenter) {
-        centerLabel = "CD SANTA MARIA";
-        centerSub = "Brasília CD Principal / Sul";
-        centerAddress = "Área de Carga, Santa Maria, DF";
-      }
-
-      const centerMarker = L.marker(geofenceCenter, { icon: hubIcon })
-        .addTo(map)
-        .bindPopup(`
-          <div class="p-2 font-sans text-left">
-            <span class="text-[8px] font-black text-primary-gold bg-slate-900 px-2 py-0.5 rounded uppercase tracking-widest block mb-1 text-center font-mono">${centerLabel}</span>
-            <span class="text-[10px] font-black text-slate-700">${centerSub}</span>
-            <p class="text-[9px] font-mono text-slate-400 mt-1">${centerAddress}</p>
-          </div>
-        `);
-      geofenceCenterMarkerRef.current = centerMarker;
-
-      // Draw Store 500m Geofences
-      Object.entries(ROUTE_STORE_COORDINATES).forEach(([key, store]) => {
-        const storeCircle = L.circle([store.lat, store.lng], {
-          color: '#d97706', // amber-600
-          fillColor: '#fef3c7', // amber-50
-          fillOpacity: 0.15,
-          radius: 500, // 500 meters
-          weight: 1.5,
-          dashArray: '3, 4'
-        }).addTo(map);
-
-        storeCircle.bindPopup(`
-          <div class="p-1 px-2 font-sans text-left">
-            <span class="text-[8px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-mono block mb-1 text-center font-bold">Cerca de Loja (500m)</span>
-            <strong class="text-xs uppercase text-slate-800">${store.label}</strong>
-            <p class="text-[8px] text-slate-500 mt-1">${store.address}</p>
-          </div>
-        `);
-
-        // Store dot marker
-        const storeDotHtml = `
-          <div class="relative w-4 h-4 rounded-full bg-amber-500 border-2 border-white shadow-md cursor-pointer flex items-center justify-center hover:scale-125 transition-transform">
-            <span class="w-1.5 h-1.5 bg-amber-950 rounded-full"></span>
-          </div>
-        `;
-        const storeDotIcon = L.divIcon({
-          html: storeDotHtml,
-          className: 'custom-store-dot-icon',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8]
-        });
-
-        const storeMarker = L.marker([store.lat, store.lng], { icon: storeDotIcon })
-          .addTo(map)
-          .bindPopup(`
-            <div class="p-1 px-2 font-sans text-left">
-              <span class="text-[8px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase font-mono block mb-1 text-center font-bold">Cerca de Loja (500m)</span>
-              <strong class="text-xs uppercase text-slate-800">${store.label}</strong>
-              <p class="text-[8px] text-slate-500 mt-1">${store.address}</p>
-            </div>
-          `);
-
-        storeCirclesRef.current.push(storeCircle, storeMarker);
-      });
-    }
-
-    return () => {
-      storeCirclesRef.current.forEach(item => item.remove());
-      storeCirclesRef.current = [];
-    };
-  }, [geofenceEnabled, geofenceCenter, geofenceRadius]);
 
   // Marker click delegator (binds 'Ver também' inside Leaflet popup inside React)
   useEffect(() => {
@@ -1394,10 +969,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       
       const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
       const isDivergent = matchedLoad?.status === CargoStatus.BLOCKED;
-      const distance = L.latLng(lat, lng).distanceTo(L.latLng(geofenceCenter[0], geofenceCenter[1]));
-      const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius) && !!matchedLoad;
-      const truckDeviation = getTruckDeviation(truck);
-      const isDeviatedFromRoute = matchedLoad?.status === CargoStatus.RELEASED && truckDeviation > deviationThreshold;
       const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
 
       let releaseStatus = 'Sem Carga Vinculada';
@@ -1432,15 +1003,11 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       const isSelectedLoad = selectedLoadId && truck.realLoadId === selectedLoadId;
 
       // Circle grey/green markers exactly matching image
-      let markerColor = isOutOfBounds 
-        ? 'bg-rose-600 ring-4 ring-rose-500/20' 
-        : isDeviatedFromRoute
-          ? 'bg-amber-600 text-white border border-rose-500 ring-4 ring-rose-500/30'
-          : isDivergent
-            ? 'bg-amber-500 ring-2 ring-amber-400/25'
-            : truck.ras_eve_ignicao === '1'
-              ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
-              : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
+      let markerColor = isDivergent
+        ? 'bg-amber-500 ring-2 ring-amber-400/25'
+        : truck.ras_eve_ignicao === '1'
+          ? 'bg-emerald-600 text-white border border-white ring-4 ring-emerald-500/10'
+          : 'bg-slate-500 text-white border border-white ring-4 ring-slate-400/10';
 
       if (isSelectedLoad) {
         markerColor = 'bg-indigo-600 text-white border-2 border-primary-gold ring-8 ring-indigo-500/40 scale-125 z-[1000]';
@@ -1448,9 +1015,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
 
       const iconHtml = `
         <div class="relative group cursor-pointer flex flex-col items-center">
-          ${isOutOfBounds || isDeviatedFromRoute ? `
-            <div class="absolute -inset-2 bg-rose-500/40 rounded-full animate-ping pointer-events-none duration-1000"></div>
-          ` : ''}
           ${isSelectedLoad ? `
             <div class="absolute -inset-3 bg-indigo-500/30 rounded-full animate-ping pointer-events-none duration-1000"></div>
           ` : ''}
@@ -1495,12 +1059,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               09/06/2026 ${truck.lastUpdate || '14:32:39'}
             </span>
           </div>
-
-          ${isDeviatedFromRoute ? `
-          <div style="font-size: 8.5px; color: #991b1b; margin-bottom: 6px; padding: 4px 6px; background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 4px; font-weight: 800; text-transform: uppercase; text-align: center;">
-            ⚠️ DESVIO ATIVO: ${Math.round(truckDeviation)} METROS DA ROTA
-          </div>
-          ` : ''}
 
           <div style="font-size: 9.5px; color: #475569; margin-bottom: 7px; font-weight: 500;">
             ${address}
@@ -1568,7 +1126,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
         markersRef.current[truck.ras_vei_placa] = marker;
       }
     });
-  }, [trucks, loads, geofenceEnabled, geofenceCenter, geofenceRadius, mapLabelToggle, selectedLoadId, hideOtherVehicles, deviationThreshold]);
+  }, [trucks, loads, mapLabelToggle, selectedLoadId, hideOtherVehicles]);
 
   // Handle Focus On Vehicle
   const handleFocusTruck = (truck: TruckData) => {
@@ -1585,13 +1143,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       setTimeout(() => {
         markersRef.current[truck.ras_vei_placa]?.openPopup();
       }, 1200);
-    }
-  };
-
-  const handleFocusGeofence = () => {
-    const map = mapInstanceRef.current;
-    if (map) {
-      map.flyTo(geofenceCenter, 12, { animate: true, duration: 1.2 });
     }
   };
 
@@ -1642,85 +1193,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
       }
     }
   }, [activeTracePlaca, activeRoutePlaca, traces, trucks]);
-
-  // Simulation Interval Tick (10 seconds refresh rate)
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const interval = setInterval(() => {
-      setTrucks(prev => {
-        return prev.map(truck => {
-          if (truck.ras_eve_ignicao === '0') {
-            return {
-              ...truck,
-              lastUpdate: new Date().toLocaleTimeString()
-            };
-          }
-
-          const currentLat = parseFloat(truck.ras_eve_latitude);
-          const currentLng = parseFloat(truck.ras_eve_longitude);
-          
-          const nextProgress = Math.min((truck.progressPercent || 0) + Math.random() * 1.5 + 0.5, 100);
-          
-          let computedLat = currentLat;
-          let computedLng = currentLng;
-
-          const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
-          if (matchedLoad?.status === CargoStatus.RELEASED) {
-            const routePts = getTruckRoutePoints(truck);
-            const routePos = getTruckPositionOnRoutePoints(routePts, nextProgress);
-            
-            const isDeviated = forcedDeviatedPlacas[truck.ras_vei_placa];
-            if (isDeviated) {
-              computedLat = routePos[0] + 0.038;
-              computedLng = routePos[1] - 0.038;
-            } else {
-              computedLat = routePos[0];
-              computedLng = routePos[1];
-            }
-          } else {
-            let dLat = (Math.random() - 0.44) * 0.0035; 
-            let dLng = (Math.random() - 0.5) * 0.0035;  
-            computedLat = currentLat + dLat;
-            computedLng = currentLng + dLng;
-          }
-
-          const currentSpeed = Number(truck.ras_eve_velocidade);
-          let newSpeed = currentSpeed + (Math.random() > 0.5 ? 4 : -4);
-          if (newSpeed > 82) newSpeed = 75;
-          if (newSpeed < 30) newSpeed = 40;
-
-          const newLat = computedLat.toFixed(6);
-          const newLng = computedLng.toFixed(6);
-
-          // Append to dynamic historical coordinates traces
-          setTraces(tPrev => {
-            const up = { ...tPrev };
-            if (!up[truck.ras_vei_placa]) {
-              up[truck.ras_vei_placa] = [];
-            }
-            up[truck.ras_vei_placa] = [
-              ...up[truck.ras_vei_placa],
-              [parseFloat(newLat), parseFloat(newLng)]
-            ];
-            return up;
-          });
-
-          return {
-            ...truck,
-            ras_eve_latitude: newLat,
-            ras_eve_longitude: newLng,
-            ras_eve_velocidade: String(Math.round(newSpeed)),
-            progressPercent: parseFloat(nextProgress.toFixed(1)),
-            lastUpdate: new Date().toLocaleTimeString()
-          };
-        });
-      });
-      setLastSyncTime(new Date().toLocaleTimeString());
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [isPlaying]);
 
   const triggerManualFetch = () => {
     setTrucks(prev => prev.map(t => ({
@@ -1876,24 +1348,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             <FileText className="w-3.5 h-3.5" />
             Cargas ({loads.length})
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('geofence');
-              setIsSettingCenter(false);
-            }}
-            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              sidebarTab === 'geofence'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            } ${outOfGeofenceTrucks.length > 0 ? 'relative text-rose-600' : ''}`}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            Cerca
-            {outOfGeofenceTrucks.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping absolute top-1 right-2"></span>
-            )}
-          </button>
         </div>
 
         {/* TAB 1 CONTENT: CAMINHÕES LIST */}
@@ -1926,30 +1380,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               </button>
               <button className="p-1.5 border border-slate-200 bg-white rounded-lg text-slate-500 hover:bg-slate-50" title="Configurar Painel">
                 <Settings className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Simulation controls strip */}
-            <div className="flex bg-slate-50 rounded-xl p-1.5 border border-slate-100 gap-1.5 mb-3.5 select-none shrink-0">
-              <button
-                onClick={() => setIsPlaying(!isPlaying)}
-                className={`flex-grow flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                  isPlaying 
-                    ? 'bg-amber-600/10 text-amber-700 hover:bg-amber-600/15'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                }`}
-              >
-                {isPlaying ? (
-                  <>
-                    <Pause className="w-3 h-3 fill-current" />
-                    Simulador ON (10s)
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3 h-3 fill-current" />
-                    Ativar Telemetria
-                  </>
-                )}
               </button>
             </div>
 
@@ -2040,8 +1470,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               ) : (
                 filteredTrucks.map(truck => {
                   const matchedLoad = loads.find(load => platesMatch(load.plate, truck.ras_vei_placa));
-                  const distance = getTruckDistance(truck);
-                  const isOutOfBounds = geofenceEnabled && (distance > geofenceRadius) && !!matchedLoad;
                   const isSelected = selectedPlaca === truck.ras_vei_placa;
                   
                   const address = getAddressForCoords(truck.ras_eve_latitude, truck.ras_eve_longitude, truck.ras_vei_placa);
@@ -2059,9 +1487,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                       className={`relative border p-3.5 rounded-xl text-left cursor-pointer transition-all flex flex-col gap-1.5 ${
                         isSelected 
                           ? 'border-primary-gold bg-primary-gold/5 ring-1 ring-primary-gold-30'
-                          : isOutOfBounds
-                            ? 'border-rose-200 bg-rose-50/20 hover:border-rose-350'
-                            : 'border-slate-150 hover:bg-slate-50 bg-white'
+                          : 'border-slate-150 hover:bg-slate-50 bg-white'
                       }`}
                     >
                       {/* Pinned visual icon on selected cards */}
@@ -2164,16 +1590,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                       {/* Client row bottom */}
                       <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1 justify-between items-center text-[7.5px] font-black uppercase text-slate-400 tracking-wider font-sans select-none">
                         <span>ATACADAO DIA A DIA</span>
-                        {isOutOfBounds && (
-                          <span className="text-[7px] text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded animate-pulse">
-                            FORA C. VIRTUAL
-                          </span>
-                        )}
-                        {matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(truck) > deviationThreshold && (
-                          <span className="text-[7px] text-rose-605 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded animate-pulse font-extrabold uppercase">
-                            ⚠️ DESVIO RETA ({Math.round(getTruckDeviation(truck))}m)
-                          </span>
-                        )}
                         {matchedLoad?.status === CargoStatus.BLOCKED && (
                           <span className="text-[7px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded">
                             RESTRITO
@@ -2369,252 +1785,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   );
                 });
               })()}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2 CONTENT: GEOFENCE CONFIG PANEL */}
-        {sidebarTab === 'geofence' && (
-          <div className="flex flex-col flex-grow overflow-hidden text-left font-sans">
-            <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-4 mb-4 shrink-0">
-              
-              {/* Toggle Cerca switch */}
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="text-left">
-                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider block">Monitor de Cerca</span>
-                  <span className="text-[8px] text-slate-400 font-bold uppercase">Controlador Geofence DF</span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer select-none">
-                  <input 
-                    type="checkbox" 
-                    checked={geofenceEnabled} 
-                    onChange={(e) => setGeofenceEnabled(e.target.checked)}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-
-              {/* Slider radius */}
-              <div className="space-y-1.5 text-left">
-                <div className="flex justify-between items-center text-[9.5px] font-black text-slate-700 uppercase">
-                  <span>Raio da Cerca</span>
-                  <span className="text-slate-800 font-mono font-black py-0.5 px-2 bg-slate-250/70 rounded-md text-[9px]">
-                    {(geofenceRadius / 1000).toFixed(1)} km
-                  </span>
-                </div>
-                <input 
-                  type="range" 
-                  min="2000" 
-                  max="35000" 
-                  step="500"
-                  disabled={!geofenceEnabled}
-                  value={geofenceRadius} 
-                  onChange={(e) => setGeofenceRadius(Number(e.target.value))}
-                  className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800 disabled:opacity-40" 
-                />
-                <div className="flex justify-between text-[7px] text-slate-400 font-black uppercase">
-                  <span>Mín: 1 km</span>
-                  <span>CD Santa Maria</span>
-                  <span>Máx: 35 km</span>
-                </div>
-              </div>
-
-              {/* Centering controls */}
-              <div className="space-y-2 border-t border-slate-200 pt-3 text-left">
-                <div className="flex items-center justify-between text-[9.5px] font-black text-slate-800 uppercase">
-                  <span>Centro da Cerca</span>
-                  <span className="text-[8px] text-slate-500 font-mono">
-                    {Math.abs(geofenceCenter[0] - cdSantaMariaCoordinates[0]) < 0.01 ? 'CD Santa Maria' : 'Customizado'} ({geofenceCenter[0].toFixed(3)}, {geofenceCenter[1].toFixed(3)})
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingCenter(!isSettingCenter)}
-                    className={`p-1.5 font-black rounded-lg text-[8px] uppercase tracking-wider border text-center transition-all cursor-pointer ${
-                      isSettingCenter 
-                        ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {isSettingCenter ? 'Foco...' : 'Definir'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGeofenceCenter([-16.048231, -47.971867]);
-                      setIsSettingCenter(false);
-                    }}
-                    className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-755 font-black rounded-lg text-[8px] uppercase tracking-wider text-center transition-all cursor-pointer"
-                  >
-                    S. Maria (CD)
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleFocusGeofence}
-                  className="w-full py-1.5 bg-slate-850 hover:bg-slate-900 text-white font-black rounded-lg text-[8.5px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <Locate className="w-3 h-3 text-primary-gold" />
-                  Visualizar central no mapa
-                </button>
-              </div>
-            </div>
-
-            {/* MONITOR DE DESVIO DE ROTA COMPACTO */}
-            <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-4 mb-4 shrink-0 text-left">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="text-left">
-                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-wider block">Monitor de Rota</span>
-                  <span className="text-[8px] text-slate-400 font-bold uppercase">Afastamento máximo da rota ({deviationThreshold}m)</span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer select-none">
-                  <input 
-                    type="checkbox" 
-                    checked={routeDeviationEnabled} 
-                    onChange={(e) => setRouteDeviationEnabled(e.target.checked)}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
-
-              <div className="space-y-1.5 text-left">
-                <div className="flex justify-between items-center text-[9.5px] font-black text-slate-700 uppercase">
-                  <span>Limite de Desvio</span>
-                  <span className="text-indigo-800 font-mono font-black py-0.5 px-2 bg-indigo-50 border border-indigo-200/50 rounded-md text-[9px]">
-                    {deviationThreshold} m
-                  </span>
-                </div>
-                <input 
-                  type="range" 
-                  min="100" 
-                  max="3000" 
-                  step="50"
-                  disabled={!routeDeviationEnabled}
-                  value={deviationThreshold} 
-                  onChange={(e) => setDeviationThreshold(Number(e.target.value))}
-                  className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-40" 
-                />
-                <div className="flex justify-between text-[7px] text-slate-400 font-black uppercase">
-                  <span>Mín: 100m</span>
-                  <span>Sugerido: 500m</span>
-                  <span>Máx: 3.000m</span>
-                </div>
-              </div>
-            </div>
-
-            {/* List of out-of-limits infractions */}
-            <div className="flex-1 flex flex-col overflow-hidden text-left">
-              <h3 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
-                <span>INFRATORES DO ESPAÇO ({outOfGeofenceTrucks.length})</span>
-                {geofenceEnabled && outOfGeofenceTrucks.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
-                )}
-              </h3>
-
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[140px] lg:max-h-[none] mb-4">
-                {!geofenceEnabled ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
-                    <p className="text-[9px] font-black uppercase">Monitoramento Inoperante</p>
-                  </div>
-                ) : outOfGeofenceTrucks.length === 0 ? (
-                  <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-center">
-                    <strong className="text-[9px] font-black uppercase text-emerald-800">Cerca OK</strong>
-                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os caminhões integrados estão na área operational.</p>
-                  </div>
-                ) : (
-                  outOfGeofenceTrucks.map(truck => {
-                    const distance = getTruckDistance(truck);
-                    return (
-                      <div
-                        key={truck.ras_vei_placa}
-                        onClick={() => handleFocusTruck(truck)}
-                        className="bg-rose-50/50 border border-rose-150 p-3 rounded-xl hover:bg-rose-50 cursor-pointer transition-all flex justify-between items-center"
-                      >
-                        <div className="truncate pr-2">
-                          <span className="font-mono font-black text-xs text-rose-800 bg-rose-100/60 border border-rose-200 px-1.5 py-0.2 rounded">
-                            {truck.ras_vei_placa}
-                          </span>
-                          <span className="block mt-1 font-bold text-[8.5px] uppercase text-slate-705 truncate">
-                            {truck.driverName}
-                          </span>
-                          <span className="block font-mono text-[7.5px] text-rose-600 font-bold">
-                            {(distance / 1000).toFixed(1)} km do centro
-                          </span>
-                        </div>
-                        <span className="text-[7.5px] bg-white border border-rose-200 text-rose-700 font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block">
-                          Focar
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* List of route deviation infractions */}
-              <h3 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
-                <span>DESVIOS DE ROTA CRÍTICOS ({trucks.filter(t => {
-                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
-                  return routeDeviationEnabled && matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
-                }).length})</span>
-                {routeDeviationEnabled && trucks.some(t => {
-                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
-                  return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
-                }) && (
-                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
-                )}
-              </h3>
-
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full max-h-[140px] lg:max-h-[none]">
-                {!routeDeviationEnabled ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
-                    <p className="text-[9px] font-black uppercase">Monitoramento Rota Inativo</p>
-                  </div>
-                ) : trucks.filter(t => {
-                  const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
-                  return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
-                }).length === 0 ? (
-                  <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-center">
-                    <strong className="text-[9px] font-black uppercase text-emerald-800">Rotas Planificadas OK</strong>
-                    <p className="text-[8px] font-bold uppercase text-emerald-650 mt-1">Todos os veículos em trânsito mantêm o trajeto predefinido.</p>
-                  </div>
-                ) : (
-                  trucks.filter(t => {
-                    const matchedLoad = loads.find(l => platesMatch(l.plate, t.ras_vei_placa));
-                    return matchedLoad?.status === CargoStatus.RELEASED && getTruckDeviation(t) > deviationThreshold;
-                  }).map(truck => {
-                    const dev = getTruckDeviation(truck);
-                    const matchedLoad = loads.find(l => platesMatch(l.plate, truck.ras_vei_placa));
-                    return (
-                      <div
-                        key={truck.ras_vei_placa}
-                        onClick={() => handleFocusTruck(truck)}
-                        className="bg-rose-50/50 border border-rose-150 p-3 rounded-xl hover:bg-rose-50 cursor-pointer transition-all flex justify-between items-center"
-                      >
-                        <div className="truncate pr-2">
-                          <span className="font-mono font-black text-xs text-rose-800 bg-rose-100/60 border border-rose-200 px-1.5 py-0.2 rounded">
-                            {truck.ras_vei_placa}
-                          </span>
-                          <span className="block mt-1 font-bold text-[8.5px] uppercase text-slate-705 truncate">
-                            {matchedLoad?.driverName || truck.driverName}
-                          </span>
-                          <span className="block font-mono text-[7.5px] text-rose-600 font-bold">
-                            {Math.round(dev)} metros de desvio
-                          </span>
-                        </div>
-                        <span className="text-[7.5px] bg-rose-500 border border-rose-400 text-white font-black px-2 py-0.8 rounded-lg shrink-0 uppercase tracking-wider block hover:bg-rose-650 cursor-pointer">
-                          Focar
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -2870,29 +2040,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   <div className="w-full bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
                     <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${selectedTruckObj.progressPercent}%` }}></div>
                   </div>
-
-                  {selectedTruckLoad?.status === CargoStatus.RELEASED && (
-                    <div className={`p-2 rounded-lg border flex flex-col gap-1 mt-2.5 ${
-                      getTruckDeviation(selectedTruckObj) > deviationThreshold 
-                        ? 'bg-rose-50 border-rose-200 text-rose-850' 
-                        : 'bg-emerald-50 border-emerald-150 text-emerald-850'
-                    }`}>
-                      <div className="flex justify-between items-center text-[7.5px] font-black uppercase tracking-wider">
-                        <span>Desvio de Rota Atual</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          getTruckDeviation(selectedTruckObj) > deviationThreshold ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'
-                        }`} />
-                      </div>
-                      <div className="flex justify-between items-end">
-                        <strong className="text-[10px] font-black font-mono">
-                          {Math.round(getTruckDeviation(selectedTruckObj))} m
-                        </strong>
-                        <span className="text-[7.5px] font-bold opacity-80 uppercase font-sans">
-                          {getTruckDeviation(selectedTruckObj) > deviationThreshold ? `Afastamento Crítico (>${deviationThreshold}m)` : 'Dentro do Trajeto'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -2966,18 +2113,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                 <MapPin className={`w-5 h-5 ${activeShortcutAction === 'referencia' ? 'text-indigo-600' : 'text-slate-500'}`} />
                 <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
                   Ponto de referência
-                </span>
-              </div>
-
-              <div 
-                onClick={() => handleShortcutClick('cerca')}
-                className={`p-3 flex flex-col justify-between items-start text-left h-[84px] rounded-xl border font-sans cursor-pointer shadow-sm hover:shadow transition-all active:scale-95 select-none ${
-                  activeShortcutAction === 'cerca' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200/80 hover:bg-slate-50'
-                }`}
-              >
-                <Grid className={`w-5 h-5 ${activeShortcutAction === 'cerca' ? 'text-indigo-600' : 'text-slate-500'}`} />
-                <span className="text-[8.5px] font-black text-slate-700 leading-tight uppercase mt-1">
-                  Cerca rápida
                 </span>
               </div>
 
@@ -3114,30 +2249,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                   </div>
                 )}
 
-                {/* 2. SHORTCUT: CERCA RÁPIDA */}
-                {activeShortcutAction === 'cerca' && (
-                  <div className="space-y-2">
-                    <strong className="text-[9.5px] font-black uppercase text-indigo-900 block">Cerca Virtual Individual (CVI)</strong>
-                    <p className="text-[8.5px] text-slate-600 uppercase leading-snug">
-                      Modifique remotamente o círculo de vigilância operacional do veículo no lote:
-                    </p>
-                    <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="text-[10px] font-mono font-bold text-slate-800">Cerca CVI</span>
-                      <button 
-                        onClick={() => {
-                          setGeofenceRadius(6000);
-                          setGeofenceCenter([parseFloat(selectedTruckObj.ras_eve_latitude), parseFloat(selectedTruckObj.ras_eve_longitude)]);
-                          setGeofenceEnabled(true);
-                        }}
-                        className="p-1 px-2.5 bg-slate-900 text-white font-bold rounded hover:bg-slate-800 text-[8px] uppercase tracking-wider"
-                      >
-                        Centralizar Radius
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. SHORTCUT: TIMELINE HISTORICO */}
+                {/* 2. SHORTCUT: TIMELINE HISTORICO */}
                 {activeShortcutAction === 'historico' && (
                   <div>
                     <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-2">Histórico de Transmissões (Hoje)</strong>
@@ -3295,7 +2407,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
                     <strong className="text-[9.5px] font-black uppercase text-indigo-900 block mb-1">Eventos Consolidados do Dispositivo</strong>
                     <div className="space-y-1 mt-2">
                       <div className="text-[7.5px] bg-white border border-slate-150 p-1 rounded-md text-slate-700 flex justify-between select-text uppercase">
-                        <span>Entrada em Geofence Santa Maria</span>
+                        <span>Chegada ao Ponto Operacional Santa Maria</span>
                         <strong>14:31:02</strong>
                       </div>
                       <div className="text-[7.5px] bg-white border border-slate-150 p-1 rounded-md text-slate-700 flex justify-between select-text uppercase">
@@ -3326,7 +2438,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
           </div>
           <span className="font-mono text-[9px] text-slate-400 font-bold flex items-center gap-1 font-sans">
             <Clock className="w-3.5 h-3.5 text-slate-400" />
-            Recarregando a cada 10s
+            Status Síncrono
           </span>
         </div>
 
@@ -3340,68 +2452,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             style={{ height: '100%', width: '100%' }}
           ></div>
 
-          {/* DYNAMIC MAP GEOFENCING CORNER ALERTS */}
-          {geofenceEnabled && outOfGeofenceTrucks.length > 0 && (
-            <div className={`absolute top-4 ${selectedPlaca ? 'right-[384px]' : 'right-4'} z-[999] bg-rose-600/95 backdrop-blur-md border border-rose-500 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce max-w-xs select-none`}>
-              <AlertTriangle className="w-4.5 h-4.5 text-white animate-pulse shrink-0" />
-              <div className="text-left font-sans">
-                <h4 className="text-[8px] font-black uppercase tracking-widest text-rose-200">Notificação de Alerta</h4>
-                <p className="text-[10px] font-black uppercase mt-0.5 leading-tight">
-                  {outOfGeofenceTrucks.length} {outOfGeofenceTrucks.length === 1 ? 'veículo ultrapassou' : 'veículos ultrapassaram'} a Cerca Virtual!
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* DYNAMIC STACKED POPUP ALERTS FOR EXITS AND ENTRANCES */}
-          <div className={`absolute top-[80px] ${selectedPlaca ? 'right-[384px]' : 'right-4'} z-[1000] flex flex-col gap-2 max-w-xs w-full pointer-events-none select-none`}>
-            <AnimatePresence>
-              {fenceAlerts.map(alert => (
-                <motion.div
-                  key={alert.id}
-                  initial={{ opacity: 0, scale: 0.8, y: -20, x: 50 }}
-                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, x: 100 }}
-                  transition={{ type: 'spring', damping: 15 }}
-                  className={`pointer-events-auto bg-slate-900/95 backdrop-blur border ${alert.type === 'route_deviation' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-primary-gold'} p-3 rounded-xl shadow-2xl flex flex-col gap-1.5 text-left text-white`}
-                >
-                  <div className="flex justify-between items-center bg-slate-950/60 p-1 px-2 rounded-md">
-                    <span className="text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                      {alert.type === 'exit_cd' ? '🚨 Saída de CD' : alert.type === 'route_deviation' ? '⚠️ Desvio de Rota' : '🎯 Chegada na Cerca da Loja'}
-                    </span>
-                    <button
-                      onClick={() => setFenceAlerts(prev => prev.filter(x => x.id !== alert.id))}
-                      className="text-slate-400 hover:text-white font-mono text-[7px] bg-slate-800 px-1 py-0.2 rounded hover:bg-slate-700 cursor-pointer"
-                    >
-                      X
-                    </button>
-                  </div>
-                  
-                  <p className="text-[10px] font-bold text-slate-100 uppercase leading-snug">
-                    {alert.message}
-                  </p>
-
-                  <div className="flex justify-between text-[7.5px] text-slate-400 font-mono border-t border-slate-800/80 pt-1.5">
-                    <span>Placa: {alert.placa}</span>
-                    <span>{alert.timestamp}</span>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-
-          {/* DYNAMIC GEOLOCATION FEEDBACK DIALOG */}
-          {isSettingCenter && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999] bg-slate-900 border border-primary-gold text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce select-none">
-              <MapPin className="w-4.5 h-4.5 text-primary-gold animate-pulse" />
-              <div className="text-left font-sans">
-                <h4 className="text-[8px] font-black uppercase text-primary-gold tracking-widest">Nova Cerca Virtual</h4>
-                <p className="text-[10.5px] font-extrabold uppercase mt-0.5 leading-none">Clique em qualquer ponto do mapa para definir o ponto central.</p>
-              </div>
-            </div>
-          )}
-
           {/* PROFESSIONAL GIS MAP TOOLBAR RAIL FLOATING OVER MAP ON LEFT */}
           <div className="absolute top-4 left-4 z-[999] flex flex-col gap-1.5 p-1.5 bg-white/90 backdrop-blur border border-slate-200/80 shadow-lg rounded-xl select-none select-none">
             {/* 1. Center / Locate selected vehicle */}
@@ -3409,12 +2459,12 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               onClick={() => {
                 if (selectedTruckObj) {
                   handleFocusTruck(selectedTruckObj);
-                } else {
-                  handleFocusGeofence();
+                } else if (trucks.length > 0) {
+                  handleFocusTruck(trucks[0]);
                 }
               }}
               className="p-2 bg-white hover:bg-slate-50 text-slate-650 hover:text-slate-900 rounded-lg border border-slate-200 shadow-sm transition-all cursor-pointer group"
-              title="Locate Selected Vehicle"
+              title="Centralizar no veículo"
             >
               <Locate className="w-4 h-4 text-indigo-600 group-hover:scale-110" />
             </button>
@@ -3466,18 +2516,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
               )}
             </button>
 
-            {/* 6. Quick Geofence Toggle */}
-            <button
-              onClick={() => setGeofenceEnabled(!geofenceEnabled)}
-              className={`p-2 rounded-lg border shadow-sm transition-all cursor-pointer ${
-                geofenceEnabled ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'
-              }`}
-              title="Ligar Cerca Virtual"
-            >
-              <Compass className="w-4 h-4" />
-            </button>
-
-            {/* 7. Fullscreen Canvas size Mode */}
+            {/* 6. Fullscreen Canvas size Mode */}
             <button
               onClick={() => setIsFullscreen(!isFullscreen)}
               className="p-2 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 shadow-sm transition-all text-slate-650 cursor-pointer"
@@ -3499,11 +2538,6 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ loads = [] }) => {
             <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1">
               <span className="w-2.5 h-2.5 bg-slate-500 border border-white rounded-full block"></span>
               Ignição Desligada (Parado)
-            </div>
-            
-            <div className="flex items-center gap-2 text-[9px] font-bold text-slate-700 px-1">
-              <span className="w-2.5 h-2.5 bg-rose-600 border border-white rounded-full block animate-pulse"></span>
-              Fora da Cerca Virtual (Infraconforme)
             </div>
           </div>
 
