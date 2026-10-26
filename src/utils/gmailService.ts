@@ -1,6 +1,3 @@
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebase';
-
 let cachedAccessToken: string | null = null;
 let googleUser: any = null;
 
@@ -33,35 +30,23 @@ export const getGmailUser = () => googleUser;
 export const setGmailTokenAndUser = (token: string | null, user: any) => {
   cachedAccessToken = token;
   googleUser = user;
-  window.dispatchEvent(new CustomEvent('gmail-auth-changed'));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gmail-auth-changed'));
+  }
 };
 
 export const signInWithGmail = async () => {
-  const provider = new GoogleAuthProvider();
-  // Request required Gmail scopes
-  provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-  provider.addScope('https://www.googleapis.com/auth/gmail.send');
-  provider.addScope('https://www.googleapis.com/auth/gmail.modify');
-  provider.addScope('https://www.googleapis.com/auth/gmail.compose');
-
-  try {
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Não foi possível obter o token de acesso do Gmail.');
+  // Direct client-side token or prompt without Firebase dependency
+  const promptToken = prompt('Insira o token de acesso OAuth do Gmail (ou configure as credenciais da Central):');
+  if (promptToken && promptToken.trim()) {
+    cachedAccessToken = promptToken.trim();
+    googleUser = { email: 'central.monitoramento@atacadaodiaadia.com.br' };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gmail-auth-changed'));
     }
-    cachedAccessToken = credential.accessToken;
-    googleUser = result.user;
-    window.dispatchEvent(new CustomEvent('gmail-auth-changed'));
-    return { user: result.user, accessToken: credential.accessToken };
-  } catch (error: any) {
-    if (error && (error.code === 'auth/popup-closed-by-user' || error.message?.includes('popup-closed-by-user'))) {
-      console.warn('Autenticação do Gmail cancelada pelo usuário (popup fechado).');
-    } else {
-      console.error('Erro na autenticação do Gmail:', error);
-    }
-    throw error;
+    return { user: googleUser, accessToken: cachedAccessToken };
   }
+  throw new Error('Autenticação do Gmail cancelada ou token não fornecido.');
 };
 
 export const logoutGmail = () => {

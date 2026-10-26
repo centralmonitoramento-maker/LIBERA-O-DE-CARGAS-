@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  collection, 
-  doc, 
-  setDoc, 
-  query, 
-  orderBy, 
-  limit, 
-  onSnapshot 
-} from 'firebase/firestore';
-import { 
   MessageSquare, 
   Send, 
   Paperclip, 
@@ -30,7 +21,7 @@ import {
   Search,
   ArrowLeft
 } from 'lucide-react';
-import { db, sanitizeFirestoreData, handleFirestoreError, OperationType } from '../firebase';
+import { localDb } from '../services/localDatabase';
 import { User } from '../types';
 
 interface FeedbackMessage {
@@ -158,58 +149,17 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
   // Load real-time active users list for contact book
   useEffect(() => {
     if (!currentUser) return;
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const list: User[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data() as User;
-        // Save only active users, and do not list current user
-        if (data.status === 'active' && data.username !== currentUser.username) {
-          list.push(data);
-        }
-      });
+    const unsubscribe = localDb.subscribeUsers((usersList) => {
+      const list = usersList.filter(u => u.status === 'active' && u.username !== currentUser.username);
       setAllUsers(list);
-    }, (error) => {
-      console.warn('Erro ao escutar usuários para lista de contatos (usando cache local):', error);
-      try {
-        const cached = localStorage.getItem('cargoradar_users');
-        if (cached) {
-          const parsed = JSON.parse(cached) as User[];
-          const list = parsed.filter(u => u.status === 'active' && u.username !== currentUser.username);
-          setAllUsers(list);
-        }
-      } catch (cacheErr) {
-        console.error('Erro ao responder com cache local de contatos:', cacheErr);
-      }
     });
-
     return () => unsubscribe();
   }, [currentUser]);
 
   // Load real-time feedback messages
   useEffect(() => {
-    const q = query(
-      collection(db, 'feedbacks'),
-      orderBy('timestamp', 'asc'),
-      limit(200)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
-      const msgs: FeedbackMessage[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data() as FeedbackMessage;
-        if (new Date(data.timestamp).getTime() >= resetTime) {
-          msgs.push(data);
-        }
-      });
+    const unsubscribe = localDb.subscribeFeedbacks((msgs: FeedbackMessage[]) => {
       setMessages(msgs);
-
-      // Cache feedbacks locally
-      try {
-        localStorage.setItem('cargoradar_feedback_messages', JSON.stringify(msgs));
-      } catch (err) {
-        console.warn('Erro ao salvar feedbacks localmente:', err);
-      }
 
       // Automatically compute unread count when chat is closed
       if (!isOpen && currentUser) {
@@ -229,24 +179,6 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
           }
         });
         setUnreadCount(unread.length);
-      }
-    }, (error) => {
-      console.warn('Erro ao escutar mensagens de feedback (usando cache local):', error);
-      
-      try {
-        const cached = localStorage.getItem('cargoradar_feedback_messages');
-        if (cached) {
-          const msgs = JSON.parse(cached) as FeedbackMessage[];
-          setMessages(msgs);
-        }
-      } catch (cacheErr) {
-        console.error('Erro ao ler cache de feedbacks:', cacheErr);
-      }
-
-      const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('limit');
-      if (!isQuotaOrLimit) {
-        handleFirestoreError(error, OperationType.LIST, 'feedbacks');
       }
     });
 
@@ -421,11 +353,8 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
     };
 
     try {
-      // Optimistic locally
-      setMessages((prev) => [...prev, newMsg]);
-
-      // Write to Firebase Firestore
-      await setDoc(doc(db, 'feedbacks', newMsg.id), sanitizeFirestoreData(newMsg));
+      // Save locally to localDb
+      localDb.saveFeedback(newMsg);
       
       // Reset inputs
       setInputText('');
@@ -443,10 +372,7 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 50);
     } catch (err) {
-      console.error('Falha ao enviar mensagem de feedback:', err);
-      handleFirestoreError(err, OperationType.CREATE, 'feedbacks');
-      
-      // Como o handleFirestoreError não lança erro em caso de cota excedida, podemos resetar os inputs aqui e seguir felizes localmente/offline
+      console.error('Falha ao salvar mensagem de feedback:', err);
       setInputText('');
       setAttachment(null);
       setAttachmentName('');
@@ -456,9 +382,6 @@ export const FeedbackChat: React.FC<FeedbackChatProps> = ({ currentUser }) => {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      setTimeout(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 50);
     }
   };
 

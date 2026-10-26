@@ -26,9 +26,14 @@ import {
   LogOut,
   Check,
   Sparkles,
-  Loader2
+  Loader2,
+  Trash2,
+  ShieldAlert,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { User, CargoLoad } from '../types';
+import { localDb } from '../services/localDatabase';
 import { 
   getGmailToken, 
   getGmailUser, 
@@ -45,6 +50,17 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }) => {
+  const isAdmin = currentUser?.systemRole === 'administrator';
+  const [clearAllConfirmModal, setClearAllConfirmModal] = useState<boolean>(false);
+  const [clearFeedback, setClearFeedback] = useState<string | null>(null);
+
+  const handleConfirmClearAll = () => {
+    localDb.clearAllSystemData();
+    setClearAllConfirmModal(false);
+    setClearFeedback('Todo o histórico operacional de cargas e logs foi apagado com sucesso!');
+    setTimeout(() => setClearFeedback(null), 4000);
+  };
+
   // Notification State
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() => {
     if (typeof window === 'undefined') return 'default';
@@ -950,6 +966,78 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
             )}
           </section>
 
+          {/* SEC: MASTER ADMINISTRATOR DATA MANAGEMENT & PURGE */}
+          {isAdmin && (
+            <section id="data-management" className="bg-white dark:bg-slate-950 border-2 border-red-500/30 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-red-500/20 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-red-100 dark:bg-red-950/40 rounded-xl text-red-600">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                      Gestão de Dados & Limpeza de Histórico
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-medium">Controle exclusivo do Administrador Master para reduzir a poluição visual</p>
+                  </div>
+                </div>
+                <span className="bg-red-500/10 text-red-600 dark:text-red-400 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest border border-red-500/20">
+                  Admin Master
+                </span>
+              </div>
+
+              {clearFeedback && (
+                <div className="bg-emerald-600 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                    <span className="text-xs font-black uppercase tracking-wider">{clearFeedback}</span>
+                  </div>
+                  <button onClick={() => setClearFeedback(null)} className="p-1 hover:bg-emerald-700 rounded-lg text-emerald-100 hover:text-white cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-100">
+                    Registros Operacionais Armazenados
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Você pode limpar permanentemente os dados operacionais antigos (cargas expedidas, veículos no pátio, ocorrências de divergência e logs de eventos). Todos os usuários cadastrados e as configurações de monitor permanecem intactos.
+                  </p>
+                  <div className="flex items-center gap-4 text-xs font-bold text-slate-600 dark:text-slate-300">
+                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-xl">
+                      <span className="text-slate-400 text-[10px] uppercase block">Cargas em Memória</span>
+                      <span className="font-mono font-black text-slate-900 dark:text-white text-sm">{loads.length} registros</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/60 rounded-2xl p-6 flex flex-col justify-between space-y-4">
+                  <div>
+                    <h5 className="text-xs font-black text-red-900 dark:text-red-300 uppercase tracking-tight flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      Zerar Banco Operacional
+                    </h5>
+                    <p className="text-[11px] text-red-800/80 dark:text-red-400/80 mt-1 leading-relaxed">
+                      Esta ação é irreversível e remove todo o histórico para deixar as tabelas, gráficos do dashboard e auditoria totalmente limpos.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setClearAllConfirmModal(true)}
+                    className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs tracking-wider rounded-xl transition-all shadow-md shadow-red-600/30 cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Limpar Todo o Histórico</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* SEC 4: TECHNICAL SUPPORT & MANUAL */}
           <section id="support" className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-[32px] p-6 sm:p-8 space-y-6 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
@@ -1074,6 +1162,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, loads }
 
         </div>
       </div>
+
+      {/* Modal Alerta Severo: Limpeza Geral de Dados (Admin Master) */}
+      {clearAllConfirmModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-14 h-14 bg-red-100 dark:bg-red-950/40 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-red-600 tracking-widest bg-red-50 dark:bg-red-950/50 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">
+                  Ação Crítica - Administrador Master
+                </span>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white mt-1 tracking-tight">
+                  Limpar Todo o Histórico Operacional?
+                </h3>
+              </div>
+            </div>
+
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-2xl p-4 mb-5 text-red-950 dark:text-red-200 text-xs space-y-2 leading-relaxed">
+              <p className="font-extrabold text-red-700 dark:text-red-400 flex items-center gap-1.5 uppercase text-[11px]">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Atenção Máxima: Ação Irreversível!
+              </p>
+              <p>
+                Esta operação irá apagar permanentemente todas as <strong>{loads.length} cargas</strong>, ocorrências, checklists e logs de eventos do sistema para renovar a visualização.
+              </p>
+              <p className="text-[11px] text-red-800 dark:text-red-300">
+                ✅ Os <strong>usuários cadastrados</strong> e as <strong>configurações do sistema</strong> serão preservados intactos.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button 
+                type="button"
+                onClick={() => setClearAllConfirmModal(false)}
+                className="flex-1 px-5 py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="flex-1 px-5 py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-red-600/30 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmar e Zerar Tudo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

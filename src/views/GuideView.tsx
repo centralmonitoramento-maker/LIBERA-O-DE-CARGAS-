@@ -15,7 +15,7 @@ import {
   LayoutDashboard, 
   ShieldCheck, 
   Layers, 
-  Compass 
+  Users 
 } from 'lucide-react';
 
 interface GuideStep {
@@ -246,43 +246,44 @@ export const GuideView: React.FC = () => {
     },
     {
       id: 6,
-      title: 'Passo 6: Rastreamento em Tempo Real',
-      role: 'Visualização Global / Lojas e Clientes',
-      icon: Compass,
+      title: 'Passo 6: Painel e Supervisão CD (Supervisor CD)',
+      role: 'Supervisor Operacional do CD / Liderança',
+      icon: Users,
       image: '/src/assets/images/guia_passo_6_rastreamento_1783626373501.jpg',
-      summary: 'Módulo de visibilidade em trânsito. Permite que as lojas de destino vejam quais caminhões estão a caminho, o horário estimado de entrega e se houve alguma intercorrência que atrase a descarga.',
+      summary: 'Módulo de gestão operacional e indicadores estratégicos. Permite ao supervisor acompanhar volume expedido vs liberado, controle do SLA de permanência de caminhões no pátio, performance individual de operadores e histórico de divergências.',
       procedures: [
-        'Acessar o módulo de "RASTREAMENTO" de cargas.',
-        'Utilizar os cards de busca rápida por placa ou destino para filtrar as informações.',
-        'Verificar a linha de status do veículo: Aguardando (Pátio CD), Em Trânsito (Rota), Bloqueado (Retido Central), ou Finalizado (Entregue na Loja).',
-        'Consultar o histórico cronológico de status com data/hora de cada etapa.'
+        'Acessar o módulo de "SUPERVISOR CD" no menu principal.',
+        'Analisar os indicadores de Volume Operacional (Expedido vs Liberado na Portaria) filtrados por data.',
+        'Monitorar o SLA de Pátio com tempo de permanência de caminhões e fila ao vivo.',
+        'Avaliar o ranking de Performance por Colaborador e o gráfico de Erros Operacionais / Divergências.',
+        'Consultar o Log de Eventos de expedição e portaria e aprovar novos operadores do CD.'
       ],
       keyValidations: [
-        'Acompanhamento do SLA de tempo de viagem entre o CD e a loja destino.',
-        'Verificação rápida da ocorrência caso o veículo esteja com status Bloqueado.',
-        'Planejamento de equipe de recebimento em loja baseado em veículos "Em Trânsito".'
+        'Cumprimento do SLA de pátio (meta estabelecida de permanência no pátio).',
+        'Auditoria contínua de divergências atreladas aos operadores responsáveis.',
+        'Gestão ágil de aprovação e governança de acessos dos colaboradores do CD.'
       ],
       slideContent: {
-        heading: 'Rastreamento, Status Real-time e SLAs',
+        heading: 'Supervisão do CD, SLAs e Performance',
         bulletPoints: [
-          'Visibilidade transparente das cargas para gerentes de filiais de destino.',
-          'Linha do tempo cronológica com logs exatos de alteração de cada carga.',
-          'Indicador gráfico intuitivo do status operacional em quatro níveis de cor.',
-          'Previsibilidade de descarga reduzindo horas extras desnecessárias na loja.'
+          'Visão unificada dos volumes de expedição e liberações na portaria com filtros.',
+          'Controle de tempo de permanência no pátio e fila de veículos em tempo real.',
+          'Métricas individuais de produtividade e taxa de conformidade por operador.',
+          'Mapeamento de ocorrências e divergências operacionais por motivo e usuário.'
         ],
-        keyMetric: 'SLA de Informação: Visibilidade do status em 100% do trânsito'
+        keyMetric: 'Meta de SLA de Pátio: Tempo médio de permanência < 2h30'
       },
-      presentationTips: 'Frise que dar transparência das entregas para as lojas reduz ligações desnecessárias perguntando onde está o caminhão e melhora o planejamento da equipe de descarga.',
+      presentationTips: 'Destaque como o painel do Supervisor do CD fecha o ciclo operacional com métricas objetivas de SLAs, produtividade e resolução de gargalos entre expedição e portaria.',
       geminiPrompt: `Crie um slide de apresentação corporativa profissional para o sistema CargaRadar com as seguintes especificações:
-- TÍTULO: Rastreamento Operacional em Tempo Real
-- SUBTÍTULO: Transparência e Eficiência Logística para Lojas e Filiais
+- TÍTULO: Painel de Supervisão e Indicadores do CD
+- SUBTÍTULO: Governança Operacional, Controle de SLAs e Produtividade
 - ESTRUTURA DOS TÓPICOS:
-  * Linha do Tempo Cronológica: Histórico em tempo real de cada evento de trânsito (check-in, liberação, ocorrências, descarga).
-  * Visibilidade Distribuída: Acesso para gerentes de loja planejarem suas equipes de descarga antes da chegada física do caminhão.
-  * Status Semáforo Visual: Indicadores de cores intuitivos para rápido diagnóstico (Verde: Trânsito, Vermelho: Bloqueado, Azul: Finalizado).
-  * Cumprimento de SLAs: Monitoramento de prazos de percurso reduzindo tempos ociosos e gargalos logísticos.
-- MÉTRICA EM DESTAQUE: 100% de visibilidade das entregas sem ligações de cobrança.
-- ESTILO VISUAL: Dashboard analítico, moderno, fundo escuro com tons de roxo cósmico e destaques em amarelo laser.`
+  * Balanço Operacional: Comparativo em tempo real de expedição vs liberações na portaria.
+  * Gestão de Pátio e SLA: Monitoramento de permanência de veículos com alerta para tempos excedidos.
+  * Performance por Colaborador: Indicadores de volume e conformidade individual da equipe.
+  * Auditoria de Divergências: Rastreabilidade de erros operacionais com atribuição de responsabilidades.
+- MÉTRICA EM DESTAQUE: Meta de permanência no pátio atingida em menos de 2h30.
+- ESTILO VISUAL: Dashboard analítico de alta performance, fundo escuro com detalhes em dourado e azul executivo.`
     }
   ];
 

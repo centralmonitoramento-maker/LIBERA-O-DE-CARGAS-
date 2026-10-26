@@ -94,16 +94,16 @@ export interface CargoLoad {
   validationTime?: string;
 }
 
-export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer' | 'store_app';
+export type SystemRole = 'administrator' | 'dispatcher' | 'auditor' | 'viewer' | 'store_app' | 'supervisor_cd';
 
 export interface User {
   id: string;
   username: string;
-  password: string;
+  password?: string;
   fullName?: string;
   storeLocation?: string;
   jobFunction?: string;
-  role: 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app';
+  role: 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app' | 'supervisor_cd';
   systemRole?: SystemRole;
   status: 'pending' | 'active' | 'rejected';
   createdAt: string;

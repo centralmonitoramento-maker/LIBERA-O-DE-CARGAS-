@@ -10,6 +10,7 @@ interface LoginViewProps {
 }
 
 const ROLE_NAMES = {
+  supervisor_cd: 'Supervisor CD',
   expedition: 'Expedição',
   central: 'Central de Monitoramento',
   audit: 'Auditoria de Gate',
@@ -20,7 +21,7 @@ const ROLE_NAMES = {
 
 export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, onRegisterRequest }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [registerRole, setRegisterRole] = useState<'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app'>('expedition');
+  const [registerRole, setRegisterRole] = useState<'supervisor_cd' | 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'store_app'>('supervisor_cd');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');

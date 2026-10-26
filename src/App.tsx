@@ -8,32 +8,16 @@ import { AuditView } from './views/AuditView';
 import { AnalysisView } from './views/AnalysisView';
 import { LoginView } from './views/LoginView';
 import { PortariaView } from './views/PortariaView';
-import { TrackingView } from './views/TrackingView';
 import { SettingsView } from './views/SettingsView';
 import { ReverseTransferView } from './views/ReverseTransferView';
 import { GuideView } from './views/GuideView';
+import { SupervisorCDView } from './views/SupervisorCDView';
 import { CargoLoad, CargoStatus, CargoType, OccurrenceType, User, EventLog, SystemRole } from './types';
 import { getGmailToken, sendGmailEmail } from './utils/gmailService';
 import { capLoadDocumentSize } from './utils/imageCompressor';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  getDocs, 
-  query, 
-  limit, 
-  orderBy,
-  onSnapshot 
-} from 'firebase/firestore';
-import { db, auth, OperationType, handleFirestoreError, sanitizeFirestoreData } from './firebase';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut 
-} from 'firebase/auth';
+import { localDb, generateLocalId } from './services/localDatabase';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
+type TabType = 'supervisor_cd' | 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'settings' | 'reverse_transfer' | 'guide';
 
 // Helper function to safely generate UUIDs, with fallback for insecure/sandboxed environments where crypto.randomUUID is not defined
 const generateId = (): string => {
@@ -69,16 +53,32 @@ const App: React.FC = () => {
   const [shortcutFeedback, setShortcutFeedback] = useState<string | null>(null);
   const [showShortcutHelp, setShowShortcutHelp] = useState<boolean>(false);
 
+const VALID_TABS: TabType[] = ['supervisor_cd', 'expedition', 'central', 'audit', 'analysis', 'portaria', 'settings', 'reverse_transfer', 'guide'];
+
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
+      const savedTab = localStorage.getItem('cargoradar_tab');
+      // If previous session was on the removed tracking view, purge it
+      if (savedTab === 'tracking' || (savedTab && !VALID_TABS.includes(savedTab as TabType))) {
+        localStorage.removeItem('cargoradar_tab');
+      }
+
       const persistedUser = localStorage.getItem('cargoradar_user');
       if (persistedUser) {
         const user = JSON.parse(persistedUser);
         if (user.role === 'store_app') {
-          const saved = localStorage.getItem('cargoradar_tab') as TabType;
-          return (saved === 'tracking' || saved === 'reverse_transfer') ? saved : 'reverse_transfer';
+          return 'reverse_transfer';
         }
-        return (localStorage.getItem('cargoradar_tab') as TabType) || (user.role as TabType) || 'expedition';
+        if (savedTab && VALID_TABS.includes(savedTab as TabType)) {
+          return savedTab as TabType;
+        }
+        if (user.role && VALID_TABS.includes(user.role as TabType)) {
+          return user.role as TabType;
+        }
+        return 'expedition';
+      }
+      if (savedTab && VALID_TABS.includes(savedTab as TabType)) {
+        return savedTab as TabType;
       }
       return 'expedition';
     } catch {
@@ -235,7 +235,7 @@ const App: React.FC = () => {
       // 3. Tab switching with Alt + Number (Alt + 1, Alt + 2, etc.)
       if (e.altKey && !isNaN(Number(e.key))) {
         const num = Number(e.key);
-        const tabs: TabType[] = ['expedition', 'central', 'audit', 'analysis', 'portaria', 'tracking', 'settings', 'guide'];
+        const tabs: TabType[] = ['supervisor_cd', 'expedition', 'central', 'audit', 'analysis', 'portaria', 'settings', 'guide'];
         if (num >= 1 && num <= tabs.length) {
           e.preventDefault();
           const targetTab = tabs[num - 1];
@@ -302,22 +302,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Restores active Firebase Auth session automatically on reload/boot if cached in localStorage
-  useEffect(() => {
-    if (isAuthenticated && loggedInUser && !auth.currentUser) {
-      const email = `${loggedInUser.username.toLowerCase()}@cargarelease.com`;
-      const authPassword = loggedInUser.password;
-      console.log("Restoring Firebase Auth session details:", email);
-      signInWithEmailAndPassword(auth, email, authPassword)
-        .then((credential) => {
-          console.log("Successfully restored Firebase Auth session on boot:", credential.user.email);
-        })
-        .catch((err) => {
-          console.warn("Failed to automatically restore Firebase Auth session:", err);
-        });
-    }
-  }, [isAuthenticated, loggedInUser]);
-
   const triggerNativeNotification = (load: CargoLoad) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
@@ -373,7 +357,6 @@ const App: React.FC = () => {
         };
         
         const now = audioCtx.currentTime;
-        // G5 then C6 subtle high double-tone chime
         playTone(783.99, now, 0.18);
         playTone(1046.50, now + 0.08, 0.3);
       } else if (type === 'blocked') {
@@ -396,7 +379,6 @@ const App: React.FC = () => {
         };
         
         const now = audioCtx.currentTime;
-        // Descriptive minor drop warning but sutil beep chime
         playTone(554.37, now, 0.15);
         playTone(466.16, now + 0.08, 0.25);
       }
@@ -406,58 +388,22 @@ const App: React.FC = () => {
   };
 
   const handleRetryConnection = async () => {
+    setIsOffline(false);
+    const nowStr = new Date().toLocaleString('pt-BR');
+    setLastSyncTime(nowStr);
     try {
-      const q = query(collection(db, 'loads'), limit(1));
-      await getDocs(q);
-      setIsOffline(false);
-      const nowStr = new Date().toLocaleString('pt-BR');
-      setLastSyncTime(nowStr);
-      try {
-        localStorage.setItem('cargoradar_last_sync', nowStr);
-      } catch (e) {
-        console.warn('Erro ao salvar timestamp da sincronização:', e);
-      }
-      setShortcutFeedback('Conexão com o banco restabelecida com sucesso!');
-    } catch (err) {
-      console.warn('Tentativa de reconexão falhou:', err);
-      setShortcutFeedback('Tentativa de conexão falhou. Modo local permanece ativo.');
+      localStorage.setItem('cargoradar_last_sync', nowStr);
+    } catch (e) {
+      console.warn('Erro ao salvar timestamp da sincronização:', e);
     }
+    setShortcutFeedback('Banco local operacional e sincronizado!');
   };
 
-  // Set up real-time onSnapshot listeners
-  // 1. Cargo Loads (always subscribed with optimized memory limit)
+  // Set up reactive subscriptions to localDb
   useEffect(() => {
-    const loadsQuery = query(collection(db, 'loads'), orderBy('createdAt', 'desc'), limit(250));
-    const unsubLoads = onSnapshot(loadsQuery, { includeMetadataChanges: true }, (snapshot) => {
-      const liveLoads: CargoLoad[] = [];
-      snapshot.forEach((docSnap) => {
-        liveLoads.push(docSnap.data() as CargoLoad);
-      });
-
-      // Update offline / cache connectivity status
-      if (navigator.onLine) {
-        setIsOffline(false);
-        const nowStr = new Date().toLocaleString('pt-BR');
-        setLastSyncTime(nowStr);
-        try {
-          localStorage.setItem('cargoradar_last_sync', nowStr);
-        } catch (e) {
-          console.warn('Erro ao salvar timestamp da sincronização:', e);
-        }
-      } else {
-        setIsOffline(true);
-      }
-
-      // Analyze document changes to detect state transitioning to BLOCKED (DIVERGENCY)
-      snapshot.docChanges().forEach((change) => {
-        const load = change.doc.data() as CargoLoad;
-        const changeType = change.type;
-
-        if (changeType === 'added' && !isFirstLoad.current) {
-          // Play a subtle chime when load was live added
-          playNotificationChime('added');
-        }
-
+    const unsubLoads = localDb.subscribeLoads((liveLoads) => {
+      // Analyze changes to detect state transitioning to BLOCKED (DIVERGENCY)
+      liveLoads.forEach((load) => {
         if (load.status === CargoStatus.BLOCKED) {
           if (isFirstLoad.current) {
             notifiedLoadIds.current.add(load.id);
@@ -469,285 +415,35 @@ const App: React.FC = () => {
             }
           }
         } else {
-          // If a load transitioned back from BLOCKED, remove from notified set
           if (notifiedLoadIds.current.has(load.id)) {
             notifiedLoadIds.current.delete(load.id);
           }
         }
       });
 
-      // Real-time automatic migration/correction of cargo status based on validation progress
-      const migrates: Promise<void>[] = [];
-      const correctedLoads = liveLoads.map(load => {
-        let changed = false;
-        let newStatus = load.status;
-
-        // Rule 1: Validated by Central (tripFinished === true) -> Change status to FINISHED
-        if (load.tripFinished && load.status !== CargoStatus.FINISHED) {
-          newStatus = CargoStatus.FINISHED;
-          changed = true;
-        }
-
-        // Rule 2: Awaiting 4-step verification -> Change status to EM TRÂNSITO (RELEASED)
-        // If gate checked-in is completed, trip is not finished, and status is not EM TRÂNSITO
-        if (load.gateCheckedIn && !load.tripFinished && load.status !== CargoStatus.RELEASED && load.status !== CargoStatus.BLOCKED) {
-          newStatus = CargoStatus.RELEASED;
-          changed = true;
-        }
-
-        if (changed) {
-          const updated = {
-            ...load,
-            status: newStatus
-          };
-          migrates.push(setDoc(doc(db, 'loads', load.id), sanitizeFirestoreData(capLoadDocumentSize(updated)), { merge: true }));
-          return updated;
-        }
-        return load;
-      });
-
-      if (migrates.length > 0) {
-        Promise.all(migrates).catch(e => console.warn('Erro na migração automática de cargas:', e));
-      }
-
       isFirstLoad.current = false;
+      setLoads(liveLoads);
+      const nowStr = new Date().toLocaleString('pt-BR');
+      setLastSyncTime(nowStr);
+    });
 
-      // Merge with any unpushed local loads so information created locally is pushed to Firestore for all users
-      setLoads((currentLoads) => {
-        const liveMap = new Map<string, CargoLoad>();
-        correctedLoads.forEach(l => liveMap.set(l.id, l));
+    const unsubUsers = localDb.subscribeUsers((liveUsers) => {
+      setUsers(liveUsers);
+    });
 
-        const unpushedLoads: CargoLoad[] = [];
-        currentLoads.forEach(localLoad => {
-          if (!liveMap.has(localLoad.id) && !localLoad.id.startsWith('initial-')) {
-            unpushedLoads.push(localLoad);
-          }
-        });
-
-        if (unpushedLoads.length > 0 && navigator.onLine) {
-          unpushedLoads.forEach(async (unpushed) => {
-            try {
-              const safeDoc = sanitizeFirestoreData(capLoadDocumentSize(unpushed));
-              await setDoc(doc(db, 'loads', unpushed.id), safeDoc, { merge: true });
-            } catch (e) {
-              console.warn('Falha na sincronização em segundo plano de carga pendente:', e);
-            }
-          });
-        }
-
-        const combined = [...correctedLoads];
-        unpushedLoads.forEach(u => {
-          if (!liveMap.has(u.id)) combined.push(u);
-        });
-
-        combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        saveLoadsToLocalStorage(combined);
-        return combined;
-      });
-    }, (error) => {
-      console.warn('Erro ao conectar com Firestore para cargas (obtendo offline/cache local).', error);
-      if (!navigator.onLine) {
-        setIsOffline(true);
-      }
-      
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
-                               errorMessage.toLowerCase().includes('connection') || 
-                               errorMessage.toLowerCase().includes('network') ||
-                               errorMessage.toLowerCase().includes('unavailable') ||
-                               errorMessage.toLowerCase().includes('quota') ||
-                               errorMessage.toLowerCase().includes('limit');
-                             
-      if (!isOfflineOrQuota) {
-        handleFirestoreError(error, OperationType.LIST, 'loads');
-      }
+    const unsubLogs = localDb.subscribeLogs((liveLogs) => {
+      setLogs(liveLogs);
     });
 
     return () => {
       unsubLoads();
-    };
-  }, []);
-
-  // 2. Users (subscribed when guest for login, or when administrative/audit role is active)
-  useEffect(() => {
-    const shouldSubscribe = !isAuthenticated || 
-                            loggedInUser?.systemRole === 'administrator' || 
-                            loggedInUser?.systemRole === 'auditor' || 
-                            loggedInUser?.role === 'audit';
-
-    if (!shouldSubscribe) {
-      setUsers([]);
-      return;
-    }
-
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const liveUsers: User[] = [];
-      snapshot.forEach((docSnap) => {
-        liveUsers.push(docSnap.data() as User);
-      });
-      if (liveUsers.length > 0) {
-        setUsers(liveUsers);
-        try {
-          localStorage.setItem('cargoradar_users', JSON.stringify(liveUsers));
-        } catch (err) {
-          console.error('Erro ao persistir usuários no localStorage:', err);
-        }
-      }
-    }, (error) => {
-      console.warn('Erro ao conectar com Firestore para usuários. Mantendo cache local.', error);
-      
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
-                               errorMessage.toLowerCase().includes('connection') || 
-                               errorMessage.toLowerCase().includes('network') ||
-                               errorMessage.toLowerCase().includes('unavailable') ||
-                               errorMessage.toLowerCase().includes('quota') ||
-                               errorMessage.toLowerCase().includes('limit');
-                             
-      if (!isOfflineOrQuota) {
-        handleFirestoreError(error, OperationType.LIST, 'users');
-      }
-    });
-
-    return () => {
       unsubUsers();
-    };
-  }, [isAuthenticated, loggedInUser]);
-
-  // 3. System logs (subscribed only if user is logged in as administrator)
-  useEffect(() => {
-    const isAdmin = isAuthenticated && loggedInUser?.systemRole === 'administrator';
-
-    if (!isAdmin) {
-      setLogs([]);
-      return;
-    }
-
-    const logsQuery = query(collection(db, 'logs'), limit(150));
-    const unsubLogs = onSnapshot(logsQuery, (snapshot) => {
-      const resetTime = new Date('2026-06-15T17:21:00Z').getTime(); // Database Purge Date
-      const liveLogs: EventLog[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as EventLog;
-        if (new Date(data.timestamp).getTime() >= resetTime) {
-          liveLogs.push(data);
-        }
-      });
-      liveLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setLogs(liveLogs);
-      try {
-        localStorage.setItem('cargoradar_logs', JSON.stringify(liveLogs));
-      } catch (err) {
-        console.error('Erro ao persistir logs no localStorage:', err);
-      }
-    }, (error) => {
-      console.warn('Erro ao conectar com Firestore para logs. Mantendo cache local.', error);
-      
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const isOfflineOrQuota = errorMessage.toLowerCase().includes('offline') || 
-                               errorMessage.toLowerCase().includes('connection') || 
-                               errorMessage.toLowerCase().includes('network') ||
-                               errorMessage.toLowerCase().includes('unavailable') ||
-                               errorMessage.toLowerCase().includes('quota') ||
-                               errorMessage.toLowerCase().includes('limit');
-                             
-      if (!isOfflineOrQuota) {
-        handleFirestoreError(error, OperationType.LIST, 'logs');
-      }
-    });
-
-    return () => {
       unsubLogs();
     };
-  }, [isAuthenticated, loggedInUser]);
-
-  // Bootstrap default users to Firestore if the users collection is empty
-  useEffect(() => {
-    const bootstrapData = async () => {
-      try {
-        const usersCol = collection(db, 'users');
-        const q = query(usersCol, limit(1));
-        console.log('Attempting to read users collection for bootstrapping...');
-        let userSnap;
-        try {
-          userSnap = await getDocs(q);
-          console.log('Successfully read users collection. Empty?', userSnap.empty);
-        } catch (readErr) {
-          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
-          const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
-                                 errMsg.toLowerCase().includes('limit') ||
-                                 errMsg.toLowerCase().includes('exhausted') ||
-                                 errMsg.toLowerCase().includes('resource');
-          
-          if (isQuotaOrLimit) {
-            console.warn('[Firebase Resiliency] Quota or limit exceeded during read check. Working in local storage fallback mode.');
-          } else {
-            console.warn('Could not read users collection during bootstrap check:', readErr);
-          }
-          return; // Skip cloud writes when read check fails
-        }
-
-        if (userSnap && userSnap.empty) {
-          console.log('Bootstrapping default users to Firestore...');
-          const defaultUsers: User[] = [
-            { id: 'master', username: 'cleiton', password: '123456', role: 'audit', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString(), fullName: 'Administrador Cleiton' },
-            { id: '1', username: 'CARGADD', password: '123456', role: 'expedition', systemRole: 'dispatcher', status: 'active', createdAt: new Date().toISOString() },
-            { id: '2', username: 'LIBERACAO', password: 'CENTRAL123', role: 'central', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-            { id: '3', username: 'AUDITORIA', password: 'AUDITOR123', role: 'audit', systemRole: 'auditor', status: 'active', createdAt: new Date().toISOString() },
-            { id: '4', username: 'ANALISE', password: 'ANALISE123', role: 'analysis', systemRole: 'administrator', status: 'active', createdAt: new Date().toISOString() },
-          ];
-          for (const u of defaultUsers) {
-            try {
-              console.log(`Attempting to set user: ${u.username} (${u.id})`);
-              await setDoc(doc(db, 'users', u.id), u);
-              console.log(`Successfully bootstrapped user: ${u.username}`);
-            } catch (writeErr) {
-              const errMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-              const isQuotaOrLimit = errMsg.toLowerCase().includes('quota') || 
-                                     errMsg.toLowerCase().includes('limit') ||
-                                     errMsg.toLowerCase().includes('exhausted') ||
-                                     errMsg.toLowerCase().includes('resource');
-              if (isQuotaOrLimit) {
-                console.warn(`[Firebase Resiliency] Quota or limit exceeded writing user doc ${u.id} (${u.username}).`);
-              } else {
-                console.warn(`Could not write user doc ${u.id} (${u.username}):`, writeErr);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Silent fallback: Error bootstrapping default users:', err);
-      }
-    };
-    bootstrapData();
   }, []);
 
   const addLog = async (action: string, details: string, username: string, loadId?: string) => {
-    const newLog: EventLog = {
-      id: generateId(),
-      timestamp: new Date().toISOString(),
-      username,
-      action,
-      details,
-      loadId: loadId || "",
-    };
-
-    // Altera o estado local e persiste localmente imediatamente de forma otimista
-    setLogs((prev) => {
-      const updated = [newLog, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      try {
-        localStorage.setItem('cargoradar_logs', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Erro ao salvar logs localmente:', e);
-      }
-      return updated;
-    });
-
-    try {
-      await setDoc(doc(db, 'logs', newLog.id), sanitizeFirestoreData(newLog));
-    } catch (err) {
-      console.warn('Falha remota ao registrar log (offline/conexão instável):', err);
-    }
+    localDb.addLog(action, details, username, loadId);
   };
 
   const handleAddLoad = async (newLoadData: Omit<CargoLoad, 'id' | 'status' | 'createdAt' | 'createdBy'>) => {
@@ -760,20 +456,8 @@ const App: React.FC = () => {
       createdBy: username,
     };
 
-    // Otimista: Salva localmente primeiro
-    setLoads((prev) => {
-      const updated = [newLoad, ...prev];
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
-    try {
-      await setDoc(doc(db, 'loads', newLoad.id), sanitizeFirestoreData(capLoadDocumentSize(newLoad)));
-      addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
-    } catch (err) {
-      console.warn('Conexão instável. Carga mantida localmente e log registrado localmente.', err);
-      addLog('Criação de Carga (Local)', `Carga ${newLoad.plate} criada offline por ${username}`, username, newLoad.id);
-    }
+    localDb.saveLoad(newLoad);
+    addLog('Criação de Carga', `Carga ${newLoad.plate} criada por ${username}`, username, newLoad.id);
     
     // Admins or specific roles might want to stay or move
     if (loggedInUser?.systemRole === 'administrator' || loggedInUser?.role === 'central') {
@@ -886,20 +570,8 @@ const App: React.FC = () => {
       auditedAt: newStatus === CargoStatus.RELEASED || newStatus === CargoStatus.BLOCKED || newStatus === CargoStatus.FINISHED ? timestamp : (load.auditedAt || "")
     };
 
-    // Otimista: Atualiza localmente
-    setLoads((prev) => {
-      const updated = prev.map(l => l.id === id ? updatedLoad : l);
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
-    try {
-      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
-      addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
-    } catch (err) {
-      console.warn('Conexão instável. Modificação do status mantida localmente.', err);
-      addLog('Atualização de Status (Local)', `Carga ${load.plate} alterada para ${newStatus} offline por ${username}`, username, id);
-    }
+    localDb.saveLoad(updatedLoad);
+    addLog('Atualização de Status', `Carga ${load.plate} alterada para ${newStatus} por ${username}`, username, id);
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
       sendBlockedAlertEmail(updatedLoad);
@@ -933,20 +605,8 @@ const App: React.FC = () => {
       ]
     };
 
-    // Otimista: Atualiza localmente
-    setLoads((prev) => {
-      const updated = prev.map(l => l.id === id ? updatedLoad : l);
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
-    try {
-      await setDoc(doc(db, 'loads', id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
-      addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
-    } catch (err) {
-      console.warn('Conexão instável. Auditoria de ocorrência mantida localmente.', err);
-      addLog('Auditoria de Carga (Local)', `Auditoria offline na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
-    }
+    localDb.saveLoad(updatedLoad);
+    addLog('Auditoria de Carga', `Auditoria realizada na carga ${load.plate} por ${username}. Ocorrência: ${type}`, username, id);
 
     if (newStatus === CargoStatus.BLOCKED && load.status !== CargoStatus.BLOCKED) {
       sendBlockedAlertEmail(updatedLoad, type, description);
@@ -955,21 +615,8 @@ const App: React.FC = () => {
 
   const handleUpdateLoad = async (updatedLoad: CargoLoad) => {
     const username = loggedInUser?.username || 'Sistema';
-
-    // Otimista: Atualiza localmente
-    setLoads((prev) => {
-      const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
-    try {
-      await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
-      addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
-    } catch (err) {
-      console.warn('Conexão instável. Carga atualizada localmente.', err);
-      addLog('Atualização de Carga (Local)', `Carga ${updatedLoad.plate} updated offline por ${username}`, username, updatedLoad.id);
-    }
+    localDb.saveLoad(updatedLoad);
+    addLog('Atualização de Carga', `Carga ${updatedLoad.plate} atualizada por ${username}`, username, updatedLoad.id);
   };
 
   const handleDeleteLoad = async (loadId: string) => {
@@ -977,47 +624,17 @@ const App: React.FC = () => {
     if (!load) return;
     const username = loggedInUser?.username || 'Sistema';
 
-    // Otimista: remove localmente
-    setLoads((prev) => {
-      const updated = prev.filter(l => l.id !== loadId);
-      saveLoadsToLocalStorage(updated);
-      return updated;
-    });
-
-    try {
-      await deleteDoc(doc(db, 'loads', loadId));
-      addLog('Exclusão de Carga', `Carga ${load.plate} excluída por ${username}`, username, loadId);
-    } catch (err) {
-      console.warn('Conexão instável. Carga excluída localmente.', err);
-      addLog('Exclusão de Carga (Local)', `Carga ${load.plate} excluída offline por ${username}`, username, loadId);
-    }
+    localDb.deleteLoad(loadId);
+    addLog('Exclusão de Carga', `Carga ${load.plate} excluída por ${username}`, username, loadId);
   };
 
   const handleRegisterUser = async (user: Omit<User, 'id' | 'status' | 'createdAt'>) => {
-    try {
-      const email = `${user.username.toLowerCase()}@cargarelease.com`;
-      let uid = generateId();
-      
-      try {
-        const credential = await createUserWithEmailAndPassword(auth, email, user.password);
-        uid = credential.user.uid;
-        console.log("Successfully registered user in Firebase Auth with UID:", uid);
-      } catch (authErr) {
-        console.warn("Could not create Firebase Auth credential, using a standard ID:", authErr);
-      }
-
-      const newUser: User = {
-        ...user,
-        id: uid,
-        status: 'pending',
-        systemRole: 'viewer',
-        createdAt: new Date().toISOString(),
-      };
-
-      await setDoc(doc(db, 'users', newUser.id), sanitizeFirestoreData(newUser));
-      addLog('Solicitação de Cadastro', `Novo usuário ${newUser.username} (${newUser.fullName || 'S/N'}) - Loja: ${newUser.storeLocation || 'S/N'} aguardando aprovação`, 'Sistema');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'users/new');
+    const result = localDb.register({
+      ...user,
+      status: 'pending'
+    });
+    if (result.user) {
+      addLog('Solicitação de Cadastro', `Novo usuário ${result.user.username} (${result.user.fullName || 'S/N'}) - Unidade: ${result.user.storeLocation || 'S/N'} aguardando aprovação`, 'Sistema');
     }
   };
 
@@ -1025,132 +642,84 @@ const App: React.FC = () => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-    try {
-      let systemRole: SystemRole = user.systemRole || 'viewer';
-      if (approve) {
-        if (user.role === 'expedition' || user.role === 'portaria') {
-          systemRole = 'dispatcher';
-        } else if (user.role === 'audit') {
-          systemRole = 'auditor';
-        } else if (user.role === 'central' || user.role === 'analysis') {
-          systemRole = 'administrator';
-        } else if (user.role === 'store_app') {
-          systemRole = 'store_app';
-        }
+    
+    let systemRole: SystemRole = user.systemRole || 'viewer';
+    if (approve) {
+      if (user.role === 'supervisor_cd') {
+        systemRole = 'supervisor_cd';
+      } else if (user.role === 'expedition' || user.role === 'portaria') {
+        systemRole = 'dispatcher';
+      } else if (user.role === 'audit') {
+        systemRole = 'auditor';
+      } else if (user.role === 'central' || user.role === 'analysis') {
+        systemRole = 'administrator';
+      } else if (user.role === 'store_app') {
+        systemRole = 'store_app';
       }
-      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ 
-        status: approve ? 'active' : 'rejected',
-        systemRole: systemRole
-      }), { merge: true });
-      addLog('Gestão de Usuários', `Usuário ${user.username} ${approve ? 'aprovado' : 'rejeitado'} com perfil de sistema: ${systemRole} por ${username}`, username);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'users/' + userId);
     }
+    
+    localDb.updateUser(userId, { 
+      status: approve ? 'active' : 'rejected',
+      systemRole: systemRole
+    });
+    addLog('Gestão de Usuários', `Usuário ${user.username} ${approve ? 'aprovado' : 'rejeitado'} com perfil de sistema: ${systemRole} por ${username}`, username);
   };
 
   const handleDeleteUser = async (userId: string) => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-    try {
-      await deleteDoc(doc(db, 'users', userId));
-      addLog('Gestão de Usuários', `Usuário ${user.username} excluído por ${username}`, username);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, 'users/' + userId);
-    }
+    localDb.deleteUser(userId);
+    addLog('Gestão de Usuários', `Usuário ${user.username} excluído por ${username}`, username);
   };
 
   const handleChangePassword = async (userId: string, newPassword: string) => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-    try {
-      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ password: newPassword }), { merge: true });
-      addLog('Gestão de Usuários', `Senha do usuário ${user.username} alterada por ${username}`, username);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'users/' + userId);
-    }
+    localDb.updateUser(userId, { password: newPassword });
+    addLog('Gestão de Usuários', `Senha do usuário ${user.username} alterada por ${username}`, username);
   };
 
   const handleUpdateSystemRole = async (userId: string, systemRole: SystemRole) => {
     const user = users.find(u => u.id === userId);
     const username = loggedInUser?.username || 'Sistema';
     if (!user) return;
-    try {
-      await setDoc(doc(db, 'users', userId), sanitizeFirestoreData({ systemRole }), { merge: true });
-      addLog('Gestão de Usuários', `Perfil de sistema do usuário ${user.username} alterado para ${systemRole} por ${username}`, username);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'users/' + userId);
-    }
+    localDb.updateUser(userId, { systemRole });
+    addLog('Gestão de Usuários', `Perfil de sistema do usuário ${user.username} alterado para ${systemRole} por ${username}`, username);
   };
 
   const handleLoginSuccess = async (user: User) => {
-    const email = `${user.username.toLowerCase()}@cargarelease.com`;
-    const authPassword = user.password;
-    let finalUser = { ...user };
-
-    try {
-      let authUser;
-      try {
-        const credential = await signInWithEmailAndPassword(auth, email, authPassword);
-        authUser = credential.user;
-        console.log("Successfully signed in to Firebase Auth:", email);
-      } catch (signInErr: any) {
-        if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential' || signInErr.code === 'auth/wrong-password') {
-          try {
-            console.log("User not found in Auth, registering under the hood:", email);
-            const credential = await createUserWithEmailAndPassword(auth, email, authPassword);
-            authUser = credential.user;
-          } catch (createErr) {
-            console.warn("Failed to automatically register user in Firebase Auth:", createErr);
-          }
-        } else {
-          console.warn("Firebase Auth fallback active. Email/Password sign-in method may be disabled in the Firebase Console, but database verification worked successfully:", signInErr);
-        }
-      }
-
-      if (authUser && user.id !== authUser.uid) {
-        console.log(`Migrating document ID for ${user.username} from ${user.id} to ${authUser.uid}`);
-        finalUser = {
-          ...user,
-          id: authUser.uid
-        };
-        await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser));
-        await deleteDoc(doc(db, 'users', user.id));
-        console.log(`Migration completed for user ${user.username}`);
-      } else if (authUser) {
-        // Garantir que o documento do usuário existe no Firestore com os dados corretos
-        await setDoc(doc(db, 'users', authUser.uid), sanitizeFirestoreData(finalUser), { merge: true });
-      }
-    } catch (authErr) {
-      console.error("Critical Auth migration step skipped:", authErr);
-    }
-
+    localDb.setCurrentUser(user);
     setIsAuthenticated(true);
-    setLoggedInUser(finalUser);
-    const initialTab = (finalUser.role === 'store_app' ? 'reverse_transfer' : finalUser.role) as TabType;
+    setLoggedInUser(user);
+    
+    let initialTab: TabType = 'expedition';
+    if (user.role === 'supervisor_cd' || user.systemRole === 'supervisor_cd') {
+      initialTab = 'supervisor_cd';
+    } else if (user.role === 'store_app' || user.systemRole === 'store_app') {
+      initialTab = 'reverse_transfer';
+    } else if (user.role) {
+      initialTab = user.role as TabType;
+    }
+    
     setActiveTab(initialTab);
 
-    // Salva sessão localmente no localStorage
+    // Salva sessão no localStorage
     try {
       localStorage.setItem('cargoradar_auth', 'true');
-      localStorage.setItem('cargoradar_user', JSON.stringify(finalUser));
+      localStorage.setItem('cargoradar_user', JSON.stringify(user));
       localStorage.setItem('cargoradar_tab', initialTab);
     } catch (e) {
       console.error('Erro ao persistir sessão do usuário no localStorage:', e);
     }
 
-    addLog('Login', `Usuário ${finalUser.username} realizou login unificado e foi direcionado para ${finalUser.role}`, finalUser.username);
+    addLog('Login', `Usuário ${user.username} realizou login e foi direcionado para ${initialTab}`, user.username);
   };
 
   const handleLogout = async () => {
     const username = loggedInUser?.username || 'Desconhecido';
-    try {
-      await signOut(auth);
-      console.log("Signed out of Firebase Auth");
-    } catch (signOutErr) {
-      console.error("Error during Firebase Auth sign out:", signOutErr);
-    }
+    localDb.logout();
     setIsAuthenticated(false);
     setLoggedInUser(null);
 
@@ -1178,6 +747,17 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
+      case 'supervisor_cd':
+        return (
+          <SupervisorCDView 
+            loads={loads}
+            users={users}
+            logs={logs}
+            currentUser={loggedInUser}
+            onApproveUser={handleApproveUser}
+            onNavigateToTab={(tab) => handleTabChange(tab as TabType)}
+          />
+        );
       case 'expedition':
         return (
           <ExpeditionView 
@@ -1195,21 +775,8 @@ const App: React.FC = () => {
             onUpdateStatus={handleUpdateStatus} 
             onUpdateLoad={async (updatedLoad) => {
               const username = loggedInUser?.username || 'Sistema';
-
-              // Otimista: Atualiza localmente
-              setLoads((prev) => {
-                const updated = prev.map(l => l.id === updatedLoad.id ? updatedLoad : l);
-                saveLoadsToLocalStorage(updated);
-                return updated;
-              });
-
-              try {
-                await setDoc(doc(db, 'loads', updatedLoad.id), sanitizeFirestoreData(capLoadDocumentSize(updatedLoad)), { merge: true });
-                addLog('Atualização da Rota', `Carga ${updatedLoad.plate} atualizada no processo de rota por ${username}`, username, updatedLoad.id);
-              } catch (err) {
-                console.warn('Conexão instável. Rota atualizada localmente.', err);
-                addLog('Atualização da Rota (Local)', `Carga ${updatedLoad.plate} atualizada offline em rota por ${username}`, username, updatedLoad.id);
-              }
+              localDb.saveLoad(updatedLoad);
+              addLog('Atualização da Rota', `Carga ${updatedLoad.plate} atualizada no processo de rota por ${username}`, username, updatedLoad.id);
             }}
           />
         );
@@ -1239,12 +806,6 @@ const App: React.FC = () => {
             loggedInUser={loggedInUser}
           />
         );
-      case 'tracking':
-        return (
-          <TrackingView 
-            loads={loads}
-          />
-        );
       case 'reverse_transfer':
         return (
           <ReverseTransferView 
@@ -1265,7 +826,28 @@ const App: React.FC = () => {
       case 'guide':
         return <GuideView />;
       default:
-        return null;
+        // Guaranteed fallback so the view never renders empty or breaks
+        if (loggedInUser?.role === 'supervisor_cd' || loggedInUser?.systemRole === 'supervisor_cd') {
+          return (
+            <SupervisorCDView 
+              loads={loads}
+              users={users}
+              logs={logs}
+              currentUser={loggedInUser}
+              onApproveUser={handleApproveUser}
+              onNavigateToTab={(tab) => handleTabChange(tab as TabType)}
+            />
+          );
+        }
+        return (
+          <ExpeditionView 
+            onSubmit={handleAddLoad} 
+            onUpdateLoad={handleUpdateLoad}
+            loads={loads} 
+            logs={logs.filter(l => l.username === loggedInUser?.username)} 
+            currentUser={loggedInUser}
+          />
+        );
     }
   };
 
@@ -1419,28 +1001,28 @@ const App: React.FC = () => {
                 <h4 className="text-[10px] font-black text-primary-gold uppercase tracking-wider mb-2">Mudar de Aba Instantaneamente</h4>
                 <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-300">
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>1. Expedição</span>
+                    <span>1. Supervisor CD</span>
                     <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+1</span>
                   </div>
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>2. Central</span>
+                    <span>2. Expedição</span>
                     <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+2</span>
                   </div>
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>3. Auditoria</span>
+                    <span>3. Central</span>
                     <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+3</span>
                   </div>
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>4. Monitor</span>
+                    <span>4. Auditoria</span>
                     <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+4</span>
                   </div>
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>5. Portaria</span>
+                    <span>5. Análise</span>
                     <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+5</span>
                   </div>
                   <div className="p-2 bg-slate-950/40 rounded-lg flex justify-between items-center">
-                    <span>6. Tracking</span>
-                    <span className="bg-slate-850 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+6</span>
+                    <span>6. Portaria</span>
+                    <span className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-bold font-sans">Alt+6</span>
                   </div>
                 </div>
               </div>

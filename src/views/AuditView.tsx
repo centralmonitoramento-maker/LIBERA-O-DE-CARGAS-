@@ -49,8 +49,7 @@ import {
   Pie, 
   Cell 
 } from 'recharts';
-import { db } from '../firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { localDb } from '../services/localDatabase';
 
 interface AuditViewProps {
   loads: CargoLoad[];
@@ -111,10 +110,44 @@ export const AuditView: React.FC<AuditViewProps> = ({
 
   const handleUpdateUserStore = async (userId: string, store: string) => {
     try {
-      await setDoc(doc(db, 'users', userId), { storeLocation: store }, { merge: true });
+      localDb.updateUser(userId, { storeLocation: store });
     } catch (e) {
       console.error('Erro ao atualizar loja do usuário:', e);
     }
+  };
+
+  // Deletion Modals State (Master Administrator only)
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    isOpen: boolean;
+    id: string;
+    type: 'carga' | 'audit';
+    title: string;
+    description?: string;
+  } | null>(null);
+
+  const [clearAllConfirmModal, setClearAllConfirmModal] = useState<boolean>(false);
+  const [dataManagementFeedback, setDataManagementFeedback] = useState<string | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (!deleteConfirmModal) return;
+    const { id, type, title } = deleteConfirmModal;
+    const success = localDb.deleteRecordById(id, type);
+    if (selectedLoadId === id) {
+      setSelectedLoadId(null);
+    }
+    setDeleteConfirmModal(null);
+    if (success) {
+      setDataManagementFeedback(`Registro "${title}" excluído permanentemente!`);
+      setTimeout(() => setDataManagementFeedback(null), 3000);
+    }
+  };
+
+  const handleConfirmClearAll = () => {
+    localDb.clearAllSystemData();
+    setSelectedLoadId(null);
+    setClearAllConfirmModal(false);
+    setDataManagementFeedback('Todo o histórico operacional de cargas e logs foi apagado com sucesso!');
+    setTimeout(() => setDataManagementFeedback(null), 4000);
   };
 
   // User Filtering States and Selector
@@ -360,28 +393,22 @@ export const AuditView: React.FC<AuditViewProps> = ({
     originEmail?: string;
   } | null>(null);
 
-  // Synchronize alert email list from Firestore
+  // Synchronize alert email list from localDb
   useEffect(() => {
     try {
-      const docRef = doc(db, 'settings', 'occurrence_alert');
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (Array.isArray(data.emails)) {
-            setAlertEmails(data.emails);
-            localStorage.setItem('occurrenceAlertEmails', JSON.stringify(data.emails));
-          }
-          if (typeof data.autoEmailEnabled === 'boolean') {
-            setAutoEmailEnabled(data.autoEmailEnabled);
-            localStorage.setItem('autoEmailEnabled', String(data.autoEmailEnabled));
-          }
+      const unsubscribe = localDb.subscribeSettings((settings) => {
+        if (Array.isArray(settings.occurrenceAlertEmails)) {
+          setAlertEmails(settings.occurrenceAlertEmails);
+          localStorage.setItem('occurrenceAlertEmails', JSON.stringify(settings.occurrenceAlertEmails));
         }
-      }, (err) => {
-        console.warn("Firestore listener warning on settings/occurrence_alert:", err);
+        if (typeof settings.autoEmailEnabled === 'boolean') {
+          setAutoEmailEnabled(settings.autoEmailEnabled);
+          localStorage.setItem('autoEmailEnabled', String(settings.autoEmailEnabled));
+        }
       });
       return unsubscribe;
     } catch (err) {
-      console.warn("Could not synchronize email alert settings in real time from Firestore:", err);
+      console.warn("Could not synchronize email alert settings:", err);
     }
   }, []);
 
@@ -408,15 +435,11 @@ export const AuditView: React.FC<AuditViewProps> = ({
     setEmailActionFeedback('E-mail cadastrado com sucesso!');
     setTimeout(() => setEmailActionFeedback(null), 3000);
 
-    // Save to Firestore
-    try {
-      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
-        emails: updatedEmails,
-        autoEmailEnabled
-      }, { merge: true });
-    } catch (err) {
-      console.warn('Could not save email registry to Firestore:', err);
-    }
+    // Save to localDb
+    localDb.saveSettings({
+      occurrenceAlertEmails: updatedEmails,
+      autoEmailEnabled
+    });
   };
 
   const handleRemoveEmail = async (emailToRemove: string) => {
@@ -426,30 +449,22 @@ export const AuditView: React.FC<AuditViewProps> = ({
     setEmailActionFeedback('E-mail removido com sucesso!');
     setTimeout(() => setEmailActionFeedback(null), 3000);
 
-    // Save to Firestore
-    try {
-      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
-        emails: updatedEmails,
-        autoEmailEnabled
-      }, { merge: true });
-    } catch (err) {
-      console.warn('Could not update email registry in Firestore:', err);
-    }
+    // Save to localDb
+    localDb.saveSettings({
+      occurrenceAlertEmails: updatedEmails,
+      autoEmailEnabled
+    });
   };
 
   const handleToggleAutoEmail = async (checked: boolean) => {
     setAutoEmailEnabled(checked);
     localStorage.setItem('autoEmailEnabled', String(checked));
     
-    // Save to Firestore
-    try {
-      await setDoc(doc(db, 'settings', 'occurrence_alert'), {
-        emails: alertEmails,
-        autoEmailEnabled: checked
-      }, { merge: true });
-    } catch (err) {
-      console.warn('Could not update toggle flag in Firestore:', err);
-    }
+    // Save to localDb
+    localDb.saveSettings({
+      occurrenceAlertEmails: alertEmails,
+      autoEmailEnabled: checked
+    });
   };
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
@@ -591,21 +606,16 @@ export const AuditView: React.FC<AuditViewProps> = ({
           console.log('Audio notification fallback:', e);
         }
 
-        // Registrar no Firestore um log específico de retransmissão de alerta
+        // Registrar log específico de retransmissão de alerta
         try {
-          const logId = `alert-mail-${Date.now()}`;
-          const mailLogsRef = doc(db, 'logs', logId);
-          await setDoc(mailLogsRef, {
-            id: logId,
-            action: 'Alerta de E-mail de Ocorrência',
-            details: `Relatório para carga ${selectedLoad.plate} enviado para: ${alertEmails.join(', ')}`,
-            username: currentUser?.username || 'Sistema',
-            senderEmail: originEmail,
-            timestamp: new Date().toISOString(),
-            loadId: selectedLoad.id
-          }, { merge: true });
+          localDb.addLog(
+            'Alerta de E-mail de Ocorrência',
+            `Relatório para carga ${selectedLoad.plate} enviado para: ${alertEmails.join(', ')}`,
+            currentUser?.username || 'Sistema',
+            selectedLoad.id
+          );
         } catch (err) {
-          console.warn('Could not record email alert log in Firestore:', err);
+          console.warn('Could not record email alert log:', err);
         }
       }
     }
@@ -1104,7 +1114,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
         </div>
       )}
 
-      {/* Confirm Delete Modal */}
+      {/* Confirm Delete User Modal */}
       {confirmDeleteUser && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
@@ -1118,7 +1128,7 @@ export const AuditView: React.FC<AuditViewProps> = ({
             <div className="flex gap-3">
               <button 
                 onClick={() => setConfirmDeleteUser(null)}
-                className="flex-1 px-6 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+                className="flex-1 px-6 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest transition-all cursor-pointer"
               >
                 Cancelar
               </button>
@@ -1127,9 +1137,101 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   onDeleteUser(confirmDeleteUser.id);
                   setConfirmDeleteUser(null);
                 }}
-                className="flex-1 px-6 py-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-red-200"
+                className="flex-1 px-6 py-4 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-red-200 cursor-pointer"
               >
                 Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Exclusão Individual de Registro (Admin Master) */}
+      {deleteConfirmModal && deleteConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mb-5 text-red-600">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2 tracking-tight">
+              Deseja excluir este registro permanentemente?
+            </h3>
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 mb-4">
+              <p className="font-mono font-black text-slate-800 text-sm">{deleteConfirmModal.title}</p>
+              {deleteConfirmModal.description && (
+                <p className="text-xs text-slate-500 mt-1 font-medium">{deleteConfirmModal.description}</p>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 font-medium mb-6 leading-relaxed">
+              Esta ação removerá este item do banco de dados local permanentemente para diminuir a poluição visual. Não será possível desfazer.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={handleConfirmDelete}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-red-500/20 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Sim, Excluir</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Alerta Severo: Limpeza Geral de Dados (Admin Master) */}
+      {clearAllConfirmModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-red-600 tracking-widest bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                  Ação Crítica - Administrador Master
+                </span>
+                <h3 className="text-xl font-black text-slate-900 mt-1 tracking-tight">
+                  Limpar Todo o Histórico Operacional?
+                </h3>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5 text-red-950 text-xs space-y-2 leading-relaxed">
+              <p className="font-extrabold text-red-700 flex items-center gap-1.5 uppercase text-[11px]">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Atenção Máxima: Ação Irreversível!
+              </p>
+              <p>
+                Esta operação irá apagar permanentemente todas as <strong>{loads.length} cargas</strong>, ocorrências, checklists e logs de eventos do sistema para renovar a visualização.
+              </p>
+              <p className="text-[11px] text-red-800">
+                ✅ Os <strong>usuários cadastrados</strong> e as <strong>configurações do sistema</strong> serão preservados intactos.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button 
+                type="button"
+                onClick={() => setClearAllConfirmModal(false)}
+                className="flex-1 px-5 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="flex-1 px-5 py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-red-600/30 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmar e Zerar Tudo</span>
               </button>
             </div>
           </div>
@@ -1145,27 +1247,56 @@ export const AuditView: React.FC<AuditViewProps> = ({
         />
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-end gap-4">
+      {/* Feedback Banner for Data Management */}
+      {dataManagementFeedback && (
+        <div className="bg-emerald-600 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="w-5 h-5 text-emerald-200" />
+            <span className="text-xs font-black uppercase tracking-wider">{dataManagementFeedback}</span>
+          </div>
+          <button 
+            onClick={() => setDataManagementFeedback(null)} 
+            className="p-1 hover:bg-emerald-700 rounded-lg text-emerald-100 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight">Etapa 3: Auditoria & Gestão</h2>
           <p className="text-slate-500 font-medium">Controle de gate, gestão de usuários e log de eventos do sistema.</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <button 
-            onClick={() => setActiveSubTab('audit')}
-            className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${activeSubTab === 'audit' ? 'bg-white shadow-sm text-primary-gold' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            AUDITORIA
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
           {isAdmin && (
             <button 
-              onClick={() => setActiveSubTab('config')}
-              className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'config' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setClearAllConfirmModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all shadow-md active:scale-95 cursor-pointer"
+              title="Limpar permanentemente todas as cargas e logs de eventos (Admin Master)"
             >
-              CONFIGURAÇÕES
-              {pendingUsers.length > 0 && <span className="w-2 h-2 bg-primary-red rounded-full animate-pulse"></span>}
+              <Trash2 className="w-4 h-4" />
+              <span>Limpar Todo o Histórico</span>
             </button>
           )}
+
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button 
+              onClick={() => setActiveSubTab('audit')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${activeSubTab === 'audit' ? 'bg-white shadow-sm text-primary-gold' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              AUDITORIA
+            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => setActiveSubTab('config')}
+                className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${activeSubTab === 'config' ? 'bg-white shadow-sm text-primary-navy' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                CONFIGURAÇÕES
+                {pendingUsers.length > 0 && <span className="w-2 h-2 bg-primary-red rounded-full animate-pulse"></span>}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1362,42 +1493,76 @@ export const AuditView: React.FC<AuditViewProps> = ({
                 </div>
               ) : (
                 filteredLoads.map((load) => (
-                  <button
+                  <div
                     key={load.id}
-                    onClick={() => handleSelectLoad(load.id)}
-                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                    className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col justify-between ${
                       selectedLoadId === load.id 
                         ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-50' 
-                        : 'border-slate-100 hover:border-slate-200'
+                        : 'border-slate-100 hover:border-slate-200 bg-white'
                     }`}
                   >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-mono font-black text-slate-800">{load.plate}</span>
-                      <div className="flex gap-1">
-                        {load.auditedAt && (
-                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700">
-                            AUDITADO
+                    <div 
+                      onClick={() => handleSelectLoad(load.id)}
+                      className="cursor-pointer"
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-mono font-black text-slate-800">{load.plate}</span>
+                        <div className="flex items-center gap-1">
+                          {load.auditedAt && (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700">
+                              AUDITADO
+                            </span>
+                          )}
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
+                            load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-700' : 
+                            load.status === CargoStatus.BLOCKED ? 'bg-red-100 text-red-700' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {load.status}
                           </span>
-                        )}
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                          load.status === CargoStatus.RELEASED ? 'bg-emerald-100 text-emerald-700' : 
-                          load.status === CargoStatus.BLOCKED ? 'bg-red-100 text-red-700' :
-                          'bg-slate-100 text-slate-500'
-                        }`}>
-                          {load.status}
-                        </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-500 font-medium truncate w-32">{load.driverName}</span>
+                        {(load.occurrenceType && load.occurrenceType !== OccurrenceType.NONE) || load.occurrencePhoto ? (
+                          <span className="text-[9px] text-red-600 font-bold flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
+                            Ocorrência
+                          </span>
+                        ) : null}
                       </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-medium truncate w-32">{load.driverName}</span>
-                      {(load.occurrenceType && load.occurrenceType !== OccurrenceType.NONE) || load.occurrencePhoto ? (
-                        <span className="text-[9px] text-red-600 font-bold flex items-center gap-1">
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
-                          Ocorrência
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
+
+                    {isAdmin && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectLoad(load.id)}
+                          className="text-[9px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-tight cursor-pointer"
+                        >
+                          Ver Detalhes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirmModal({
+                              isOpen: true,
+                              id: load.id,
+                              type: 'audit',
+                              title: `Carga ${load.plate}`,
+                              description: `Motorista: ${load.driverName || 'Não cadastrado'} | Status: ${load.status}`
+                            });
+                          }}
+                          className="flex items-center gap-1 px-2 py-1 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer border border-red-200"
+                          title="Excluir este registro permanentemente"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Excluir</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ))
               )}
             </div>
@@ -1454,14 +1619,34 @@ export const AuditView: React.FC<AuditViewProps> = ({
                       <p className="text-[10px] font-black text-slate-400 uppercase">Lacre Original</p>
                       <p className="text-lg font-mono font-black text-primary-gold">{selectedLoad.sealNumber}</p>
                     </div>
-                    <button 
-                      onClick={() => exportLoadAuditToPDF(selectedLoad)}
-                      className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-extrabold px-3 py-2 rounded-xl uppercase tracking-widest transition-all shadow-md active:scale-95 cursor-pointer mt-1"
-                      title="Exportar Relatório PDF com Histórico e Fotos de Auditoria"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-rose-100" />
-                      PDF Auditoria
-                    </button>
+                    <div className="flex items-center gap-2 mt-1">
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            setDeleteConfirmModal({
+                              isOpen: true,
+                              id: selectedLoad.id,
+                              type: 'audit',
+                              title: `Carga ${selectedLoad.plate}`,
+                              description: `Manifesto: ${selectedLoad.id.slice(0, 8).toUpperCase()} | Motorista: ${selectedLoad.driverName || 'Não informado'}`
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 text-[9px] font-extrabold px-3 py-2 rounded-xl uppercase tracking-widest transition-all cursor-pointer shadow-sm active:scale-95"
+                          title="Excluir este registro permanentemente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Excluir Registro
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => exportLoadAuditToPDF(selectedLoad)}
+                        className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-extrabold px-3 py-2 rounded-xl uppercase tracking-widest transition-all shadow-md active:scale-95 cursor-pointer"
+                        title="Exportar Relatório PDF com Histórico e Fotos de Auditoria"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-rose-100" />
+                        PDF Auditoria
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2342,12 +2527,15 @@ export const AuditView: React.FC<AuditViewProps> = ({
                   <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuário</th>
                   <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Ação</th>
                   <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Detalhes</th>
+                  {isAdmin && (
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-20 text-center text-slate-400 italic text-sm">Nenhum evento correspondente encontrado.</td>
+                    <td colSpan={isAdmin ? 5 : 4} className="px-6 py-20 text-center text-slate-400 italic text-sm">Nenhum evento correspondente encontrado.</td>
                   </tr>
                 ) : (
                   filteredLogs.map(log => (
@@ -2367,6 +2555,26 @@ export const AuditView: React.FC<AuditViewProps> = ({
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-600 font-medium">{log.details}</td>
+                      {isAdmin && (
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteConfirmModal({
+                                isOpen: true,
+                                id: log.id,
+                                type: 'audit',
+                                title: `Log: ${log.action}`,
+                                description: `Usuário: ${log.username} | ${log.details}`
+                              });
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                            title="Excluir este registro permanentemente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

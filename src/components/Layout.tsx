@@ -11,7 +11,6 @@ import {
   Sun, 
   Moon, 
   ClipboardCheck, 
-  Compass,
   Search,
   X,
   ExternalLink,
@@ -24,14 +23,15 @@ import {
   FileSpreadsheet,
   Settings,
   Menu,
-  BookOpen
+  BookOpen,
+  Users
 } from 'lucide-react';
 
 import { User, CargoLoad, CargoStatus, CargoType, OccurrenceType, getPhotosArray } from '../types';
 import { FeedbackChat } from './FeedbackChat';
 import { ImageEnhanceZoom } from './ImageEnhanceZoom';
 
-type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'tracking' | 'settings' | 'reverse_transfer' | 'guide';
+type TabType = 'expedition' | 'central' | 'audit' | 'analysis' | 'portaria' | 'settings' | 'reverse_transfer' | 'guide' | 'supervisor_cd';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -183,10 +183,10 @@ export const Layout: React.FC<LayoutProps> = ({
   };
 
   const allTabs = [
+    { id: 'supervisor_cd' as TabType, label: 'SUPERVISOR CD', icon: Users },
     { id: 'expedition' as TabType, label: 'EXPEDIÇÃO', icon: Truck },
     { id: 'central' as TabType, label: 'CENTRAL', icon: LayoutDashboard },
     { id: 'reverse_transfer' as TabType, label: 'REVERSA & TRANSF.', icon: Layers },
-    { id: 'tracking' as TabType, label: 'RASTREAMENTO', icon: Compass },
     { id: 'audit' as TabType, label: 'AUDITORIA', icon: ShieldCheck },
     { id: 'analysis' as TabType, label: 'ANÁLISE', icon: BarChart3 },
     { id: 'portaria' as TabType, label: 'PORTARIA', icon: ClipboardCheck },
@@ -196,18 +196,20 @@ export const Layout: React.FC<LayoutProps> = ({
 
   // Logic: Admins see everything. Normal users only see their registered area.
   // Exception: Perfil expedidor ('expedition') has access to both 'expedition' and 'portaria'.
-  // 'tracking' is a global feature accessible by all roles except expedition.
+  // Exception: Perfil Supervisor CD ('supervisor_cd') has access to supervisor_cd, expedition, and portaria.
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
     if (tab.id === 'settings' || tab.id === 'guide') return true;
     if (user.systemRole === 'administrator') return true;
+    if (user.role === 'supervisor_cd' || user.systemRole === 'supervisor_cd') {
+      return tab.id === 'supervisor_cd' || tab.id === 'expedition' || tab.id === 'portaria';
+    }
     if (user.role === 'store_app' || user.systemRole === 'store_app') {
-      return tab.id === 'reverse_transfer' || tab.id === 'tracking';
+      return tab.id === 'reverse_transfer';
     }
     if (user.role === 'expedition') {
       return tab.id === 'expedition' || tab.id === 'portaria';
     }
-    if (tab.id === 'tracking') return true;
     return tab.id === user.role;
   });
 
@@ -500,9 +502,9 @@ export const Layout: React.FC<LayoutProps> = ({
                   </div>
                   <div>
                     <h2 className="text-xs sm:text-xs font-black uppercase text-white tracking-widest hidden lg:block select-none mt-0.5">
+                      {activeTab === 'supervisor_cd' && '👔 SUPERVISOR CD - PAINEL OPERACIONAL & INDICADORES'}
                       {activeTab === 'expedition' && '📝 EXPEDIÇÃO DE CARGAS'}
                       {activeTab === 'central' && '🖥️ CENTRAL DE LOGÍSTICA'}
-                      {activeTab === 'tracking' && '🗺️ RASTREAMENTO MAPA'}
                       {activeTab === 'audit' && '🛡️ AUDITORIA & SEGURANÇA'}
                       {activeTab === 'analysis' && '📊 ANÁLISE OPERACIONAL'}
                       {activeTab === 'portaria' && '📋 PORTARIA DE SINAL'}
@@ -1021,18 +1023,8 @@ export const Layout: React.FC<LayoutProps> = ({
 
             {/* Quick action bar */}
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-3 items-center justify-between flex-shrink-0">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:inline-block">Ações de Prevenção de Perdas</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:inline-block">Ações Rápidas</span>
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                <button
-                  onClick={() => {
-                    onTabChange('tracking');
-                    setSelectedCargoFromSearch(null);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md cursor-pointer flex-grow sm:flex-grow-0"
-                >
-                  <Compass className="w-4 h-4" />
-                  Rastrear no Mapa
-                </button>
                 <button
                   onClick={() => {
                     onTabChange('central');
